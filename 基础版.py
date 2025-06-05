@@ -173,12 +173,13 @@ class Scheduler:
                 'Resource': entry['pid']
             })
         
-        # 创建甘特图
+        # 创建子图，指定类型
         fig = make_subplots(
             rows=2, cols=1,
             subplot_titles=(f"{algorithm_name} 调度甘特图", "性能指标"),
             vertical_spacing=0.15,
-            row_heights=[0.7, 0.3]
+            row_heights=[0.7, 0.3],
+            specs=[[{"type": "xy"}], [{"type": "domain"}]]  # 指定第二个子图类型为domain，适合表格
         )
         
         # 添加甘特图
@@ -237,14 +238,7 @@ class Scheduler:
             param_text = "<br>".join([f"{k}: {v}" for k, v in params.items()])
             param_text = f"<b>参数:</b><br>{param_text}<br><br>"
         
-        # 构建指标文本
-        metrics_text = (f"<b>CPU利用率:</b> {metrics['cpu_utilization']:.2f}%<br>"
-                        f"<b>吞吐量:</b> {metrics['throughput']:.2f} 进程/时间单位<br>"
-                        f"<b>平均周转时间:</b> {metrics['avg_turnaround_time']:.2f}<br>"
-                        f"<b>平均等待时间:</b> {metrics['avg_waiting_time']:.2f}<br>"
-                        f"<b>平均响应时间:</b> {metrics['avg_response_time']:.2f}<br>"
-                        f"<b>总时间:</b> {metrics['total_time']}")
-        
+        # 添加性能指标表格到第二个子图
         fig.add_trace(
             go.Table(
                 header=dict(
@@ -276,7 +270,7 @@ class Scheduler:
                 dict(
                     text=param_text,
                     x=0.5,
-                    y=0.5,
+                    y=0.9,  # 调整位置，使其在表格上方
                     xref="paper",
                     yref="paper",
                     showarrow=False,

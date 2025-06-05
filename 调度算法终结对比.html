@@ -1,0 +1,331 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>处理机调度算法总结</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; line-height: 1.6; }
+        h1, h2, h3, h4 { color: #2c3e50; }
+        h1 { text-align: center; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        h2 { border-left: 5px solid #3498db; padding-left: 10px; margin-top: 30px; }
+        h3 { margin-top: 25px; color: #16a085; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; vertical-align: top; }
+        th { background-color: #ecf0f1; color: #2c3e50; font-weight: bold; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        tr:hover { background-color: #e8f4f8; }
+        caption { caption-side: top; font-size: 1.2em; font-weight: bold; margin-bottom: 10px; color: #2980b9; }
+        ul, ol { margin-top: 5px; padding-left: 20px; }
+        li { margin-bottom: 5px; }
+        strong { color: #c0392b; }
+        em { font-style: italic; color: #27ae60; }
+        code { background-color: #f4f4f4; padding: 2px 5px; border-radius: 3px; font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace; }
+        details { margin-top: 10px; border: 1px solid #bdc3c7; border-radius: 4px; padding: 10px; }
+        summary { font-weight: bold; cursor: pointer; color: #2980b9; }
+        blockquote { border-left: 4px solid #f1c40f; padding-left: 15px; margin: 15px 0; color: #7f8c8d; }
+        mark { background-color: #f1c40f; padding: 0 3px; }
+        .algorithm-type { font-style: italic; color: #8e44ad; }
+        .pros-cons { display: flex; justify-content: space-between; }
+        .pros-cons div { width: 48%; }
+        .pros-cons h4 { margin-top: 0; font-size: 1em; color: #34495e; }
+        .note { font-size: 0.9em; color: #7f8c8d; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+    <h1>处理机调度算法总结与对比</h1>
+
+    <section id="introduction">
+        <h2>一、 调度层次与目标回顾</h2>
+        <p>在深入算法之前，简要回顾调度系统的基本构成：</p>
+        <ul>
+            <li><strong>高级调度 (作业调度/长程调度):</strong> 从外存后备队列选择作业调入内存，创建进程。目标是控制<em>多道程序度</em>。</li>
+            <li><strong>中级调度 (内存调度/中程调度):</strong> 将暂时不能运行的进程调至外存 (挂起)，或从外存调回内存。目标是提高<em>内存利用率</em>和<em>系统吞吐量</em>。</li>
+            <li><strong>低级调度 (进程调度/短程调度):</strong> 从就绪队列选择进程分配CPU。频率最高，要求速度快。</li>
+        </ul>
+
+        <h3>调度算法的共同目标:</h3>
+        <ol>
+            <li><strong>资源利用率高:</strong> CPU及其他资源保持忙碌。</li>
+            <li><strong>公平性:</strong> 各进程获得合理的CPU时间，防止<em>饥饿</em>。</li>
+            <li><strong>平衡性:</strong> CPU与I/O设备等资源使用平衡。</li>
+            <li><strong>策略强制执行:</strong> 如安全策略。</li>
+        </ol>
+
+        <h3>特定系统类型的目标:</h3>
+        <ul>
+            <li><strong>批处理系统:</strong> <mark>平均周转时间短</mark>、系统吞吐量高、处理机利用率高。</li>
+            <li><strong>分时系统:</strong> <mark>响应时间快</mark>、均衡性 (复杂任务响应可稍长)。</li>
+            <li><strong>实时系统:</strong> <mark>截止时间保证</mark>、可预测性。</li>
+        </ul>
+    </section>
+
+    <hr>
+
+    <section id="job-scheduling">
+        <h2>二、 作业调度算法</h2>
+        <blockquote>主要用于批处理系统的高级调度。</blockquote>
+        <table>
+            <caption>作业调度算法对比</caption>
+            <thead>
+                <tr>
+                    <th>算法名称</th>
+                    <th>调度准则</th>
+                    <th>类型 <span class="algorithm-type">(Type)</span></th>
+                    <th>核心思想</th>
+                    <th>优点</th>
+                    <th>缺点</th>
+                    <th>适用场景/主要目标</th>
+                    <th>备注</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>先来先服务 (FCFS)</strong></td>
+                    <td>作业到达系统的先后顺序</td>
+                    <td class="algorithm-type">非抢占</td>
+                    <td>按作业到达的顺序选择调入内存。</td>
+                    <td>公平、简单、易实现。</td>
+                    <td>对短作业不利，平均周转时间可能较长；可能导致“护航效应”(长作业阻塞短作业)。</td>
+                    <td>作业调度。</td>
+                    <td class="note">对长作业有利。</td>
+                </tr>
+                <tr>
+                    <td><strong>短作业优先 (SJF)</strong></td>
+                    <td>作业估计的运行时间</td>
+                    <td class="algorithm-type">非抢占</td>
+                    <td>选择估计运行时间最短的作业优先调入内存。</td>
+                    <td>平均周转时间、平均等待时间最短。</td>
+                    <td>对长作业非常不利，可能导致长作业<em>饥饿</em>；需要预知作业运行时间，估计不准影响效果；未考虑作业紧迫程度。</td>
+                    <td>批处理系统作业调度，追求最短平均周转时间。</td>
+                    <td class="note">理论上最优，但实践中运行时间难准确预测。</td>
+                </tr>
+                <tr>
+                    <td><strong>优先级调度 (PSA)</strong></td>
+                    <td>作业的优先级 (外部赋予)</td>
+                    <td class="algorithm-type">非抢占</td>
+                    <td>选择优先级最高的作业调入内存。</td>
+                    <td>灵活，可以根据作业的紧迫程度或其他标准来定义优先级，保证紧迫作业优先。</td>
+                    <td>优先级低的作业可能长时间得不到调度 (<em>饥饿</em>)，除非优先级动态调整。</td>
+                    <td>批处理系统作业调度，需要考虑作业的紧迫性或重要性。</td>
+                    <td class="note">优先级可以是静态的或动态的。</td>
+                </tr>
+                <tr>
+                    <td><strong>高响应比优先 (HRRN)</strong></td>
+                    <td>响应比 <code>R<sub>p</sub> = (等待时间 + 要求服务时间) / 要求服务时间</code></td>
+                    <td class="algorithm-type">非抢占</td>
+                    <td>选择响应比最高的作业调入内存。响应比综合考虑了等待时间和运行时间。</td>
+                    <td>既照顾了短作业 (服务时间短则响应比高)，又防止了长作业<em>饥饿</em> (等待时间长则响应比高)。</td>
+                    <td>每次调度前需要计算所有作业的响应比，增加了系统开销。</td>
+                    <td>批处理系统作业调度，试图平衡FCFS和SJF的优缺点。</td>
+                    <td class="note">是一种动态优先级算法。 当等待时间相同时，短作业优先；当服务时间相同时，等待时间长的作业 (FCFS) 优先。是SJF和FCFS的折中。</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <hr>
+
+    <section id="process-scheduling">
+        <h2>三、 进程调度算法</h2>
+        <blockquote>主要用于系统的低级调度。</blockquote>
+        <table>
+            <caption>进程调度算法对比</caption>
+            <thead>
+                <tr>
+                    <th>算法名称</th>
+                    <th>调度准则</th>
+                    <th>类型 <span class="algorithm-type">(Type)</span></th>
+                    <th>核心思想</th>
+                    <th>优点</th>
+                    <th>缺点</th>
+                    <th>适用场景/主要目标</th>
+                    <th>备注</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>先来先服务 (FCFS)</strong></td>
+                    <td>进程到达就绪队列的先后顺序</td>
+                    <td class="algorithm-type">非抢占</td>
+                    <td>从就绪队列队首选择进程运行，直到完成或阻塞。</td>
+                    <td>公平、简单。</td>
+                    <td>对短进程和I/O繁忙型进程不利，平均等待时间可能较长。</td>
+                    <td>简单OS或与其他算法结合使用。</td>
+                    <td class="note">很少单独作为主要调度算法，常用于多级队列的某一队列。</td>
+                </tr>
+                <tr>
+                    <td><strong>短进程优先 (SPF/SJF)</strong></td>
+                    <td>进程估计的运行时间 (或剩余运行时间)</td>
+                    <td class="algorithm-type">非抢占(SPF)/抢占(SRTF)</td>
+                    <td>选择估计运行时间最短（或剩余时间最短）的进程运行。</td>
+                    <td>平均周转时间、平均等待时间在非抢占式中理论上最优。<em>SRTF</em> (抢占式短剩余时间优先) 效果更好。</td>
+                    <td>对长进程不利，可能导致长进程<em>饥饿</em>；需要预知运行时间；抢占式(SRTF)会增加上下文切换开销。</td>
+                    <td>批处理环境或对平均周转时间要求高的场景。</td>
+                    <td class="note">SRTF (Shortest Remaining Time First) 是其抢占式版本，当新进程的运行时间比当前运行进程的剩余时间还短时，会发生抢占。</td>
+                </tr>
+                <tr>
+                    <td><strong>优先级调度 (PSA)</strong></td>
+                    <td>进程的优先级 (静态或动态)</td>
+                    <td class="algorithm-type">非抢占 / 抢占</td>
+                    <td>从就绪队列选择优先级最高的进程运行。</td>
+                    <td>灵活，能满足不同实时性、重要性需求；动态优先级可改善性能。</td>
+                    <td>低优先级进程可能<em>饥饿</em> (静态优先级)；优先级确定和管理复杂；可能发生“<em>优先级反转</em>”问题。</td>
+                    <td>实时系统、分时系统、批处理系统均可使用。</td>
+                    <td class="note">静态优先级：创建时确定，运行期间不变。动态优先级：创建时赋予初值，运行中可改变。</td>
+                </tr>
+                <tr>
+                    <td><strong>时间片轮转 (RR)</strong></td>
+                    <td>时间片 (Quantum)</td>
+                    <td class="algorithm-type">抢占</td>
+                    <td>将所有就绪进程按FCFS排队，队首进程运行一个时间片后，若未完成则移到队尾，切换到新的队首进程。</td>
+                    <td>公平，响应时间快，适用于分时系统，防止单个进程长时间占用CPU。</td>
+                    <td>时间片大小选择是关键：太小则上下文切换频繁，开销大；太大则退化为FCFS，响应时间变长。</td>
+                    <td>分时操作系统。</td>
+                    <td class="note">进程切换时机：① 时间片用完；② 进程完成或阻塞。</td>
+                </tr>
+                <tr>
+                    <td><strong>多级队列调度</strong></td>
+                    <td>进程类型/属性</td>
+                    <td class="algorithm-type">通常为抢占 (队列间)</td>
+                    <td>将就绪进程按类型分成多个队列，每个队列有固定优先级，高优先级队列空时才调度低优先级队列。各队列可采用不同调度算法。</td>
+                    <td>灵活性高，可为不同类型进程提供不同服务质量。</td>
+                    <td>进程固定在某个队列，缺乏灵活性；低优先级队列中的进程可能<em>饥饿</em>。</td>
+                    <td>需要区分处理不同类型进程的系统。</td>
+                    <td class="note">例如：前台队列采用RR，后台队列采用FCFS。高优先级队列的进程可以抢占低优先级队列的进程。</td>
+                </tr>
+                <tr>
+                    <td><strong>多级反馈队列调度 (MLFQ)</strong></td>
+                    <td>动态调整，基于进程行为在不同优先级队列间移动。时间片大小随优先级降低而增大。</td>
+                    <td class="algorithm-type">抢占</td>
+                    <td>设置多个就绪队列，各队列优先级不同，时间片大小也不同。新进程入最高优先级队列，若时间片内未完成则降级；在低优先级队列等待过长可升级。</td>
+                    <td>综合了SJF和RR的优点：对短作业有利，对长作业也不会<em>饥饿</em>，响应时间较好，能适应各种类型进程。</td>
+                    <td>设计和调优参数复杂 (队列数、各队列时间片长度、升降级策略)。</td>
+                    <td>现代通用操作系统 (如UNIX, Windows) 广泛采用，是目前公认较好的进程调度算法。</td>
+                    <td class="note">目标：终端型用户满意；短批处理作业周转时间短；长批处理作业用户不会长期不执行。调度开销相对较大。</td>
+                </tr>
+                 <tr>
+                    <td><strong>保证调度</strong></td>
+                    <td>确保每个进程获得 1/n 的处理机时间 (n为活动进程数)</td>
+                    <td class="algorithm-type">抢占</td>
+                    <td>跟踪每个进程已获得的CPU时间与其应获得CPU时间的比率，优先调度比率最低的进程。</td>
+                    <td>提供了明确的公平性保证，性能可预测。</td>
+                    <td>实现复杂，需要精确跟踪和计算。</td>
+                    <td>对公平性有明确要求的系统。</td>
+                    <td class="note"></td>
+                </tr>
+                <tr>
+                    <td><strong>公平分享调度</strong></td>
+                    <td>用户/进程组获得的CPU份额</td>
+                    <td class="algorithm-type">抢占</td>
+                    <td>调度基于用户而非单个进程，确保每个用户或用户组获得预设比例的CPU时间，无论其创建了多少进程。</td>
+                    <td>用户间的公平性好，防止个别用户通过大量进程占用过多资源。</td>
+                    <td>实现复杂。</td>
+                    <td>多用户系统，需要保证用户间的资源分配公平。</td>
+                    <td class="note"></td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <hr>
+
+    <section id="real-time-scheduling">
+        <h2>四、 实时调度算法</h2>
+        <blockquote>主要用于实时操作系统，核心目标是满足任务的<mark>截止时间</mark>。</blockquote>
+        <table>
+            <caption>实时调度算法对比</caption>
+            <thead>
+                <tr>
+                    <th>算法名称</th>
+                    <th>调度准则</th>
+                    <th>类型 <span class="algorithm-type">(Type)</span></th>
+                    <th>核心思想</th>
+                    <th>优点</th>
+                    <th>缺点</th>
+                    <th>适用场景/主要目标</th>
+                    <th>备注</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>最早截止时间优先 (EDF)</strong></td>
+                    <td>任务的截止时间 (Deadline)</td>
+                    <td class="algorithm-type">抢占 / 非抢占</td>
+                    <td>优先调度截止时间最早的任务。</td>
+                    <td>理论上能使可调度任务集达到最大；资源利用率高。</td>
+                    <td>抢占开销；可能发生“多米诺骨牌效应”；对系统过载敏感。</td>
+                    <td>硬实时/软实时系统，特别是动态任务集。</td>
+                    <td class="note">截止时间可以是开始截止时间或完成截止时间。</td>
+                </tr>
+                <tr>
+                    <td><strong>最低松弛度优先 (LLF)</strong></td>
+                    <td>任务的松弛度 (Laxity) <code>松弛度 = 截止时间 - 剩余执行时间 - 当前时间</code></td>
+                    <td class="algorithm-type">抢占</td>
+                    <td>优先调度松弛度最低（即最紧急）的任务。</td>
+                    <td>动态考虑任务的紧急程度，能有效处理紧急任务。</td>
+                    <td>计算松弛度开销较大；可能频繁抢占；与EDF类似，对系统过载敏感。</td>
+                    <td>硬实时系统。</td>
+                    <td class="note">松弛度为0表示任务必须立即执行。小于0表示已错过截止时间。</td>
+                </tr>
+                <tr>
+                    <td><strong>基于时钟中断的抢占式优先级调度</strong></td>
+                    <td>任务优先级</td>
+                    <td class="algorithm-type">抢占 (时钟中断时)</td>
+                    <td>实时任务到达后，若其优先级高于当前任务，并不立即抢占，而是等到下一个时钟中断时再调度。</td>
+                    <td>响应延迟相对固定。</td>
+                    <td>响应延迟不如立即抢占。</td>
+                    <td>大多数实时系统。</td>
+                    <td class="note"></td>
+                </tr>
+                <tr>
+                    <td><strong>立即抢占的优先级调度</strong></td>
+                    <td>任务优先级</td>
+                    <td class="algorithm-type">抢占 (立即)</td>
+                    <td>一旦出现外部中断，只要当前任务未处于临界区，便可立即剥夺其执行。</td>
+                    <td>响应速度非常快。</td>
+                    <td>实现复杂，对系统中断处理能力要求高。</td>
+                    <td>对响应时间要求极高的实时系统。</td>
+                    <td class="note"></td>
+                </tr>
+                 <tr>
+                    <td><strong>非抢占式轮转调度 (用于实时)</strong></td>
+                    <td>任务按顺序执行</td>
+                    <td class="algorithm-type">非抢占</td>
+                    <td>将多个实时任务排成一个队列，循环执行。</td>
+                    <td>简单，可预测性好 (对于固定任务集)。</td>
+                    <td>响应时间可能较长。</td>
+                    <td>周期性、任务执行时间短且固定的简单实时控制系统。</td>
+                    <td class="note"></td>
+                </tr>
+                <tr>
+                    <td><strong>非抢占式优先调度 (用于实时)</strong></td>
+                    <td>任务优先级</td>
+                    <td class="algorithm-type">非抢占</td>
+                    <td>当前任务执行完毕后，选择就绪队列中优先级最高的任务执行。</td>
+                    <td>能优先处理高优先级任务。</td>
+                    <td>高优先级任务仍需等待当前任务完成。</td>
+                    <td>对实时性要求不十分严格的实时控制系统。</td>
+                    <td class="note"></td>
+                </tr>
+            </tbody>
+        </table>
+
+      
+            <summary><strong>优先级反转 (Priority Inversion) 问题</strong></summary>
+            <p><strong>现象:</strong> 高优先级进程P<sub>H</sub>被低优先级进程P<sub>L</sub>阻塞，原因是P<sub>L</sub>持有了P<sub>H</sub>所需的资源R。此时，若有一个中等优先级的进程P<sub>M</sub>抢占了P<sub>L</sub>的CPU，则P<sub>H</sub>需要等待P<sub>M</sub>执行完毕且P<sub>L</sub>释放资源R后才能继续，导致高优先级进程的等待时间不可控。</p>
+            <p><strong>解决方法:</strong></p>
+            <ul>
+                <li><strong>规定临界区不可抢占:</strong> 简单，但可能导致高优先级任务等待时间过长。</li>
+                <li><strong>优先级继承 (Priority Inheritance):</strong> 当高优先级进程P<sub>H</sub>等待被低优先级进程P<sub>L</sub>占用的资源时，P<sub>L</sub>临时<em>继承</em>P<sub>H</sub>的优先级，直到P<sub>L</sub>释放资源。</li>
+                <li><strong>优先级天花板 (Priority Ceiling Protocol):</strong> 每个共享资源预先分配一个优先级上限(天花板)，该上限等于可能访问该资源的所有任务中的最高优先级。当任务申请资源时，其动态优先级提升至该资源的天花板优先级，防止被优先级介于其原优先级和天花板优先级之间的任务抢占。</li>
+            </ul>
+    
+    </section>
+
+</body>
+</html>
+
+
