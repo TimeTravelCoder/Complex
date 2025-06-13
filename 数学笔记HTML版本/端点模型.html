@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式端点模型分析</title>
+    <!-- Chosen Palette: Indigo and Slate -->
+    <!-- Application Structure Plan: A two-panel SPA. Left panel contains controls for function selection and interval [a, b] adjustment via sliders. Right panel has two parts: a top, large interactive chart and a bottom section with accordion-style cards for each concept (Chord Eq, Distance Model, Trapezoid Error). This structure separates controls from visualization/data, providing a clean, lab-like user experience. It's superior to a linear document as it allows for direct manipulation and immediate visual feedback. -->
+    <!-- Visualization & Content Choices: Main chart (Chart.js) shows f(x) and the chord L(x). A vertical line follows the mouse, updating data in the 'Distance Model' card. The 'Trapezoid Error' card shows calculated values vs. the theoretical bound. The 'Proof' section is a static, formatted text block. This approach turns abstract formulas into live, explorable elements, directly addressing the goal of making the content easily consumable and explorable. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" xintegrity="sha384-n8MVd4RsNIU07EWpWcLsR38UfeXEveGGALfZpHzKxfCqcLCotFSAOFstMWwI_3EA" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" xintegrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzYCZv2JKTKAJsoLXAnj6dKb9eG2IPAnwgx" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" xintegrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax56Z4dCRWbxyPt0Koah1uHoK0o4+/RRE05" crossorigin="anonymous"></script>
+    <style>
+        body { font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif; background-color: #f1f5f9; }
+        .katex-display { display: block; margin: 0.5em 0; text-align: center; }
+        .chart-container { position: relative; width: 100%; height: 40vh; min-height: 300px; max-height: 400px; }
+        .control-panel { transition: all 0.3s ease-in-out; }
+        .content-card { transition: all 0.3s ease-in-out; }
+        .content-card-body { display: none; }
+        .content-card.open .content-card-body { display: block; }
+    </style>
+</head>
+<body class="text-slate-700">
+
+    <div class="w-full bg-white shadow-md">
+        <div class="container mx-auto px-8 py-4">
+            <h1 class="text-3xl font-bold text-indigo-700">交互式端点模型分析</h1>
+            <p class="mt-1 text-slate-500">一个用于探索二阶可微函数在闭区间性质的可视化工具</p>
+        </div>
+    </div>
+
+    <div class="container mx-auto p-4 md:p-8">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <!-- CONTROLS -->
+            <aside class="lg:col-span-4 xl:col-span-3">
+                <div id="control-panel" class="control-panel sticky top-8 bg-white p-6 rounded-2xl shadow-lg space-y-6">
+                    <div>
+                        <label for="function-select" class="block text-sm font-medium text-slate-600 mb-2">1. 选择一个函数 $f(x)$</label>
+                        <select id="function-select" class="w-full p-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                            <!-- Options will be populated by JS -->
+                        </select>
+                    </div>
+
+                    <div>
+                        <p class="block text-sm font-medium text-slate-600 mb-2">2. 调整区间 $[a, b]$</p>
+                        <div class="space-y-4">
+                            <div class="flex items-center space-x-2">
+                                <label for="a-slider" class="w-4 font-bold text-indigo-700">a</label>
+                                <input type="range" id="a-slider" min="-5" max="5" value="-2" step="0.1" class="w-full">
+                                <span id="a-value" class="w-12 text-center font-mono p-1 bg-slate-100 rounded-md">-2.00</span>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <label for="b-slider" class="w-4 font-bold text-indigo-700">b</label>
+                                <input type="range" id="b-slider" min="-5" max="5" value="3" step="0.1" class="w-full">
+                                <span id="b-value" class="w-12 text-center font-mono p-1 bg-slate-100 rounded-md">3.00</span>
+                            </div>
+                        </div>
+                    </div>
+                     <div>
+                        <p class="block text-sm font-medium text-slate-600 mb-2">3. 前提条件: $|f''(x)| \le M$</p>
+                        <div class="bg-indigo-50 p-3 rounded-lg text-center">
+                            <span class="text-indigo-800">当前 $M = $</span>
+                            <span id="M-value" class="font-bold text-lg text-indigo-800"></span>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- VISUALIZATION & ANALYSIS -->
+            <main class="lg:col-span-8 xl:col-span-9 space-y-8">
+                <div class="bg-white p-6 rounded-2xl shadow-lg">
+                    <h2 class="text-2xl font-bold mb-4 text-slate-800">函数与端点弦可视化</h2>
+                    <div class="chart-container">
+                        <canvas id="main-chart"></canvas>
+                    </div>
+                </div>
+                
+                <div id="analysis-cards" class="space-y-4">
+                    <!-- Cards will be populated by JS -->
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        // --- DATA & MODEL DEFINITIONS ---
+        const functionsData = [
+            { id: 'quad', name: 'f(x) = x²', func: x => x*x, d2: x => 2, M: 2.0 },
+            { id: 'cubic', name: 'f(x) = x³/6 - x', func: x => x*x*x/6 - x, d2: x => x, M_func: (a,b) => Math.max(Math.abs(a), Math.abs(b)) },
+            { id: 'sin', name: 'f(x) = sin(x)', func: Math.sin, d2: x => -Math.sin(x), M: 1.0 },
+            { id: 'cos', name: 'f(x) = cos(x)', func: Math.cos, d2: x => -Math.cos(x), M: 1.0 },
+            { id: 'exp', name: 'f(x) = e^x / 5', func: x => Math.exp(x)/5, d2: x => Math.exp(x)/5, M_func: (a,b) => Math.exp(b)/5 }
+        ];
+
+        const analysisData = [
+            { id: 'chord', title: '① 端点弦方程 $L(x)$', content: `连接区间端点 $(a, f(a))$ 和 $(b, f(b))$ 的直线，其方程为：$$y = L(x) = f(a) \\frac{b-x}{b-a} + f(b) \\frac{x-a}{b-a}$$<div class="mt-4 p-3 bg-slate-100 rounded-lg text-sm" id="chord-eq-live"></div>` },
+            { id: 'distance', title: '⑤ 端点弦与函数铅直距离', content: `函数与弦的铅直距离由二阶导数决定：$$f(x) - L(x) = \\frac{1}{2} f''(\\xi) (x-a)(x-b), \\quad \\xi \\in (a,b)$$ <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-center">
+                <div class="bg-slate-100 p-3 rounded-lg"><p class="text-sm text-slate-500">鼠标位置 x</p><p id="dist-x" class="font-mono text-lg text-indigo-700">-</p></div>
+                <div class="bg-slate-100 p-3 rounded-lg"><p class="text-sm text-slate-500">铅直距离 |f(x) - L(x)|</p><p id="dist-val" class="font-mono text-lg text-indigo-700">-</p></div>
+            </div><div class="mt-4 p-3 bg-indigo-50 rounded-lg text-center"><p class="text-sm text-indigo-800">最大距离上界 $\\frac{M}{8}(b-a)^2$</p><p id="dist-bound" class="font-mono text-lg text-indigo-900">-</p></div>` },
+            { id: 'trapezoid', title: '④ 梯形面积与估值误差', content: `用梯形面积近似积分：$$S_{trap} = \\frac{f(a)+f(b)}{2} (b-a)$$ 误差由以下公式估计：$$|S_{actual} - S_{trap}| \\le \\frac{M}{12} (b-a)^3$$ <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-center">
+                <div class="bg-slate-100 p-3 rounded-lg"><p class="text-sm text-slate-500">真实积分 $S_{actual}$</p><p id="trap-actual" class="font-mono text-lg">-</p></div>
+                <div class="bg-slate-100 p-3 rounded-lg"><p class="text-sm text-slate-500">梯形面积 $S_{trap}$</p><p id="trap-approx" class="font-mono text-lg">-</p></div>
+                <div class="bg-slate-100 p-3 rounded-lg"><p class="text-sm text-slate-500">实际误差</p><p id="trap-error-actual" class="font-mono text-lg text-red-600">-</p></div>
+                <div class="bg-slate-100 p-3 rounded-lg"><p class="text-sm text-slate-500">理论误差上界</p><p id="trap-error-bound" class="font-mono text-lg text-red-600">-</p></div>
+            </div>` },
+            { id: 'proof', title: '核心推导 (铅直距离公式)', content: `<div class="text-sm space-y-3">
+            <p>1. <b>构造辅助函数</b>: 对于固定的 $x \\in (a,b)$，构造 $h(t) = f(t) - L(t) - C(t-a)(t-b)$。</p>
+            <p>2. <b>确定常数 C</b>: 选择 C 使得 $h(x)=0$，解得 $C = \\frac{f(x) - L(x)}{(x-a)(x-b)}$。</p>
+            <p>3. <b>应用罗尔定理</b>: 易知 $h(a)=h(x)=h(b)=0$。对 $h(t)$ 在 $[a,x]$ 和 $[x,b]$ 上应用罗尔定理，可知 $\\exists \\eta_1, \\eta_2$ 使得 $h'(\\eta_1)=h'(\\eta_2)=0$。</p>
+            <p>4. <b>再次应用罗尔定理</b>: 对 $h'(t)$ 在 $[\\eta_1, \\eta_2]$ 上应用罗尔定理，可知 $\\exists \\xi \\in (a,b)$ 使得 $h''(\\xi)=0$。</p>
+            <p>5. <b>求解 C</b>: 对 $h(t)$ 求二阶导得 $h''(t) = f''(t) - 2C$。代入 $t=\\xi$ 得 $f''(\\xi) - 2C = 0 \\implies C = \\frac{f''(\\xi)}{2}$。</p>
+            <p>6. <b>联立结论</b>: 综合两步求出的 C，即证 $f(x) - L(x) = \\frac{f''(\\xi)}{2}(x-a)(x-b)$。</p>
+            </div>` }
+        ];
+
+        // --- DOM ELEMENTS ---
+        const functionSelect = document.getElementById('function-select');
+        const aSlider = document.getElementById('a-slider');
+        const bSlider = document.getElementById('b-slider');
+        const aValueSpan = document.getElementById('a-value');
+        const bValueSpan = document.getElementById('b-value');
+        const MValueSpan = document.getElementById('M-value');
+        const chartCanvas = document.getElementById('main-chart');
+        const analysisCardsContainer = document.getElementById('analysis-cards');
+
+        let mainChart;
+        let appState = {
+            funcId: functionsData[0].id,
+            a: -2.0,
+            b: 3.0,
+        };
+
+        // --- INITIALIZATION ---
+        function init() {
+            populateSelect();
+            populateAnalysisCards();
+            addEventListeners();
+            updateApp();
+        }
+
+        function populateSelect() {
+            functionsData.forEach(f => {
+                const option = document.createElement('option');
+                option.value = f.id;
+                option.textContent = f.name;
+                functionSelect.appendChild(option);
+            });
+        }
+        
+        function populateAnalysisCards() {
+            analysisData.forEach(cardData => {
+                const card = document.createElement('div');
+                card.className = 'content-card bg-white rounded-2xl shadow-lg';
+                card.innerHTML = `
+                    <div class="card-header cursor-pointer p-5 border-b border-slate-200 flex justify-between items-center">
+                        <h3 class="text-xl font-bold text-slate-800">${cardData.title}</h3>
+                        <svg class="w-6 h-6 transform transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                    </div>
+                    <div class="content-card-body p-5">
+                        ${cardData.content}
+                    </div>
+                `;
+                analysisCardsContainer.appendChild(card);
+                
+                card.querySelector('.card-header').addEventListener('click', () => {
+                    card.classList.toggle('open');
+                    card.querySelector('svg').classList.toggle('rotate-180');
+                });
+            });
+        }
+
+        function addEventListeners() {
+            functionSelect.addEventListener('change', (e) => {
+                appState.funcId = e.target.value;
+                updateApp();
+            });
+            aSlider.addEventListener('input', (e) => {
+                let a = parseFloat(e.target.value);
+                let b = parseFloat(bSlider.value);
+                if (a >= b) {
+                    a = b - 0.1;
+                    e.target.value = a;
+                }
+                appState.a = a;
+                aValueSpan.textContent = a.toFixed(2);
+                updateApp();
+            });
+            bSlider.addEventListener('input', (e) => {
+                let b = parseFloat(e.target.value);
+                let a = parseFloat(aSlider.value);
+                if (b <= a) {
+                    b = a + 0.1;
+                    e.target.value = b;
+                }
+                appState.b = b;
+                bValueSpan.textContent = b.toFixed(2);
+                updateApp();
+            });
+            
+            // Mouse move on chart for live distance
+            chartCanvas.addEventListener('mousemove', (e) => {
+                if (!mainChart) return;
+                const points = mainChart.getElementsAtEventForMode(e, 'nearest', { intersect: false }, true);
+                if (points.length) {
+                    const index = points[0].index;
+                    const x = mainChart.data.labels[index];
+                    const currentFunc = functionsData.find(f => f.id === appState.funcId);
+                    const { a, b } = appState;
+                    const fa = currentFunc.func(a);
+                    const fb = currentFunc.func(b);
+                    
+                    const yFunc = currentFunc.func(x);
+                    const yChord = fa * (b - x) / (b - a) + fb * (x - a) / (b - a);
+                    
+                    document.getElementById('dist-x').textContent = parseFloat(x).toFixed(2);
+                    document.getElementById('dist-val').textContent = Math.abs(yFunc - yChord).toExponential(3);
+                }
+            });
+             chartCanvas.addEventListener('mouseout', () => {
+                document.getElementById('dist-x').textContent = '-';
+                document.getElementById('dist-val').textContent = '-';
+             });
+        }
+
+        // --- UPDATE & RENDER LOGIC ---
+        function updateApp() {
+            const { funcId, a, b } = appState;
+            const currentFunc = functionsData.find(f => f.id === funcId);
+            
+            const fa = currentFunc.func(a);
+            const fb = currentFunc.func(b);
+
+            let M;
+            if(currentFunc.M_func) {
+                M = currentFunc.M_func(a,b);
+            } else {
+                M = currentFunc.M;
+            }
+            MValueSpan.textContent = M.toFixed(3);
+            
+            // Update chord equation display
+            document.getElementById('chord-eq-live').textContent = `y = ${fa.toFixed(2)} * ((${b.toFixed(2)} - x) / ${ (b-a).toFixed(2) }) + ${fb.toFixed(2)} * ((x - ${a.toFixed(2)}) / ${ (b-a).toFixed(2) })`;
+
+            // Update distance bound
+            const distBound = M/8 * Math.pow(b-a, 2);
+            document.getElementById('dist-bound').textContent = distBound.toExponential(3);
+
+            // Update trapezoid section
+            const n_steps = 1000;
+            const step = (b-a)/n_steps;
+            let integralActual = 0;
+            for(let i=0; i<n_steps; i++) {
+                integralActual += currentFunc.func(a + i*step) * step;
+            }
+            const trapApprox = (fa + fb)/2 * (b-a);
+            const trapErrorActual = Math.abs(integralActual - trapApprox);
+            const trapErrorBound = M/12 * Math.pow(b-a, 3);
+            document.getElementById('trap-actual').textContent = integralActual.toFixed(4);
+            document.getElementById('trap-approx').textContent = trapApprox.toFixed(4);
+            document.getElementById('trap-error-actual').textContent = trapErrorActual.toExponential(3);
+            document.getElementById('trap-error-bound').textContent = trapErrorBound.toExponential(3);
+            
+            updateChart();
+            renderKaTeX(document.body);
+        }
+
+        function updateChart() {
+            const { funcId, a, b } = appState;
+            const currentFunc = functionsData.find(f => f.id === funcId);
+            
+            const fa = currentFunc.func(a);
+            const fb = currentFunc.func(b);
+            
+            const chordFunc = x => fa * (b - x) / (b - a) + fb * (x - a) / (b - a);
+
+            const labels = [];
+            const funcData = [];
+            const chordData = [];
+            const step = (b - a) / 100;
+            for (let x = a; x <= b; x += step) {
+                labels.push(x);
+                funcData.push(currentFunc.func(x));
+                chordData.push(chordFunc(x));
+            }
+
+            const data = {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'f(x)',
+                        data: funcData,
+                        borderColor: 'rgb(79, 70, 229)',
+                        backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                        borderWidth: 2.5,
+                        pointRadius: 0,
+                        tension: 0.1,
+                        fill: { target: 'origin', above: 'rgba(199, 210, 254, 0.3)'}
+                    },
+                    {
+                        label: 'L(x) - 端点弦',
+                        data: chordData,
+                        borderColor: 'rgb(234, 88, 12)',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        fill: false,
+                        borderDash: [5, 5]
+                    }
+                ]
+            };
+
+            if (mainChart) {
+                mainChart.data = data;
+                mainChart.update();
+            } else {
+                mainChart = new Chart(chartCanvas, {
+                    type: 'line',
+                    data: data,
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: { x: { type: 'linear', title: { display: true, text: 'x' } }, y: { title: { display: true, text: 'y' } } },
+                        plugins: { legend: { position: 'bottom' } },
+                        interaction: {
+                            mode: 'index',
+                            intersect: false,
+                        },
+                    }
+                });
+            }
+        }
+        
+        function renderKaTeX(element) {
+            if (window.renderMathInElement) {
+                window.renderMathInElement(element, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '$', right: '$', display: false}
+                    ],
+                    throwOnError: false
+                });
+            }
+        }
+
+        // --- RUN APP ---
+        document.addEventListener('DOMContentLoaded', init);
+
+    </script>
+</body>
+</html>

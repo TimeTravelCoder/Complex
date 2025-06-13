@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式CPU调度模拟器</title>
+    <!-- Chosen Palette: Indigo and Slate -->
+    <!-- Application Structure Plan: A main dashboard layout. A primary left column acts as the main control panel for process configuration (add, remove, randomize) and global settings (priority logic). The main content area on the right uses tabs to select the scheduling algorithm. Below the tabs, a large output section contains the interactive Gantt chart, key performance metrics cards, a detailed results table, and an execution log. This structure clearly separates input controls from output visualization and allows users to easily compare algorithms without re-entering data. -->
+    <!-- Visualization & Content Choices: The core visualization is a dynamic Gantt chart (Chart.js, horizontal floating bar) showing process execution over time with color-coding. Performance metrics are displayed as prominent "stat cards". A detailed HTML table shows the metrics per process. An execution log provides a step-by-step trace. This multi-faceted approach caters to different levels of analysis, from high-level visual understanding to detailed numerical comparison. It directly translates the Python script's console output into a rich, interactive UI. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif; background-color: #f1f5f9; }
+        .tab-button.active { background-color: #4338ca; color: white; }
+        .chart-container { position: relative; width: 100%; height: 400px; }
+        .log-container { height: 150px; background-color: #1e293b; color: #cbd5e1; font-family: 'Courier New', Courier, monospace; overflow-y: auto; }
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <div class="container mx-auto p-4 lg:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl lg:text-5xl font-bold text-indigo-700">交互式CPU调度模拟器</h1>
+            <p class="mt-2 text-slate-500">一个用于可视化和比较操作系统调度算法的工具</p>
+        </header>
+
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-8">
+            <!-- Left Panel: Process Configuration -->
+            <aside class="xl:col-span-4 bg-white p-6 rounded-2xl shadow-lg h-fit sticky top-8">
+                <h2 class="text-2xl font-bold mb-4 text-slate-800 border-b pb-2">1. 进程配置</h2>
+                <div class="grid grid-cols-12 gap-2 items-center px-2 pb-2 text-sm font-semibold text-slate-600 border-b mb-2">
+                    <span class="col-span-1 text-center">ID</span>
+                    <span class="col-span-3 text-center">到达</span>
+                    <span class="col-span-3 text-center">运行</span>
+                    <span class="col-span-3 text-center">优先级</span>
+                    <span class="col-span-2 text-center">操作</span>
+                </div>
+                <div id="process-list" class="space-y-2 max-h-80 overflow-y-auto pr-2">
+                    <!-- Process items will be added here -->
+                </div>
+                <div class="flex space-x-2 mt-4">
+                    <button id="add-process-btn" class="w-full bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition">添加进程</button>
+                    <button id="random-processes-btn" class="w-full bg-slate-200 text-slate-800 py-2 px-4 rounded-lg hover:bg-slate-300 transition">随机生成</button>
+                </div>
+                <div class="mt-6">
+                     <h3 class="text-lg font-bold mb-2 text-slate-700">全局设置</h3>
+                     <div class="flex items-center justify-between bg-slate-50 p-3 rounded-lg">
+                        <label for="priority-logic" class="text-sm font-medium">优先级逻辑:</label>
+                        <select id="priority-logic" class="text-sm border border-slate-300 rounded-md p-1">
+                            <option value="false">数值小优先级高</option>
+                            <option value="true">数值大优先级高</option>
+                        </select>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Right Panel: Simulation -->
+            <main class="xl:col-span-8">
+                <div class="bg-white p-6 rounded-2xl shadow-lg">
+                    <h2 class="text-2xl font-bold mb-4 text-slate-800 border-b pb-2">2. 算法选择与控制</h2>
+                    <div id="algorithm-tabs" class="flex flex-wrap gap-2 mb-4">
+                        <!-- Algorithm tabs here -->
+                    </div>
+                    <div id="algorithm-params" class="mb-4 p-4 bg-indigo-50 rounded-lg hidden">
+                        <!-- Dynamic parameters here -->
+                    </div>
+                    <button id="run-simulation-btn" class="w-full bg-green-600 text-white text-lg font-bold py-3 px-4 rounded-lg hover:bg-green-700 transition shadow-lg">开始模拟</button>
+                </div>
+
+                <div id="output-section" class="mt-8 bg-white p-6 rounded-2xl shadow-lg hidden">
+                    <h2 class="text-2xl font-bold mb-4 text-slate-800 border-b pb-2">3. 模拟结果</h2>
+                    <div id="gantt-chart-container" class="chart-container mb-8">
+                        <canvas id="gantt-chart"></canvas>
+                    </div>
+
+                    <h3 class="text-xl font-bold mb-4 text-slate-700">性能指标</h3>
+                    <div id="metrics-cards" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 text-center mb-8">
+                        <!-- Metrics cards here -->
+                    </div>
+
+                    <h3 class="text-xl font-bold mb-4 text-slate-700">执行日志</h3>
+                    <div id="execution-log" class="log-container p-4 rounded-lg mb-8"></div>
+
+                    <h3 class="text-xl font-bold mb-4 text-slate-700">进程详情</h3>
+                    <div class="overflow-x-auto">
+                        <table id="results-table" class="w-full text-sm text-left">
+                            <thead class="bg-slate-100 text-slate-600 uppercase">
+                                <!-- Table header here -->
+                            </thead>
+                            <tbody>
+                                <!-- Table body here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+<script>
+class Process {
+    constructor(pid, arrivalTime, runTime, priority = null) {
+        this.pid = pid;
+        this.arrivalTime = arrivalTime;
+        this.runTime = runTime;
+        this.priority = priority;
+        this.reset();
+    }
+
+    reset() {
+        this.remainingTime = this.runTime;
+        this.startTime = null;
+        this.completionTime = null;
+        this.waitingTime = null;
+        this.turnaroundTime = null;
+        this.responseTime = null;
+        this.currentQueue = 0;
+    }
+
+    calculateMetrics() {
+        if (this.completionTime !== null) {
+            this.turnaroundTime = this.completionTime - this.arrivalTime;
+            this.waitingTime = this.turnaroundTime - this.runTime;
+        }
+        if (this.startTime !== null) {
+            this.responseTime = this.startTime - this.arrivalTime;
+        }
+    }
+}
+
+class Scheduler {
+    constructor(processes, name, priorityLogic) {
+        this.processes = processes.map(p => { p.reset(); return p; });
+        this.name = name;
+        this.priorityLogic = priorityLogic; // true for higher value = better
+        this.readyQueue = [];
+        this.currentTime = 0;
+        this.executionSequence = [];
+        this.completedProcesses = [];
+        this.currentProcess = null;
+    }
+
+    run() {
+        while (this.completedProcesses.length < this.processes.length) {
+            this.updateReadyQueue();
+            
+            let nextProcess = this.selectProcess();
+
+            if (this.isPreemptive() && this.currentProcess && nextProcess && this.currentProcess !== nextProcess) {
+                this.handlePreemption();
+                this.currentProcess = null;
+            }
+
+            if (!this.currentProcess) {
+                this.currentProcess = nextProcess;
+                if(this.currentProcess) this.readyQueue.splice(this.readyQueue.indexOf(this.currentProcess), 1);
+            }
+
+            if (this.currentProcess) {
+                if (this.currentProcess.startTime === null) this.currentProcess.startTime = this.currentTime;
+                
+                const execTime = this.getExecutionTime();
+                const timeToNextArrival = this.getTimeToNextArrival();
+                const runDuration = Math.min(execTime, timeToNextArrival);
+
+                this.logExecution(this.currentProcess.pid, this.currentTime, this.currentTime + runDuration, '执行');
+                this.currentTime += runDuration;
+                this.currentProcess.remainingTime -= runDuration;
+
+                if (this.currentProcess.remainingTime <= 0) {
+                    this.currentProcess.completionTime = this.currentTime;
+                    this.completedProcesses.push(this.currentProcess);
+                    this.currentProcess = null;
+                } else {
+                    this.handleUncompletedProcess(runDuration);
+                }
+            } else {
+                const nextArrivalTime = this.getTimeToNextArrival();
+                if (nextArrivalTime < Infinity) {
+                    this.logExecution('空闲', this.currentTime, this.currentTime + nextArrivalTime, '空闲');
+                    this.currentTime += nextArrivalTime;
+                } else {
+                    break; 
+                }
+            }
+        }
+        return this.generateReport();
+    }
+    
+    handlePreemption() {
+        this.logExecution(this.currentProcess.pid, this.currentTime, this.currentTime, '抢占');
+        if (!this.readyQueue.includes(this.currentProcess)) {
+            this.readyQueue.push(this.currentProcess);
+        }
+    }
+
+    getExecutionTime() { return 1; } // Default for preemptive
+    handleUncompletedProcess(duration) { if(this.currentProcess && !this.readyQueue.includes(this.currentProcess)) this.readyQueue.push(this.currentProcess); this.currentProcess = null; }
+
+    getTimeToNextArrival() {
+        let nextArrival = Infinity;
+        this.processes.forEach(p => {
+            if (p.arrivalTime > this.currentTime && p.arrivalTime < nextArrival) {
+                nextArrival = p.arrivalTime;
+            }
+        });
+        return nextArrival === Infinity ? Infinity : nextArrival - this.currentTime;
+    }
+    
+    updateReadyQueue() {
+        this.processes.forEach(p => {
+            if (p.arrivalTime <= this.currentTime && p.remainingTime > 0 && !this.completedProcesses.includes(p) && !this.readyQueue.includes(p) && p !== this.currentProcess) {
+                this.readyQueue.push(p);
+            }
+        });
+    }
+
+    logExecution(pid, start, end, status) {
+        if(start === end && status !== '抢占') return;
+        this.executionSequence.push({ pid, start, end, status });
+    }
+
+    isPreemptive() { return false; }
+
+    selectProcess() { throw new Error("Must be implemented by subclass"); }
+
+    generateReport() {
+        this.completedProcesses.forEach(p => p.calculateMetrics());
+        const totalTime = this.currentTime;
+        const busyTime = this.executionSequence.filter(e => e.pid !== '空闲').reduce((acc, e) => acc + (e.end - e.start), 0);
+        
+        const metrics = {
+            cpuUtilization: totalTime > 0 ? busyTime / totalTime : 0,
+            throughput: totalTime > 0 ? this.completedProcesses.length / totalTime : 0,
+            avgTurnaround: this.completedProcesses.reduce((a, p) => a + p.turnaroundTime, 0) / this.processes.length,
+            avgWaiting: this.completedProcesses.reduce((a, p) => a + p.waitingTime, 0) / this.processes.length,
+            avgResponse: this.completedProcesses.reduce((a, p) => a + p.responseTime, 0) / this.processes.length,
+        };
+
+        return {
+            executionSequence: this.executionSequence,
+            processes: this.completedProcesses.sort((a,b) => a.pid - b.pid),
+            metrics
+        };
+    }
+}
+
+class FCFSScheduler extends Scheduler {
+    isPreemptive() { return false; }
+    getExecutionTime() { return this.currentProcess.remainingTime; }
+    handleUncompletedProcess(duration) { /* Non-preemptive, do nothing */ }
+    selectProcess() {
+        if (this.readyQueue.length === 0) return null;
+        return this.readyQueue.sort((a, b) => a.arrivalTime - b.arrivalTime || a.pid - b.pid)[0];
+    }
+}
+
+class SJFScheduler extends Scheduler {
+    isPreemptive() { return false; }
+    getExecutionTime() { return this.currentProcess.remainingTime; }
+    handleUncompletedProcess(duration) { /* Non-preemptive, do nothing */ }
+    selectProcess() {
+        if (this.readyQueue.length === 0) return null;
+        return this.readyQueue.sort((a, b) => a.runTime - b.runTime || a.arrivalTime - b.arrivalTime || a.pid - b.pid)[0];
+    }
+}
+
+class SRTFScheduler extends Scheduler {
+    isPreemptive() { return true; }
+    selectProcess() {
+        const candidates = [...this.readyQueue];
+        if (this.currentProcess) candidates.push(this.currentProcess);
+        if (candidates.length === 0) return null;
+        return candidates.sort((a,b) => a.remainingTime - b.remainingTime || a.arrivalTime - b.arrivalTime || a.pid - b.pid)[0];
+    }
+}
+
+class PriorityScheduler extends Scheduler {
+    isPreemptive() { return false; }
+    getExecutionTime() { return this.currentProcess.remainingTime; }
+    handleUncompletedProcess(duration) { /* Non-preemptive, do nothing */ }
+    selectProcess() {
+        if (this.readyQueue.length === 0) return null;
+        return this.readyQueue.sort((a,b) => {
+            const prioA = this.priorityLogic ? -a.priority : a.priority;
+            const prioB = this.priorityLogic ? -b.priority : b.priority;
+            return prioA - prioB || a.arrivalTime - b.arrivalTime || a.pid - b.pid;
+        })[0];
+    }
+}
+
+class PreemptivePriorityScheduler extends Scheduler {
+    isPreemptive() { return true; }
+     selectProcess() {
+        const candidates = [...this.readyQueue];
+        if (this.currentProcess) candidates.push(this.currentProcess);
+        if (candidates.length === 0) return null;
+        return candidates.sort((a,b) => {
+            const prioA = this.priorityLogic ? -a.priority : a.priority;
+            const prioB = this.priorityLogic ? -b.priority : b.priority;
+            return prioA - prioB || a.arrivalTime - b.arrivalTime || a.pid - b.pid;
+        })[0];
+    }
+}
+
+class RRScheduler extends Scheduler {
+    constructor(processes, name, priorityLogic, timeQuantum) {
+        super(processes, name, priorityLogic);
+        this.timeQuantum = timeQuantum;
+        this.timeOnCPU = 0;
+    }
+    isPreemptive() { return true; }
+    getExecutionTime() {
+        return Math.min(this.currentProcess.remainingTime, this.timeQuantum - this.timeOnCPU);
+    }
+    handleUncompletedProcess(duration) {
+        this.timeOnCPU += duration;
+        if (this.timeOnCPU >= this.timeQuantum) {
+            if (!this.readyQueue.includes(this.currentProcess)) this.readyQueue.push(this.currentProcess);
+            this.currentProcess = null;
+            this.timeOnCPU = 0;
+        }
+    }
+    selectProcess() {
+        if(this.currentProcess && this.timeOnCPU < this.timeQuantum && this.currentProcess.remainingTime > 0) return this.currentProcess;
+        if(this.currentProcess && this.timeOnCPU >= this.timeQuantum) {
+            if (!this.readyQueue.includes(this.currentProcess)) this.readyQueue.push(this.currentProcess);
+            this.currentProcess = null;
+            this.timeOnCPU = 0;
+        }
+
+        if (this.readyQueue.length === 0) return null;
+        return this.readyQueue[0];
+    }
+}
+
+
+// --- UI LOGIC ---
+document.addEventListener('DOMContentLoaded', () => {
+    const processListDiv = document.getElementById('process-list');
+    const addProcessBtn = document.getElementById('add-process-btn');
+    const randomProcessesBtn = document.getElementById('random-processes-btn');
+    const runSimulationBtn = document.getElementById('run-simulation-btn');
+    const algorithmTabsDiv = document.getElementById('algorithm-tabs');
+    const algorithmParamsDiv = document.getElementById('algorithm-params');
+    const outputSection = document.getElementById('output-section');
+
+    let processes = [];
+    let processIdCounter = 1;
+    let selectedAlgorithm = 'FCFS';
+    let ganttChart = null;
+    
+    const algorithms = {
+        'FCFS': { name: '先来先服务', class: FCFSScheduler },
+        'SJF': { name: '短作业优先 (非抢占)', class: SJFScheduler },
+        'SRTF': { name: '最短剩余时间优先 (抢占SJF)', class: SRTFScheduler },
+        'Priority': { name: '优先级 (非抢占)', class: PriorityScheduler, needsPriority: true },
+        'P-Priority': { name: '优先级 (抢占)', class: PreemptivePriorityScheduler, needsPriority: true },
+        'RR': { name: '时间片轮转', class: RRScheduler, params: [{id: 'timeQuantum', label: '时间片大小', type: 'number', value: 2}] }
+    };
+    
+    function createProcessUI(process) {
+        const div = document.createElement('div');
+        div.className = 'grid grid-cols-12 gap-2 items-center';
+        div.dataset.pid = process.pid;
+        div.innerHTML = `
+            <span class="col-span-1 font-bold text-indigo-700 text-center">P${process.pid}</span>
+            <div class="col-span-3"><input type="number" min="0" value="${process.arrivalTime}" data-prop="arrivalTime" class="w-full p-1 border rounded text-center" placeholder="到达"></div>
+            <div class="col-span-3"><input type="number" min="1" value="${process.runTime}" data-prop="runTime" class="w-full p-1 border rounded text-center" placeholder="运行"></div>
+            <div class="col-span-3"><input type="number" min="0" value="${process.priority === null ? '' : process.priority}" data-prop="priority" class="w-full p-1 border rounded text-center" placeholder="N/A"></div>
+            <button class="col-span-2 remove-process-btn bg-red-100 text-red-700 rounded hover:bg-red-200 transition text-xs py-1 h-full">删除</button>
+        `;
+        div.querySelector('.remove-process-btn').addEventListener('click', () => {
+            processes = processes.filter(p => p.pid !== process.pid);
+            renderProcessList();
+        });
+        div.querySelectorAll('input').forEach(input => {
+            input.addEventListener('change', (e) => {
+                const prop = e.target.dataset.prop;
+                let value = parseInt(e.target.value, 10);
+                if(isNaN(value) && prop === 'priority') value = null;
+                else if (isNaN(value)) value = 0;
+                process[prop] = value;
+            });
+        });
+        return div;
+    }
+
+    function renderProcessList() {
+        processListDiv.innerHTML = '';
+        processes.forEach(p => processListDiv.appendChild(createProcessUI(p)));
+    }
+
+    function addProcess() {
+        const newProcess = new Process(processIdCounter++, 0, 10, null);
+        processes.push(newProcess);
+        renderProcessList();
+    }
+    
+    function randomizeProcesses() {
+        processes = [];
+        processIdCounter = 1;
+        const count = Math.floor(Math.random() * 5) + 3;
+        for(let i=0; i<count; i++) {
+            const arrivalTime = Math.floor(Math.random() * 10);
+            const runTime = Math.floor(Math.random() * 15) + 1;
+            const priority = Math.floor(Math.random() * 10);
+            processes.push(new Process(processIdCounter++, arrivalTime, runTime, priority));
+        }
+        renderProcessList();
+    }
+    
+    function setupAlgorithmTabs() {
+        algorithmTabsDiv.innerHTML = '';
+        Object.keys(algorithms).forEach(key => {
+            const button = document.createElement('button');
+            button.className = 'tab-button px-4 py-2 text-sm font-medium rounded-lg transition';
+            button.textContent = algorithms[key].name;
+            button.dataset.algo = key;
+            if (key === selectedAlgorithm) button.classList.add('active');
+            
+            button.addEventListener('click', () => {
+                selectedAlgorithm = key;
+                document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                renderAlgorithmParams();
+            });
+            algorithmTabsDiv.appendChild(button);
+        });
+    }
+    
+    function renderAlgorithmParams() {
+        const algo = algorithms[selectedAlgorithm];
+        algorithmParamsDiv.innerHTML = '';
+        if (algo.params) {
+            algorithmParamsDiv.classList.remove('hidden');
+            algo.params.forEach(param => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center space-x-2';
+                div.innerHTML = `
+                    <label for="${param.id}" class="font-medium">${param.label}:</label>
+                    <input type="${param.type}" id="${param.id}" value="${param.value}" class="p-1 border rounded w-24">
+                `;
+                algorithmParamsDiv.appendChild(div);
+            });
+        } else {
+            algorithmParamsDiv.classList.add('hidden');
+        }
+    }
+
+    function runSimulation() {
+        if (processes.length === 0) {
+            alert("请至少添加一个进程！");
+            return;
+        }
+        
+        const algoDef = algorithms[selectedAlgorithm];
+        const priorityLogic = document.getElementById('priority-logic').value === 'true';
+
+        if(algoDef.needsPriority && processes.some(p => p.priority === null)) {
+            alert(`算法 "${algoDef.name}" 要求所有进程都设置一个优先级！`);
+            return;
+        }
+        
+        let scheduler;
+        if(selectedAlgorithm === 'RR') {
+            const tq = parseInt(document.getElementById('timeQuantum').value, 10);
+            scheduler = new RRScheduler(processes, algoDef.name, priorityLogic, tq);
+        } else {
+            scheduler = new algoDef.class(processes, algoDef.name, priorityLogic);
+        }
+
+        const report = scheduler.run();
+        displayResults(report);
+    }
+    
+    function displayResults(report) {
+        outputSection.classList.remove('hidden');
+        outputSection.classList.add('fade-in');
+
+        // Gantt Chart
+        const ctx = document.getElementById('gantt-chart').getContext('2d');
+        const processPIDs = [...new Set(processes.map(p => p.pid))].sort((a,b)=>a-b);
+        const colors = ['#3b82f6', '#10b981', '#ef4444', '#f97316', '#8b5cf6', '#d946ef'];
+        const pidColorMap = processPIDs.reduce((acc, pid, i) => {
+            acc[pid] = colors[i % colors.length];
+            return acc;
+        }, { '空闲': '#9ca3af' });
+
+        const ganttData = {
+            labels: report.executionSequence.map(e => `${e.pid} (${e.start}-${e.end})`),
+            datasets: report.executionSequence.map(e => ({
+                label: `P${e.pid}`,
+                data: [{ x: [e.start, e.end], y: `P${e.pid}` }],
+                backgroundColor: pidColorMap[e.pid],
+                barPercentage: 0.5,
+            }))
+        };
+        
+         const yLabels = [...processPIDs.map(p => `P${p}`), '空闲'].reverse();
+
+        if(ganttChart) ganttChart.destroy();
+        ganttChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: yLabels,
+                datasets: report.executionSequence.map(e => ({
+                    label: e.pid === '空闲' ? '空闲' : `P${e.pid}`,
+                    data: yLabels.map(label => {
+                        const labelPid = label === '空闲' ? '空闲' : parseInt(label.substring(1));
+                        return e.pid === labelPid ? [e.start, e.end] : [null, null];
+                    }),
+                    backgroundColor: pidColorMap[e.pid],
+                }))
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                scales: { 
+                    x: { stacked: false, title: { display: true, text: '时间' } }, 
+                    y: { stacked: true }
+                }
+            }
+        });
+
+        // Metrics
+        document.getElementById('metrics-cards').innerHTML = `
+            <div class="bg-slate-50 p-4 rounded-lg"><div class="text-sm text-slate-500">CPU利用率</div><div class="text-2xl font-bold">${(report.metrics.cpuUtilization * 100).toFixed(2)}%</div></div>
+            <div class="bg-slate-50 p-4 rounded-lg"><div class="text-sm text-slate-500">吞吐量</div><div class="text-2xl font-bold">${report.metrics.throughput.toFixed(3)}</div></div>
+            <div class="bg-slate-50 p-4 rounded-lg"><div class="text-sm text-slate-500">平均周转</div><div class="text-2xl font-bold">${report.metrics.avgTurnaround.toFixed(2)}</div></div>
+            <div class="bg-slate-50 p-4 rounded-lg"><div class="text-sm text-slate-500">平均等待</div><div class="text-2xl font-bold">${report.metrics.avgWaiting.toFixed(2)}</div></div>
+            <div class="bg-slate-50 p-4 rounded-lg"><div class="text-sm text-slate-500">平均响应</div><div class="text-2xl font-bold">${report.metrics.avgResponse.toFixed(2)}</div></div>
+        `;
+
+        // Log
+        document.getElementById('execution-log').innerHTML = report.executionSequence.map(e => `<div><span class="text-gray-500">[${e.start.toFixed(2)}-${e.end.toFixed(2)}]</span> P${e.pid} ${e.status}</div>`).join('');
+        
+        // Table
+        const tableHead = document.querySelector('#results-table thead');
+        const tableBody = document.querySelector('#results-table tbody');
+        tableHead.innerHTML = `<tr>${['进程ID', '到达', '运行', '优先级', '完成', '周转', '等待', '响应'].map(h => `<th class="p-2">${h}</th>`).join('')}</tr>`;
+        tableBody.innerHTML = report.processes.map(p => `
+            <tr class="border-b">
+                <td class="p-2 font-bold">P${p.pid}</td>
+                <td class="p-2">${p.arrivalTime}</td>
+                <td class="p-2">${p.runTime}</td>
+                <td class="p-2">${p.priority ?? 'N/A'}</td>
+                <td class="p-2">${p.completionTime.toFixed(2)}</td>
+                <td class="p-2">${p.turnaroundTime.toFixed(2)}</td>
+                <td class="p-2">${p.waitingTime.toFixed(2)}</td>
+                <td class="p-2">${p.responseTime.toFixed(2)}</td>
+            </tr>
+        `).join('');
+    }
+
+    // Initial setup
+    addProcessBtn.addEventListener('click', addProcess);
+    randomProcessesBtn.addEventListener('click', randomizeProcesses);
+    runSimulationBtn.addEventListener('click', runSimulation);
+    
+    setupAlgorithmTabs();
+    renderAlgorithmParams();
+    randomizeProcesses();
+});
+</script>
+
+</body>
+</html>
