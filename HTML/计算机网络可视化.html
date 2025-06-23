@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>网络协议数据单元(PDU)流动演示 (增强版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'Helvetica Neue', 'Arial', 'sans-serif';
+            overflow: hidden;
+        }
+        .layer {
+            border: 2px solid;
+            transition: all 0.3s ease-in-out;
+        }
+        .layer-title {
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-align: center;
+        }
+        .pdu-name {
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: #4b5563;
+        }
+        #packet {
+            position: absolute;
+            width: auto;
+            min-width: 140px;
+            padding: 8px;
+            background-color: #f9fafb;
+            border: 2px solid #3b82f6;
+            border-radius: 0.5rem;
+            text-align: center;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.8s ease-in-out;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            z-index: 10;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+        }
+        .packet-part {
+            border-radius: 0.375rem;
+            padding: 4px;
+            margin: 2px;
+            transition: all 0.5s ease;
+        }
+        .header-transport { background-color: #34d399; color: #047857;}
+        .header-network { background-color: #fbbf24; color: #b45309;}
+        .header-datalink { background-color: #f87171; color: #b91c1c;}
+        #packet-content { background-color: #a5b4fc; color: #312e81; }
+        .trailer-datalink { background-color: #f87171; color: #b91c1c;}
+
+        .bits {
+            width: 10px;
+            height: 10px;
+            background-color: #3b82f6;
+            border-radius: 50%;
+            position: absolute;
+            opacity: 0;
+            animation-name: moveBits;
+            animation-timing-function: linear;
+            animation-iteration-count: infinite;
+        }
+        @keyframes moveBits {
+            0% { left: 0; opacity: 1;}
+            90% { opacity: 1;}
+            100% { left: 100%; opacity: 0;}
+        }
+        /* Modal Styles */
+        #modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            z-index: 99;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        #modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 0.75rem;
+            width: 90%;
+            max-width: 500px;
+            transform: scale(0.95);
+            transition: transform 0.3s ease;
+        }
+        #modal-overlay.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        #modal-overlay.visible #modal-content {
+            transform: scale(1);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-7xl mx-auto">
+        <!-- Header and Controls -->
+        <div class="text-center mb-4">
+            <h1 class="text-2xl md:text-3xl font-bold text-gray-800">计算机网络协议栈演示 (增强版)</h1>
+            <p class="text-gray-600 mt-1">观察PDU封装与解封装过程。可调节速度，并点击数据包查看详情。</p>
+            <div id="controls" class="mt-4 space-y-2 md:space-y-0 md:space-x-4 flex flex-col md:flex-row items-center justify-center">
+                <button id="start-btn" class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg shadow-md hover:bg-blue-700 transition-colors disabled:bg-gray-400 w-32">开始</button>
+                <button id="reset-btn" class="bg-gray-600 text-white font-bold py-2 px-6 rounded-lg shadow-md hover:bg-gray-700 transition-colors disabled:bg-gray-400 w-32" disabled>重置</button>
+                <div class="flex items-center space-x-2">
+                    <label for="speed-slider" class="text-gray-700 font-medium">速度:</label>
+                    <input type="range" id="speed-slider" min="0.25" max="4" value="1" step="0.25" class="w-32">
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="flex justify-between items-start w-full relative">
+            <div id="packet-container" class="absolute top-0 left-0 w-full h-full">
+                 <div id="packet" class="hidden">
+                    <div id="packet-content" class="packet-part">Data</div>
+                 </div>
+            </div>
+
+            <!-- Stacks -->
+            <div id="sender" class="w-48 md:w-64 space-y-1"> <h2 class="text-xl font-bold text-center text-gray-700 mb-2">发送方</h2> <!-- Layers... --> </div>
+            <div id="info-box" class="w-1/2 max-w-md h-48 bg-white rounded-lg shadow-lg p-4 border border-gray-200 flex items-center justify-center text-center"> <p class="text-gray-700 text-lg font-medium">点击 "开始" 按钮</p> </div>
+            <div id="receiver" class="w-48 md:w-64 space-y-1"> <h2 class="text-xl font-bold text-center text-gray-700 mb-2">接收方</h2> <!-- Layers... --> </div>
+
+            <div id="physical-layer-link-container" class="absolute w-full h-full top-0 left-0 pointer-events-none">
+                 <div id="physical-link" class="absolute bg-gray-400 h-1" style="z-index: -1;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div id="modal-overlay">
+        <div id="modal-content">
+            <h3 id="modal-title" class="text-2xl font-bold text-gray-800 mb-4">数据包详情</h3>
+            <div id="modal-body" class="text-gray-700 space-y-2"></div>
+            <button id="modal-close-btn" class="mt-6 bg-blue-600 text-white font-bold py-2 px-6 rounded-lg shadow-md hover:bg-blue-700 transition-colors w-full">关闭</button>
+        </div>
+    </div>
+
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- INITIALIZATION ---
+        const startBtn = document.getElementById('start-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const speedSlider = document.getElementById('speed-slider');
+        const packet = document.getElementById('packet');
+        let packetContent = document.getElementById('packet-content');
+        const infoBox = document.getElementById('info-box').querySelector('p');
+        const physicalLink = document.getElementById('physical-link');
+        const modalOverlay = document.getElementById('modal-overlay');
+        const modalTitle = document.getElementById('modal-title');
+        const modalBody = document.getElementById('modal-body');
+        const modalCloseBtn = document.getElementById('modal-close-btn');
+
+        const senderDiv = document.getElementById('sender');
+        const receiverDiv = document.getElementById('receiver');
+        
+        const layerNames = {
+            application: '应用层 / 表示层 / 会话层',
+            transport: '传输层',
+            network: '网络层',
+            datalink: '数据链路层',
+            physical: '物理层',
+        };
+
+        const layerPdu = {
+            application: '数据 (Data)',
+            transport: '数据段 (Segment)',
+            network: '数据包 (Packet)',
+            datalink: '帧 (Frame)',
+            physical: '比特 (Bits)',
+        };
+
+        const layerColors = {
+            application: 'purple',
+            transport: 'emerald',
+            network: 'amber',
+            datalink: 'red',
+            physical: 'gray',
+        };
+
+        // Dynamically create layers
+        const createLayers = (side, container) => {
+            const layers = {};
+            for (const key of Object.keys(layerNames)) {
+                const layerEl = document.createElement('div');
+                layerEl.id = `${side}-${key}`;
+                layerEl.className = `layer bg-white p-3 rounded-lg border-${layerColors[key]}-500`;
+                layerEl.innerHTML = `
+                    <div class="layer-title text-${layerColors[key]}-600">${layerNames[key]}</div>
+                    <div class="pdu-name">PDU: ${layerPdu[key]}</div>
+                `;
+                container.appendChild(layerEl);
+                layers[key] = layerEl;
+            }
+            return layers;
+        };
+        const senderLayers = createLayers('sender', senderDiv);
+        const receiverLayers = createLayers('receiver', receiverDiv);
+        
+        const packetDetails = {
+            application: `<p>应用层数据，例如您的网页请求或邮件内容。</p>`,
+            transport: `
+                <p><strong>传输层报头 (TCP):</strong></p>
+                <ul>
+                    <li>源端口: 49152 (随机端口)</li>
+                    <li>目的端口: 443 (HTTPS)</li>
+                    <li>序列号: 100</li>
+                </ul>
+            `,
+            network: `
+                <p><strong>网络层报头 (IP):</strong></p>
+                <ul>
+                    <li>源IP: 192.168.1.101 (您的设备)</li>
+                    <li>目的IP: 203.0.113.55 (服务器)</li>
+                </ul>
+            `,
+            datalink: `
+                <p><strong>数据链路层报头 (Ethernet):</strong></p>
+                <ul>
+                    <li>源MAC: 0A:1B:2C:3D:4E:5F</li>
+                    <li>目的MAC: 6A:7B:8C:9D:AE:BF</li>
+                </ul>
+                <p><strong>帧尾 (FCS):</strong></p>
+                <ul><li>错误校验码: 0x1234ABCD</li></ul>
+            `,
+            physical: `<p>数据以电信号或光信号（比特流）的形式在物理介质上传输。</p>`,
+        };
+
+
+        let animationState = {
+            isRunning: false,
+            isPaused: false,
+            speed: 1,
+            currentLayer: null,
+        };
+
+        // --- CORE FUNCTIONS ---
+        const sleep = (ms) => {
+            return new Promise(resolve => {
+                const check = () => {
+                    if (!animationState.isPaused) {
+                        setTimeout(resolve, ms / animationState.speed);
+                    } else {
+                        requestAnimationFrame(check);
+                    }
+                };
+                check();
+            });
+        };
+
+        const getLayerPosition = (layerElement) => {
+            const containerRect = document.getElementById('packet-container').getBoundingClientRect();
+            const layerRect = layerElement.getBoundingClientRect();
+            const packetRect = packet.getBoundingClientRect();
+            const top = layerRect.top - containerRect.top + (layerRect.height / 2) - (packetRect.height / 2);
+            const left = layerRect.left - containerRect.left + (layerRect.width / 2) - (packetRect.width / 2);
+            return { top, left };
+        };
+
+        const updateInfo = (text) => {
+            infoBox.style.opacity = '0';
+            setTimeout(() => {
+                infoBox.innerHTML = text;
+                infoBox.style.opacity = '1';
+            }, 300 / animationState.speed);
+        };
+        
+        const resetPacket = () => {
+            packet.style.opacity = '0';
+            packet.style.transform = 'scale(1)';
+            packet.innerHTML = '<div id="packet-content" class="packet-part">Data</div>';
+            packetContent = document.getElementById('packet-content');
+        };
+
+        const setButtonsState = (startEnabled, resetEnabled) => {
+            startBtn.disabled = !startEnabled;
+            resetBtn.disabled = !resetEnabled;
+        };
+
+        const movePacketTo = async (layerElement, layerKey) => {
+            animationState.currentLayer = layerKey;
+            const pos = getLayerPosition(layerElement);
+            packet.style.top = `${pos.top}px`;
+            packet.style.left = `${pos.left}px`;
+            Object.values(senderLayers).concat(Object.values(receiverLayers)).forEach(l => l.style.transform = 'scale(1)');
+            layerElement.style.transform = 'scale(1.05)';
+            await sleep(1000);
+        };
+        
+        const setupPhysicalLink = () => {
+            const senderPhysical = senderLayers.physical.getBoundingClientRect();
+            const receiverPhysical = receiverLayers.physical.getBoundingClientRect();
+            const container = document.getElementById('packet-container').getBoundingClientRect();
+            const startY = senderPhysical.top - container.top + senderPhysical.height / 2;
+            const startX = senderPhysical.left - container.left + senderPhysical.width;
+            const endX = receiverPhysical.left - container.left;
+            physicalLink.style.top = `${startY}px`;
+            physicalLink.style.left = `${startX}px`;
+            physicalLink.style.width = `${endX - startX}px`;
+        };
+
+        const showModal = () => {
+            animationState.isPaused = true;
+            modalTitle.textContent = `数据包详情: ${layerNames[animationState.currentLayer]}`;
+            modalBody.innerHTML = packetDetails[animationState.currentLayer];
+            modalOverlay.classList.add('visible');
+        };
+
+        const hideModal = () => {
+            animationState.isPaused = false;
+            modalOverlay.classList.remove('visible');
+        };
+        
+        // --- ANIMATION LOGIC ---
+        const startAnimation = async () => {
+            if (animationState.isRunning) return;
+            animationState.isRunning = true;
+            setButtonsState(false, false);
+            resetPacket();
+            packet.style.opacity = '1';
+
+            // Sender Side
+            updateInfo("<strong>应用层:</strong> 用户数据被创建。点击数据包可查看详情。");
+            await movePacketTo(senderLayers.application, 'application');
+            
+            updateInfo("<strong>传输层:</strong> 添加TCP报头，形成数据段 (Segment)。");
+            packet.insertAdjacentHTML('afterbegin', '<div class="packet-part header-transport">TH</div>');
+            await movePacketTo(senderLayers.transport, 'transport');
+
+            updateInfo("<strong>网络层:</strong> 添加IP报头，形成数据包 (Packet)。");
+            packet.insertAdjacentHTML('afterbegin', '<div class="packet-part header-network">NH</div>');
+            await movePacketTo(senderLayers.network, 'network');
+            
+            updateInfo("<strong>数据链路层:</strong> 添加MAC报头和帧尾，形成帧 (Frame)。");
+            packet.insertAdjacentHTML('afterbegin', '<div class="packet-part header-datalink">DH</div>');
+            packet.insertAdjacentHTML('beforeend', '<div class="packet-part trailer-datalink">DT</div>');
+            await movePacketTo(senderLayers.datalink, 'datalink');
+
+            updateInfo("<strong>物理层:</strong> 帧被转换成比特流进行传输。");
+            packet.style.transform = 'scale(0)';
+            await movePacketTo(senderLayers.physical, 'physical');
+            
+            // Physical Transmission
+            physicalLink.innerHTML = '';
+            for(let i=0; i<10; i++){
+                const bit = document.createElement('div');
+                bit.className = 'bits';
+                bit.style.animationDuration = `${4000 / animationState.speed}ms`;
+                bit.style.animationDelay = `${(i * 200) / animationState.speed}ms`;
+                physicalLink.appendChild(bit);
+            }
+            await sleep(4000);
+            physicalLink.innerHTML = '';
+            packet.style.transform = 'scale(1)';
+
+            // Receiver Side
+            updateInfo("<strong>物理层:</strong> 接收比特流，重组成帧。");
+            await movePacketTo(receiverLayers.physical, 'physical');
+
+            updateInfo("<strong>数据链路层:</strong> 剥离MAC报头和帧尾。");
+            packet.querySelector('.header-datalink').remove();
+            packet.querySelector('.trailer-datalink').remove();
+            await movePacketTo(receiverLayers.datalink, 'datalink');
+            
+            updateInfo("<strong>网络层:</strong> 剥离IP报头。");
+            packet.querySelector('.header-network').remove();
+            await movePacketTo(receiverLayers.network, 'network');
+
+            updateInfo("<strong>传输层:</strong> 剥离TCP报头。");
+            packet.querySelector('.header-transport').remove();
+            await movePacketTo(receiverLayers.transport, 'transport');
+
+            updateInfo("<strong>应用层:</strong> 原始数据到达，通信完成！");
+            await movePacketTo(receiverLayers.application, 'application');
+
+            await sleep(1000);
+            updateInfo("演示完成！点击 '重置' 以再次开始。");
+            setButtonsState(false, true);
+        };
+        
+        const resetAnimation = () => {
+            animationState.isRunning = false;
+            animationState.isPaused = false;
+            resetPacket();
+            packet.classList.add('hidden');
+            updateInfo("点击 '开始' 按钮");
+            setButtonsState(true, false);
+            Object.values(senderLayers).concat(Object.values(receiverLayers)).forEach(l => l.style.transform = 'scale(1)');
+            hideModal();
+        };
+        
+        // --- EVENT LISTENERS ---
+        startBtn.addEventListener('click', () => {
+            packet.classList.remove('hidden');
+            startAnimation();
+        });
+        resetBtn.addEventListener('click', resetAnimation);
+        speedSlider.addEventListener('input', (e) => {
+            animationState.speed = parseFloat(e.target.value);
+        });
+        packet.addEventListener('click', () => {
+            if(animationState.isRunning && !animationState.isPaused) {
+                showModal();
+            }
+        });
+        modalCloseBtn.addEventListener('click', hideModal);
+        modalOverlay.addEventListener('click', (e) => {
+            if (e.target === modalOverlay) {
+                hideModal();
+            }
+        });
+        
+        window.onresize = setupPhysicalLink;
+        
+        // --- INITIAL SETUP ---
+        setupPhysicalLink();
+        resetAnimation();
+    });
+    </script>
+</body>
+</html>
