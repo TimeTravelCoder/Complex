@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPOOLing 技术示意图</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+        }
+        .flow-arrow {
+            position: absolute;
+            stroke: #4a5568; /* gray-700 */
+            stroke-width: 2;
+            fill: #4a5568;
+        }
+        .flow-label {
+            position: absolute;
+            background-color: #f7fafc; /* gray-100 */
+            color: #2d3748; /* gray-800 */
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .box {
+            border: 2px solid;
+            border-radius: 8px;
+            text-align: center;
+            padding: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .area-label {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #4a5568; /* gray-700 */
+            margin-bottom: 1.5rem;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-5xl bg-white rounded-xl shadow-2xl p-8 relative">
+        <h1 class="text-2xl font-bold text-center text-gray-800 mb-8">SPOOLing 技术工作原理示意图</h1>
+        
+        <div id="diagram-container" class="relative">
+            <!-- SVG for drawing lines -->
+            <svg id="svg-canvas" class="absolute top-0 left-0 w-full h-full" style="pointer-events: none;"></svg>
+
+            <!-- 1. 用户空间 -->
+            <div id="user-space" class="bg-blue-50 border-2 border-blue-200 rounded-lg p-6 mb-8">
+                <div class="area-label">用户空间</div>
+                <div class="flex justify-around items-start">
+                    <div id="proc-a" class="box border-blue-400 bg-blue-100 w-32">进程 A</div>
+                    <div id="proc-b" class="box border-blue-400 bg-blue-100 w-32">进程 B</div>
+                    <div id="proc-c" class="box border-blue-400 bg-blue-100 w-32">进程 C</div>
+                </div>
+            </div>
+
+            <!-- 2. 内核空间 -->
+            <div id="kernel-space" class="bg-green-50 border-2 border-green-200 rounded-lg p-6 mb-8">
+                <div class="area-label">内核空间</div>
+                <div id="disk" class="box border-green-400 bg-green-100 p-4">
+                    <p class="font-semibold text-green-800">磁盘 (作为SPOOLing缓冲区)</p>
+                    <div id="output-well" class="box border-yellow-500 bg-yellow-100 mt-4 p-4">
+                        <p class="font-semibold text-yellow-800 mb-2">输出井 (Output Well)</p>
+                        <div class="flex justify-center gap-2">
+                            <div id="job-a" class="box border-yellow-400 bg-yellow-200 text-sm p-2 w-24">作业A数据</div>
+                            <div id="job-b" class="box border-yellow-400 bg-yellow-200 text-sm p-2 w-24">作业B数据</div>
+                            <div id="job-c" class="box border-yellow-400 bg-yellow-200 text-sm p-2 w-24">作业C数据</div>
+                            <div class="self-center text-yellow-700">...</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-around mt-16">
+                     <div id="buffer-1" class="box border-purple-400 bg-purple-100 w-40">内存输出缓冲区 1</div>
+                     <div id="buffer-2" class="box border-purple-400 bg-purple-100 w-40">内存输出缓冲区 2</div>
+                </div>
+                 <div id="double-buffer-label" class="text-purple-700 font-semibold text-center mt-2">(双缓冲)</div>
+            </div>
+
+            <!-- 3. 硬件层 -->
+            <div id="hardware-layer" class="bg-red-50 border-2 border-red-200 rounded-lg p-6">
+                <div class="area-label">硬件层</div>
+                <div class="flex flex-col items-center gap-4">
+                    <div id="spooler" class="box border-red-400 bg-red-100 w-64">
+                        <p class="font-bold">输出进程 (Spooler)</p>
+                        <p class="text-sm">(一个后台守护进程)</p>
+                    </div>
+                    <div id="printer" class="box border-gray-600 bg-gray-200 w-48">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto mb-2 text-gray-700" viewBox="0 0 20 20" fill="currentColor">
+                          <path fill-rule="evenodd" d="M5 4v3H4a2 2 0 00-2 2v6a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2h-1V4a2 2 0 00-2-2H7a2 2 0 00-2 2zm2 0h6v3H7V4zM4 9h12v6H4V9z" clip-rule="evenodd" />
+                          <path d="M6 12a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1z" />
+                        </svg>
+                        物理打印机
+                    </div>
+                </div>
+            </div>
+
+            <!-- Flow Labels -->
+            <div id="label-1" class="flow-label">1. 打印请求</div>
+            <div id="label-2" class="flow-label">2. 打印请求</div>
+            <div id="label-3" class="flow-label">3. 打印请求</div>
+            <div id="label-4" class="flow-label w-40">4. OS将打印数据高速写入输出井</div>
+            <div id="label-5" class="flow-label w-48">5. 输出进程从输出井读取数据到内存缓冲区</div>
+            <div id="label-6" class="flow-label w-40">6. 慢速传送给打印机</div>
+        </div>
+    </div>
+
+    <script>
+        // This script draws the connecting arrows for the diagram.
+        function drawArrow(svg, x1, y1, x2, y2) {
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', x1);
+            line.setAttribute('y1', y1);
+            line.setAttribute('x2', x2);
+            line.setAttribute('y2', y2);
+            line.setAttribute('class', 'flow-arrow');
+            line.setAttribute('marker-end', 'url(#arrowhead)');
+            svg.appendChild(line);
+        }
+
+        function createArrowHead(svg) {
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+            marker.setAttribute('id', 'arrowhead');
+            marker.setAttribute('viewBox', '0 0 10 10');
+            marker.setAttribute('refX', '8');
+            marker.setAttribute('refY', '5');
+            marker.setAttribute('markerWidth', '6');
+            marker.setAttribute('markerHeight', '6');
+            marker.setAttribute('orient', 'auto-start-reverse');
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+            path.setAttribute('fill', '#4a5568');
+            marker.appendChild(path);
+            defs.appendChild(marker);
+            svg.appendChild(defs);
+        }
+        
+        function positionLabel(labelEl, x, y) {
+            labelEl.style.left = `${x - labelEl.offsetWidth / 2}px`;
+            labelEl.style.top = `${y - labelEl.offsetHeight / 2}px`;
+        }
+
+        function drawConnections() {
+            const container = document.getElementById('diagram-container');
+            const svg = document.getElementById('svg-canvas');
+            svg.innerHTML = ''; // Clear previous drawings
+            createArrowHead(svg);
+
+            const containerRect = container.getBoundingClientRect();
+
+            // Helper to get element coordinates relative to the container
+            const getCoords = (id) => {
+                const el = document.getElementById(id);
+                if (!el) return null;
+                const rect = el.getBoundingClientRect();
+                return {
+                    x: rect.left - containerRect.left,
+                    y: rect.top - containerRect.top,
+                    width: rect.width,
+                    height: rect.height,
+                    cx: rect.left - containerRect.left + rect.width / 2,
+                    cy: rect.top - containerRect.top + rect.height / 2,
+                    bottom: rect.bottom - containerRect.top,
+                    top: rect.top - containerRect.top,
+                };
+            };
+            
+            const procA = getCoords('proc-a');
+            const procB = getCoords('proc-b');
+            const procC = getCoords('proc-c');
+            const outputWell = getCoords('output-well');
+            const disk = getCoords('disk');
+            const buffer1 = getCoords('buffer-1');
+            const buffer2 = getCoords('buffer-2');
+            const spooler = getCoords('spooler');
+            const printer = getCoords('printer');
+
+            // 1, 2, 3: Process -> Kernel Space
+            const kernelTop = getCoords('kernel-space').top;
+            if (procA) drawArrow(svg, procA.cx, procA.bottom, procA.cx, kernelTop - 10);
+            if (procB) drawArrow(svg, procB.cx, procB.bottom, procB.cx, kernelTop - 10);
+            if (procC) drawArrow(svg, procC.cx, procC.bottom, procC.cx, kernelTop - 10);
+            
+            // Position labels 1, 2, 3
+            if (procA) positionLabel(document.getElementById('label-1'), procA.cx, procA.bottom + 25);
+            if (procB) positionLabel(document.getElementById('label-2'), procB.cx, procB.bottom + 25);
+            if (procC) positionLabel(document.getElementById('label-3'), procC.cx, procC.bottom + 25);
+
+            // 4: OS writes to Output Well
+            const midPointX = disk.cx;
+            const midPointY = kernelTop + (outputWell.top - kernelTop) / 2;
+            drawArrow(svg, midPointX, kernelTop - 10, midPointX, outputWell.top);
+            positionLabel(document.getElementById('label-4'), midPointX + 100, midPointY);
+
+            // 5: Output Well -> Memory Buffers
+            const bufferMidY = buffer1.cy;
+            const bufferMidX = (buffer1.cx + buffer2.cx) / 2;
+            drawArrow(svg, outputWell.cx, outputWell.bottom, outputWell.cx, bufferMidY);
+            drawArrow(svg, outputWell.cx, bufferMidY, buffer1.cx, bufferMidY);
+            drawArrow(svg, outputWell.cx, bufferMidY, buffer2.cx, bufferMidY);
+            positionLabel(document.getElementById('label-5'), outputWell.cx + 120, outputWell.bottom + 40);
+
+            // 6: Buffers -> Spooler -> Printer
+            const hardwareTop = getCoords('hardware-layer').top;
+            const spoolerTop = spooler.top;
+            drawArrow(svg, bufferMidX, buffer1.bottom, bufferMidX, spoolerTop);
+            drawArrow(svg, spooler.cx, spooler.bottom, printer.cx, printer.top);
+            positionLabel(document.getElementById('label-6'), bufferMidX + 100, buffer1.bottom + 40);
+        }
+
+        // Redraw on window resize to keep arrows accurate
+        window.addEventListener('resize', drawConnections);
+        // Initial drawing
+        window.onload = drawConnections;
+    </script>
+</body>
+</html>

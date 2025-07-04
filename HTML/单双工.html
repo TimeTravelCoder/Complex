@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>三种通信方式示意图</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #f8fafc; /* A light gray background */
+        }
+        .diagram-container {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 2rem;
+            background-color: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .title {
+            text-align: center;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 2.5rem;
+        }
+        .mode-section {
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px dashed #cbd5e1;
+        }
+        .mode-section:last-child {
+            margin-bottom: 0;
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+        .mode-title {
+            font-size: 1.25rem;
+            font-weight: 500;
+            color: #334155;
+            margin-bottom: 0.5rem;
+        }
+        .mode-subtitle {
+            font-size: 1rem;
+            color: #64748b;
+            margin-bottom: 2rem;
+        }
+        .device {
+            width: 100px;
+            height: 60px;
+            background-color: #f1f5f9;
+            border: 2px solid #94a3b8;
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 500;
+            color: #1e293b;
+            box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+        }
+        .arrow-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-grow: 1;
+            margin: 0 1rem;
+            position: relative;
+        }
+        /* Custom arrow styles */
+        .arrow {
+            position: relative;
+            background-color: #38bdf8;
+            height: 6px;
+            width: 100%;
+            border-radius: 3px;
+        }
+        .arrow::after {
+            content: '';
+            position: absolute;
+            right: -4px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 0;
+            height: 0;
+            border-top: 12px solid transparent;
+            border-bottom: 12px solid transparent;
+            border-left: 16px solid #38bdf8;
+        }
+        .arrow-reverse::after {
+            content: '';
+            position: absolute;
+            left: -4px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 0;
+            height: 0;
+            border-top: 12px solid transparent;
+            border-bottom: 12px solid transparent;
+            border-right: 16px solid #38bdf8;
+            border-left: none;
+        }
+        .time-label {
+            position: absolute;
+            top: -25px;
+            background-color: #e2e8f0;
+            color: #475569;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="diagram-container">
+        <h1 class="title">图2-2: 三种通信方式示意图</h1>
+
+        <!-- 1. 单工通信 -->
+        <div class="mode-section">
+            <h2 class="mode-title">1. 单工 (Simplex)</h2>
+            <p class="mode-subtitle">数据只能在一个方向上进行传输。</p>
+            <div class="flex items-center justify-center">
+                <div class="device">设备 A</div>
+                <div class="arrow-container w-1/2">
+                    <div class="arrow"></div>
+                </div>
+                <div class="device">设备 B</div>
+            </div>
+        </div>
+
+        <!-- 2. 半双工通信 -->
+        <div class="mode-section">
+            <h2 class="mode-title">2. 半双工 (Half-Duplex)</h2>
+            <p class="mode-subtitle">数据可以双向传输，但不能同时进行。</p>
+            <div class="flex items-center justify-center">
+                <div class="device">设备 A</div>
+                <div class="arrow-container w-1/2">
+                    <!-- Visual representation of alternating flow -->
+                    <div class="w-full text-center">
+                        <div class="relative inline-block w-full">
+                           <div class="arrow"></div>
+                           <div class="arrow arrow-reverse mt-4"></div>
+                           <div class="absolute inset-0 flex items-center justify-center">
+                               <div class="bg-white px-2 text-sm text-slate-500">不能同时</div>
+                           </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="device">设备 B</div>
+            </div>
+        </div>
+
+        <!-- 3. 全双工通信 -->
+        <div class="mode-section">
+            <h2 class="mode-title">3. 全双工 (Full-Duplex)</h2>
+            <p class="mode-subtitle">数据可以同时进行双向传输。</p>
+            <div class="flex items-center justify-center">
+                <div class="device">设备 A</div>
+                <div class="arrow-container w-1/2">
+                    <div class="w-full">
+                        <div class="arrow"></div>
+                        <div class="arrow arrow-reverse mt-4"></div>
+                    </div>
+                </div>
+                <div class="device">设备 B</div>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+</html>

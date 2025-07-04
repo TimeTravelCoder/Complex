@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>三级调度在进程状态转换中的作用示意图</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans SC', sans-serif;
+            background-color: #f8fafc; /* tailwind gray-50 */
+        }
+
+        #diagram-container {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(3, minmax(160px, auto));
+            gap: 1.5rem 2.5rem;
+            width: 100%;
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 3rem;
+            position: relative;
+        }
+
+        #svg-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+            overflow: visible;
+        }
+
+        .state {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            transition: all 0.3s ease-in-out;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            border-width: 2px;
+            text-align: center;
+            z-index: 3; /* States are on top */
+            height: fit-content;
+            min-width: 160px;
+            background-color: white; /* Ensure states have solid background */
+        }
+
+        .state:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -2px rgb(0 0 0 / 0.1);
+        }
+
+        .section-backdrop {
+            border: 2px dashed #9ca3af;
+            border-radius: 0.75rem;
+            padding: 3rem 1rem 1rem 1rem;
+            position: relative;
+            z-index: 2; /* Backdrops are below states but above default */
+        }
+        
+        .section-label {
+            position: absolute;
+            top: -0.8rem;
+            left: 1rem;
+            background-color: #f8fafc;
+            padding: 0 0.5rem;
+            font-weight: 600;
+            color: #4b5563;
+        }
+
+        #storage-section { grid-area: 1 / 1 / 4 / 2; }
+        #memory-section { grid-area: 1 / 2 / 4 / 5; }
+        #state-new { grid-area: 1 / 1 / 2 / 2; align-self: center; justify-self: center; }
+        #state-suspended-ready { grid-area: 2 / 1 / 3 / 2; align-self: center; justify-self: center; }
+        #state-suspended-blocked { grid-area: 3 / 1 / 4 / 2; align-self: center; justify-self: center; }
+        #state-ready { grid-area: 1 / 2 / 2 / 3; align-self: center; justify-self: center; }
+        #state-running { grid-area: 2 / 3 / 3 / 4; align-self: center; justify-self: center; }
+        #state-blocked { grid-area: 3 / 2 / 4 / 3; align-self: center; justify-self: center; }
+        #state-terminated { grid-area: 2 / 4 / 3 / 5; align-self: center; justify-self: center; }
+
+        .line-label {
+            font-size: 13px;
+            font-weight: 500;
+            fill: #374151;
+            paint-order: stroke;
+            stroke: #f8fafc;
+            stroke-width: 4px;
+            stroke-linecap: butt;
+            stroke-linejoin: round;
+        }
+
+        @media (max-width: 768px) {
+            #diagram-container {
+                grid-template-columns: 1fr;
+                grid-template-rows: repeat(7, auto);
+                gap: 3.5rem 1rem; /* Increased gap for mobile */
+                padding: 2rem 1rem;
+            }
+            .section-backdrop { display: none; }
+            #state-new, #state-suspended-ready, #state-suspended-blocked,
+            #state-ready, #state-running, #state-blocked, #state-terminated {
+                grid-column: 1 / 2;
+                justify-self: center;
+            }
+            #state-new { grid-row: 1; }
+            #state-ready { grid-row: 2; }
+            #state-running { grid-row: 3; }
+            #state-blocked { grid-row: 4; }
+            #state-suspended-ready { grid-row: 5; }
+            #state-suspended-blocked { grid-row: 6; }
+            #state-terminated { grid-row: 7; }
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="text-center mb-8">
+        <h1 class="text-2xl md:text-3xl font-bold text-gray-800">图3.1：三级调度在进程状态转换中的作用示意图</h1>
+        <p class="text-gray-600 mt-2">一个使用 HTML, CSS Grid, 和 SVG 实现的交互式示意图</p>
+    </div>
+
+    <div id="diagram-container">
+        <svg id="svg-canvas"></svg>
+        <div id="storage-section" class="section-backdrop"><span class="section-label">外存</span></div>
+        <div id="memory-section" class="section-backdrop"><span class="section-label">内存</span></div>
+        
+        <div id="state-new" class="state bg-gray-200 border-gray-400"><p class="font-bold">新建态</p><p class="text-sm text-gray-600">后备队列</p></div>
+        <div id="state-suspended-ready" class="state bg-blue-100 border-blue-300"><p class="font-bold">挂起就绪态</p></div>
+        <div id="state-suspended-blocked" class="state bg-orange-100 border-orange-300"><p class="font-bold">挂起阻塞态</p></div>
+        <div id="state-ready" class="state bg-green-200 border-green-400"><p class="font-bold">就绪态</p><p class="text-sm text-gray-600">就绪队列</p></div>
+        <div id="state-running" class="state bg-purple-200 border-purple-400"><p class="font-bold">运行态</p><p class="text-sm text-gray-600">CPU 执行</p></div>
+        <div id="state-blocked" class="state bg-yellow-200 border-yellow-400"><p class="font-bold">阻塞态</p></div>
+        <div id="state-terminated" class="state bg-red-200 border-red-400"><p class="font-bold">终止态</p></div>
+    </div>
+
+    <script>
+        function drawArrows() {
+            const svg = document.getElementById('svg-canvas');
+            const container = document.getElementById('diagram-container');
+            if (!svg || !container) return;
+            
+            svg.innerHTML = ''; // Clear previous SVG content
+
+            const getElCoords = (el) => {
+                return {
+                    x: el.offsetLeft,
+                    y: el.offsetTop,
+                    width: el.offsetWidth,
+                    height: el.offsetHeight,
+                };
+            };
+
+            const isMobile = window.innerWidth <= 768;
+
+            // Define separate connection configurations for desktop and mobile
+            const desktopConnections = [
+                { from: 'state-new', to: 'state-ready', label: '高级调度', color: '#3b82f6', fromSide: 'right', toSide: 'left' },
+                { from: 'state-ready', to: 'state-running', label: '低级调度', color: '#8b5cf6', fromSide: 'right', toSide: 'left' },
+                { from: 'state-running', to: 'state-ready', label: '时间片耗尽/抢占', color: '#8b5cf6', fromSide: 'top', toSide: 'bottom', type: 'curve-y', options: { offset: -60 } },
+                { from: 'state-running', to: 'state-blocked', label: 'I/O请求', color: '#f59e0b', fromSide: 'bottom', toSide: 'top' },
+                { from: 'state-blocked', to: 'state-ready', label: '事件发生', color: '#22c55e', fromSide: 'top', toSide: 'bottom' },
+                { from: 'state-running', to: 'state-terminated', label: '进程结束', color: '#ef4444', fromSide: 'right', toSide: 'left' },
+                { from: 'state-ready', to: 'state-suspended-ready', label: '挂起', color: '#60a5fa', fromSide: 'left', toSide: 'right' },
+                { from: 'state-suspended-ready', to: 'state-ready', label: '激活', color: '#16a34a', fromSide: 'right', toSide: 'left' },
+                { from: 'state-blocked', to: 'state-suspended-blocked', label: '挂起', color: '#f97316', fromSide: 'left', toSide: 'right' },
+                { from: 'state-suspended-blocked', to: 'state-blocked', label: '激活', color: '#f59e0b', fromSide: 'right', toSide: 'left' },
+                { from: 'state-suspended-blocked', to: 'state-suspended-ready', label: '事件发生', color: '#16a34a', fromSide: 'top', toSide: 'bottom' },
+            ];
+
+            const mobileConnections = [
+                { from: 'state-new', to: 'state-ready', label: '高级调度', color: '#3b82f6', fromSide: 'bottom', toSide: 'top' },
+                { from: 'state-ready', to: 'state-running', label: '低级调度', color: '#8b5cf6', fromSide: 'bottom', toSide: 'top' },
+                { from: 'state-running', to: 'state-ready', label: '时间片耗尽/抢占', color: '#8b5cf6', fromSide: 'left', toSide: 'left', type: 'curve-x', options: { offset: -60 } },
+                { from: 'state-running', to: 'state-blocked', label: 'I/O请求', color: '#f59e0b', fromSide: 'bottom', toSide: 'top' },
+                { from: 'state-blocked', to: 'state-ready', label: '事件发生', color: '#22c55e', fromSide: 'left', toSide: 'left', type: 'curve-x', options: { offset: -60 } },
+                { from: 'state-running', to: 'state-terminated', label: '进程结束', color: '#ef4444', fromSide: 'right', toSide: 'left', type: 'curve-x', options: { offset: 60 } },
+                { from: 'state-ready', to: 'state-suspended-ready', label: '挂起', color: '#60a5fa', fromSide: 'bottom', toSide: 'top' },
+                { from: 'state-suspended-ready', to: 'state-ready', label: '激活', color: '#16a34a', fromSide: 'right', toSide: 'right', type: 'curve-x', options: { offset: 60 } },
+                { from: 'state-blocked', to: 'state-suspended-blocked', label: '挂起', color: '#f97316', fromSide: 'bottom', toSide: 'top' },
+                { from: 'state-suspended-blocked', to: 'state-blocked', label: '激活', color: '#f59e0b', fromSide: 'right', toSide: 'right', type: 'curve-x', options: { offset: 60 } },
+                { from: 'state-suspended-blocked', to: 'state-suspended-ready', label: '事件发生', color: '#16a34a', fromSide: 'top', toSide: 'bottom' },
+            ];
+            
+            const connections = isMobile ? mobileConnections : desktopConnections;
+
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+            marker.setAttribute('id', 'arrowhead');
+            marker.setAttribute('viewBox', '0 -5 10 10');
+            marker.setAttribute('refX', '8');
+            marker.setAttribute('refY', '0');
+            marker.setAttribute('markerWidth', '6');
+            marker.setAttribute('markerHeight', '6');
+            marker.setAttribute('orient', 'auto');
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', 'M0,-5L10,0L0,5');
+            marker.appendChild(path);
+            defs.appendChild(marker);
+            svg.appendChild(defs);
+
+            connections.forEach(conn => {
+                const fromEl = document.getElementById(conn.from);
+                const toEl = document.getElementById(conn.to);
+                if (!fromEl || !toEl) return;
+
+                const fromCoords = getElCoords(fromEl);
+                const toCoords = getElCoords(toEl);
+
+                const getAttachPoint = (coords, side) => {
+                    switch (side) {
+                        case 'top': return { x: coords.x + coords.width / 2, y: coords.y };
+                        case 'bottom': return { x: coords.x + coords.width / 2, y: coords.y + coords.height };
+                        case 'left': return { x: coords.x, y: coords.y + coords.height / 2 };
+                        case 'right': return { x: coords.x + coords.width, y: coords.y + coords.height / 2 };
+                    }
+                };
+
+                const p1 = getAttachPoint(fromCoords, conn.fromSide);
+                const p2 = getAttachPoint(toCoords, conn.toSide);
+
+                let pathD;
+                let labelPos;
+                const offset = conn.options?.offset || 0;
+
+                if (conn.type === 'curve-y') { // Vertical curve (for desktop)
+                    const ctrl1 = { x: p1.x, y: p1.y + offset };
+                    const ctrl2 = { x: p2.x, y: p2.y - offset };
+                    pathD = `M ${p1.x} ${p1.y} C ${ctrl1.x} ${ctrl1.y}, ${ctrl2.x} ${ctrl2.y}, ${p2.x} ${p2.y}`;
+                    labelPos = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 + offset/1.5 };
+                } else if (conn.type === 'curve-x') { // Horizontal curve (for mobile)
+                    const ctrl1 = { x: p1.x + offset, y: p1.y };
+                    const ctrl2 = { x: p2.x + offset, y: p2.y };
+                    pathD = `M ${p1.x} ${p1.y} C ${ctrl1.x} ${ctrl1.y}, ${ctrl2.x} ${ctrl2.y}, ${p2.x} ${p2.y}`;
+                    labelPos = { x: (p1.x + p2.x) / 2 + offset, y: (p1.y + p2.y) / 2 };
+                }
+                else { // Straight line
+                    pathD = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
+                    labelPos = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+                }
+                
+                const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                pathEl.setAttribute('d', pathD);
+                pathEl.setAttribute('stroke', conn.color);
+                pathEl.setAttribute('stroke-width', '2');
+                pathEl.setAttribute('fill', 'none');
+                pathEl.setAttribute('marker-end', 'url(#arrowhead)');
+                marker.firstElementChild.setAttribute('fill', conn.color);
+                svg.appendChild(pathEl);
+
+                const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                label.setAttribute('x', labelPos.x);
+                label.setAttribute('y', labelPos.y);
+                label.setAttribute('text-anchor', 'middle');
+                label.setAttribute('dy', conn.type ? 0 : -8); // Adjust label offset
+                label.setAttribute('class', 'line-label');
+                label.textContent = conn.label;
+                svg.appendChild(label);
+            });
+        }
+
+        window.addEventListener('load', () => requestAnimationFrame(drawArrows));
+        window.addEventListener('resize', () => setTimeout(() => requestAnimationFrame(drawArrows), 100));
+    </script>
+</body>
+</html>

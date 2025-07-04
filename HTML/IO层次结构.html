@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>I/O 软件层次结构示意图</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+        }
+        .layer-box {
+            border: 2px solid;
+            border-radius: 8px;
+            text-align: center;
+            padding: 1.5rem;
+            width: 320px; /* 统一宽度 */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .arrow-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0.75rem 0;
+            color: #4a5568; /* gray-700 */
+        }
+        .arrow-label {
+            font-size: 0.875rem; /* text-sm */
+            color: #4a5568; /* gray-700 */
+            background-color: #f7fafc; /* gray-100 */
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        .arrow-line {
+            font-size: 1.5rem; /* text-2xl */
+            line-height: 1;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-lg bg-white rounded-xl shadow-2xl p-8">
+        <h1 class="text-2xl font-bold text-center text-gray-800 mb-8">I/O 软件层次结构</h1>
+        
+        <div class="flex flex-col items-center">
+
+            <!-- 1. 用户进程 -->
+            <div class="layer-box bg-blue-100 border-blue-400">
+                <p class="text-lg font-semibold text-blue-800">用户进程 (应用程序)</p>
+            </div>
+
+            <div class="arrow-container">
+                <div class="arrow-line">↓</div>
+            </div>
+
+            <!-- 2. 设备独立性软件 -->
+            <div class="layer-box bg-indigo-100 border-indigo-400">
+                <p class="text-lg font-semibold text-indigo-800">设备独立性软件</p>
+            </div>
+            
+            <div class="arrow-container">
+                <div class="arrow-label">(统一的驱动接口)</div>
+                <div class="arrow-line">↓</div>
+            </div>
+
+            <!-- 3. 设备驱动程序 -->
+            <div class="layer-box bg-green-100 border-green-500 relative">
+                <p class="text-lg font-semibold text-green-800">设备驱动程序 (本层)</p>
+                <div class="absolute -right-8 top-1/2 -translate-y-1/2 transform rotate-90 origin-center">
+                    <span class="text-sm bg-yellow-200 text-yellow-800 px-2 py-1 rounded shadow-lg whitespace-nowrap">← 驱动程序在这里工作</span>
+                </div>
+            </div>
+
+            <div class="arrow-container">
+                <div class="arrow-label">(硬件指令)</div>
+                <div class="arrow-line">↓</div>
+            </div>
+
+            <!-- 4. 中断处理程序 -->
+            <div class="layer-box bg-purple-100 border-purple-400">
+                <p class="text-lg font-semibold text-purple-800">中断处理程序</p>
+            </div>
+
+            <div class="arrow-container">
+                 <div class="arrow-line">↓</div>
+            </div>
+
+            <!-- 5. 硬件 -->
+            <div class="layer-box bg-gray-200 border-gray-500">
+                <p class="text-lg font-semibold text-gray-800">硬件设备</p>
+            </div>
+
+        </div>
+    </div>
+
+</body>
+</html>
