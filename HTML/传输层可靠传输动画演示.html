@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式学习：可靠传输的工作原理</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Chosen Palette: Slate & Blue */
+        /* Application Structure Plan: A tab-based SPA to compare two protocols. Each tab features an interactive simulation area, control buttons for scenarios (normal, packet loss, ACK loss), and a real-time log panel. This structure allows users to actively engage with and directly compare the protocols' behaviors, which is more effective for learning than static text. A separate interactive calculator for channel utilization makes the theoretical formula tangible. */
+        /* Visualization & Content Choices: 
+           - Protocol Simulation: HTML divs animated with CSS/JS to represent packets and ACKs. This provides a clear, dynamic visualization of the protocols. Goal: Demonstrate process. Method: HTML/CSS/JS.
+           - Scenario Controls: Buttons to trigger different predefined scenarios, allowing users to see how protocols handle errors. Goal: Compare & Explore. Method: HTML buttons + JS event listeners.
+           - Real-time Log: A text area that updates step-by-step, explaining the animation. Goal: Inform & Clarify. Method: JS DOM manipulation.
+           - Channel Utilization: Interactive sliders and a Chart.js bar chart to visualize the formula's output. Goal: Relate theory to practice. Method: HTML sliders + Chart.js.
+           - All interactions are handled with vanilla JavaScript, adhering to the NO SVG/Mermaid constraint. */
+        /* CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. */
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+        }
+        .packet {
+            transition: all 2s ease-in-out;
+            position: absolute;
+            top: 0;
+            left: 20%;
+            width: 60%;
+            opacity: 1;
+        }
+        .packet.ack {
+            left: 80%;
+        }
+        .packet-move-to-receiver {
+            transform: translateX(250%);
+        }
+        .packet-move-to-sender {
+            transform: translateX(-250%);
+        }
+        .packet-lost {
+            transform: translateX(125%) scale(0.5);
+            opacity: 0;
+        }
+        .tab-button.active {
+            border-color: #2563eb;
+            color: #2563eb;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div class="container mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">可靠传输的工作原理</h1>
+            <p class="mt-2 text-lg text-slate-600">一个交互式学习体验</p>
+        </header>
+
+        <div class="mb-6 border-b border-slate-200">
+            <nav class="-mb-px flex space-x-6" aria-label="Tabs">
+                <button id="tab-stop-wait" class="tab-button active whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                    5.4.1 停止等待协议
+                </button>
+                <button id="tab-arq" class="tab-button whitespace-nowrap py-4 px-1 border-b-2 border-transparent font-medium text-sm text-slate-500 hover:text-slate-700 hover:border-slate-300">
+                    5.4.2 连续ARQ协议
+                </button>
+            </nav>
+        </div>
+
+        <main id="app-content">
+            <!-- 停止等待协议视图 -->
+            <div id="view-stop-wait">
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="lg:col-span-2">
+                        <div class="bg-white rounded-xl shadow-md p-6">
+                            <h2 class="text-xl font-semibold mb-4 text-slate-900">动画模拟</h2>
+                            <div class="relative bg-slate-100 rounded-lg h-64 p-4 overflow-hidden">
+                                <div class="flex justify-between h-full">
+                                    <div class="w-1/4 text-center">
+                                        <h3 class="font-bold">发送方 A</h3>
+                                        <div id="sender-a-sw" class="mt-2 text-sm"></div>
+                                    </div>
+                                    <div id="timeline-sw" class="w-1/2 relative h-full"></div>
+                                    <div class="w-1/4 text-center">
+                                        <h3 class="font-bold">接收方 B</h3>
+                                        <div id="receiver-b-sw" class="mt-2 text-sm"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-4 text-center">
+                                <p class="text-sm text-slate-600 mb-2">选择一个场景来观察协议如何工作：</p>
+                                <div class="flex flex-wrap justify-center gap-2">
+                                    <button onclick="runStopWait('normal')" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors">正常情况</button>
+                                    <button onclick="runStopWait('packet-loss')" class="bg-amber-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-amber-600 transition-colors">分组丢失</button>
+                                    <button onclick="runStopWait('ack-loss')" class="bg-rose-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-rose-600 transition-colors">确认丢失</button>
+                                    <button onclick="runStopWait('packet-late')" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-indigo-600 transition-colors">确认迟到</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lg:col-span-1">
+                         <div class="bg-white rounded-xl shadow-md p-6">
+                            <h3 class="text-lg font-semibold mb-2 text-slate-900">工作日志</h3>
+                            <div id="log-sw" class="h-64 bg-slate-800 text-slate-200 rounded-lg p-3 font-mono text-xs overflow-y-auto">
+                                请点击场景按钮开始模拟...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-8 bg-white rounded-xl shadow-md p-6">
+                     <h2 class="text-xl font-semibold mb-4 text-slate-900">核心概念与信道利用率</h2>
+                     <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div>
+                           <h3 class="font-semibold text-slate-900">协议特点</h3>
+                           <p class="mt-2 text-slate-600">“停止等待”即每发送完一个分组就停止，等待对方的确认后，再发送下一个。这是最简单的可靠传输协议，但其效率较低。</p>
+                           <ul class="mt-4 list-disc list-inside space-y-2 text-slate-600">
+                                <li><b>超时重传：</b>发送方发送分组后启动计时器，若超时未收到确认，则重传分组。</li>
+                                <li><b>分组编号：</b>对分组进行编号，以区分重复的分组。</li>
+                                <li><b>确认机制：</b>接收方通过发送确认(ACK)来告知发送方已成功收到分组。</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-slate-900">信道利用率 (U) 计算器</h3>
+                            <p class="mt-2 text-sm text-slate-600">拖动滑块，观察往返时间(RTT)对信道利用率的巨大影响。</p>
+                            <div class="mt-4 space-y-3">
+                                <div>
+                                    <label for="sw-rtt" class="text-sm font-medium">往返时间 RTT (ms): <span id="sw-rtt-value">200</span></label>
+                                    <input id="sw-rtt" type="range" min="10" max="1000" value="200" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                                </div>
+                                <div>
+                                    <label for="sw-td" class="text-sm font-medium">分组发送时间 Td (ms): <span id="sw-td-value">20</span></label>
+                                    <input id="sw-td" type="range" min="1" max="100" value="20" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                                </div>
+                                <div class="text-center bg-slate-100 p-4 rounded-lg">
+                                    <p class="text-sm text-slate-600">信道利用率</p>
+                                    <p id="sw-util-result" class="text-3xl font-bold text-blue-600">0.00%</p>
+                                </div>
+                            </div>
+                        </div>
+                     </div>
+                </div>
+            </div>
+
+            <!-- 连续ARQ协议视图 -->
+            <div id="view-arq" class="hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="lg:col-span-2">
+                        <div class="bg-white rounded-xl shadow-md p-6">
+                            <h2 class="text-xl font-semibold mb-4 text-slate-900">动画模拟：流水线传输</h2>
+                            <div class="relative bg-slate-100 rounded-lg h-80 p-4 overflow-hidden">
+                                <div class="flex justify-between h-full">
+                                    <div class="w-1/4 text-center">
+                                        <h3 class="font-bold">发送方 A</h3>
+                                        <div class="mt-2 text-sm">发送窗口: <span id="arq-window-size">5</span></div>
+                                        <div id="sender-a-arq" class="mt-2 text-sm"></div>
+                                    </div>
+                                    <div id="timeline-arq" class="w-1/2 relative h-full"></div>
+                                    <div class="w-1/4 text-center">
+                                        <h3 class="font-bold">接收方 B</h3>
+                                        <div id="receiver-b-arq" class="mt-2 text-sm"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-4 text-center">
+                                <p class="text-sm text-slate-600 mb-2">选择一个场景来观察协议如何工作：</p>
+                                <div class="flex flex-wrap justify-center gap-2">
+                                    <button onclick="runArq('normal')" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors">正常情况</button>
+                                    <button onclick="runArq('go-back-n')" class="bg-rose-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-rose-600 transition-colors">分组丢失 (Go-Back-N)</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lg:col-span-1">
+                         <div class="bg-white rounded-xl shadow-md p-6">
+                            <h3 class="text-lg font-semibold mb-2 text-slate-900">工作日志</h3>
+                            <div id="log-arq" class="h-[368px] bg-slate-800 text-slate-200 rounded-lg p-3 font-mono text-xs overflow-y-auto">
+                                请点击场景按钮开始模拟...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-8 bg-white rounded-xl shadow-md p-6">
+                     <h2 class="text-xl font-semibold mb-4 text-slate-900">核心概念</h2>
+                     <p class="text-slate-600">连续ARQ协议利用**滑动窗口**实现了**流水线传输**，允许发送方连续发送多个分组而无需等待确认，极大地提高了信道利用率。</p>
+                     <ul class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                        <li class="list-item">
+                            <h3 class="font-semibold text-slate-900">发送窗口 (Sending Window)</h3>
+                            <p class="text-slate-600">定义了允许连续发送的分组序号范围。窗口会随着收到确认而向前滑动。</p>
+                        </li>
+                        <li class="list-item">
+                            <h3 class="font-semibold text-slate-900">累积确认 (Cumulative ACK)</h3>
+                            <p class="text-slate-600">接收方只需对按序到达的最后一个分组发送确认，表示在此之前的所有分组都已收到。优点是高效，缺点是无法反馈乱序到达的分组信息。</p>
+                        </li>
+                        <li class="list-item">
+                            <h3 class="font-semibold text-slate-900">回退N (Go-Back-N)</h3>
+                            <p class="text-slate-600">当发送方发现某个分组丢失时（通常是超时），它会重传那个丢失的分组以及其后所有已发送的分组。</p>
+                        </li>
+                         <li class="list-item">
+                            <h3 class="font-semibold text-slate-900">优缺点</h3>
+                            <p class="text-slate-600">极大提高了效率，但当网络质量差、丢包率高时，Go-Back-N会造成大量不必要的重传，浪费网络资源。</p>
+                        </li>
+                     </ul>
+                </div>
+            </div>
+        </main>
+
+    </div>
+
+    <script>
+        const tabStopWait = document.getElementById('tab-stop-wait');
+        const tabArq = document.getElementById('tab-arq');
+        const viewStopWait = document.getElementById('view-stop-wait');
+        const viewArq = document.getElementById('view-arq');
+
+        let isSimulating = false;
+
+        function switchTab(activeTab) {
+            if(isSimulating) return;
+            const tabs = [tabStopWait, tabArq];
+            const views = [viewStopWait, viewArq];
+
+            tabs.forEach(tab => {
+                tab.classList.remove('active');
+                tab.classList.add('border-transparent', 'text-slate-500', 'hover:text-slate-700', 'hover:border-slate-300');
+            });
+
+            views.forEach(view => view.classList.add('hidden'));
+
+            if (activeTab === 'stop-wait') {
+                tabStopWait.classList.add('active');
+                tabStopWait.classList.remove('border-transparent', 'text-slate-500', 'hover:text-slate-700', 'hover:border-slate-300');
+                viewStopWait.classList.remove('hidden');
+            } else {
+                tabArq.classList.add('active');
+                tabArq.classList.remove('border-transparent', 'text-slate-500', 'hover:text-slate-700', 'hover:border-slate-300');
+                viewArq.classList.remove('hidden');
+            }
+        }
+
+        tabStopWait.addEventListener('click', () => switchTab('stop-wait'));
+        tabArq.addEventListener('click', () => switchTab('arq'));
+
+        // --- 停止等待协议模拟 ---
+        const timelineSw = document.getElementById('timeline-sw');
+        const logSw = document.getElementById('log-sw');
+        const senderASw = document.getElementById('sender-a-sw');
+        const receiverBSw = document.getElementById('receiver-b-sw');
+
+        function logMessage(logElement, message, highlight = false) {
+            const entry = document.createElement('div');
+            entry.textContent = `> ${message}`;
+            if (highlight) {
+                entry.className = 'text-yellow-300';
+            }
+            logElement.appendChild(entry);
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function createPacket(timeline, text, isAck = false, topOffset = '20%') {
+            const packet = document.createElement('div');
+            packet.textContent = text;
+            packet.className = `packet p-2 rounded-md shadow-lg text-center font-semibold text-sm ${isAck ? 'bg-emerald-200 text-emerald-800 ack' : 'bg-sky-200 text-sky-800'}`;
+            packet.style.top = topOffset;
+            timeline.appendChild(packet);
+            return packet;
+        }
+
+        async function runStopWait(scenario) {
+            if (isSimulating) return;
+            isSimulating = true;
+            timelineSw.innerHTML = '';
+            logSw.innerHTML = '';
+            senderASw.innerHTML = '';
+            receiverBSw.innerHTML = '';
+
+            const delay = (ms) => new Promise(res => setTimeout(res, ms));
+            
+            logMessage(logSw, 'A 发送分组 M1...');
+            senderASw.innerHTML = '发送M1, 等待确认... ⏳';
+            const m1 = createPacket(timelineSw, 'M1', false);
+            await delay(200);
+            m1.classList.add('packet-move-to-receiver');
+
+            let ackForM1;
+            let m1_retransmitted;
+
+            switch (scenario) {
+                case 'normal':
+                    await delay(2200);
+                    logMessage(logSw, 'B 收到 M1, 发送确认 ACK1');
+                    receiverBSw.innerHTML = '收到M1';
+                    ackForM1 = createPacket(timelineSw, 'ACK1', true);
+                    await delay(200);
+                    ackForM1.classList.add('packet-move-to-sender');
+                    await delay(2200);
+                    logMessage(logSw, 'A 收到 ACK1, 准备发送 M2');
+                    senderASw.innerHTML = '收到ACK1 ✔️';
+                    break;
+                
+                case 'packet-loss':
+                    m1.classList.remove('packet-move-to-receiver');
+                    m1.classList.add('packet-lost');
+                    logMessage(logSw, 'M1 在网络中丢失! ❌', true);
+                    await delay(2200);
+                    logMessage(logSw, 'A 等待超时...', true);
+                    senderASw.innerHTML = '等待超时... ⏳';
+                    await delay(2500);
+                    logMessage(logSw, 'A 超时! 重传 M1...');
+                    senderASw.innerHTML = '超时! 重传M1...';
+                    m1_retransmitted = createPacket(timelineSw, 'M1 (重传)', false, '50%');
+                    await delay(200);
+                    m1_retransmitted.classList.add('packet-move-to-receiver');
+                    await delay(2200);
+                    logMessage(logSw, 'B 收到重传的 M1, 发送确认 ACK1');
+                    receiverBSw.innerHTML = '收到M1';
+                    ackForM1 = createPacket(timelineSw, 'ACK1', true, '50%');
+                    await delay(200);
+                    ackForM1.classList.add('packet-move-to-sender');
+                    await delay(2200);
+                    logMessage(logSw, 'A 收到 ACK1');
+                    senderASw.innerHTML = '收到ACK1 ✔️';
+                    break;
+
+                case 'ack-loss':
+                    await delay(2200);
+                    logMessage(logSw, 'B 收到 M1, 发送确认 ACK1');
+                    receiverBSw.innerHTML = '收到M1';
+                    ackForM1 = createPacket(timelineSw, 'ACK1', true);
+                    await delay(200);
+                    ackForM1.classList.add('packet-lost');
+                    logMessage(logSw, 'ACK1 在网络中丢失! ❌', true);
+                    await delay(2000);
+                    logMessage(logSw, 'A 等待超时...', true);
+                    senderASw.innerHTML = '等待超时... ⏳';
+                    await delay(2500);
+                    logMessage(logSw, 'A 超时! 重传 M1...');
+                    senderASw.innerHTML = '超时! 重传M1...';
+                    m1_retransmitted = createPacket(timelineSw, 'M1 (重传)', false, '50%');
+                    await delay(200);
+                    m1_retransmitted.classList.add('packet-move-to-receiver');
+                    await delay(2200);
+                    logMessage(logSw, 'B 收到重复的M1, 丢弃并重传 ACK1');
+                    receiverBSw.innerHTML = '收到重复M1';
+                    const ack_retransmitted = createPacket(timelineSw, 'ACK1', true, '50%');
+                    await delay(200);
+                    ack_retransmitted.classList.add('packet-move-to-sender');
+                    await delay(2200);
+                    logMessage(logSw, 'A 收到 ACK1');
+                    senderASw.innerHTML = '收到ACK1 ✔️';
+                    break;
+
+                case 'packet-late':
+                    await delay(2200);
+                    logMessage(logSw, 'B 收到 M1, 发送确认 ACK1');
+                    receiverBSw.innerHTML = '收到M1';
+                    ackForM1 = createPacket(timelineSw, 'ACK1', true);
+                    ackForM1.style.transition = 'all 5s ease-in-out';
+                    await delay(200);
+                    ackForM1.classList.add('packet-move-to-sender');
+                    logMessage(logSw, 'ACK1 确认迟到...', true);
+                    await delay(2500);
+                    logMessage(logSw, 'A 等待超时...', true);
+                    senderASw.innerHTML = '等待超时... ⏳';
+                    await delay(2000);
+                    logMessage(logSw, 'A 超时! 重传 M1...');
+                    senderASw.innerHTML = '超时! 重传M1...';
+                    m1_retransmitted = createPacket(timelineSw, 'M1 (重传)', false, '50%');
+                    await delay(200);
+                    m1_retransmitted.classList.add('packet-move-to-receiver');
+                    await delay(2200);
+                    logMessage(logSw, 'B 收到重复的M1, 丢弃并重传 ACK1');
+                    receiverBSw.innerHTML = '收到重复M1';
+                    const ack_retransmitted2 = createPacket(timelineSw, 'ACK1', true, '50%');
+                    await delay(200);
+                    ack_retransmitted2.classList.add('packet-move-to-sender');
+                    await delay(1000);
+                    logMessage(logSw, 'A 收到迟到的 ACK1, 丢弃');
+                    await delay(1200);
+                    logMessage(logSw, 'A 收到重传的 ACK1');
+                    senderASw.innerHTML = '收到ACK1 ✔️';
+                    break;
+            }
+
+            logMessage(logSw, '模拟结束。');
+            isSimulating = false;
+        }
+        
+        // 信道利用率计算器
+        const swRttSlider = document.getElementById('sw-rtt');
+        const swTdSlider = document.getElementById('sw-td');
+        const swRttValue = document.getElementById('sw-rtt-value');
+        const swTdValue = document.getElementById('sw-td-value');
+        const swUtilResult = document.getElementById('sw-util-result');
+
+        function updateSwUtilization() {
+            const rtt = parseFloat(swRttSlider.value);
+            const td = parseFloat(swTdSlider.value);
+            swRttValue.textContent = rtt;
+            swTdValue.textContent = td;
+            const utilization = (td / (td + rtt)) * 100;
+            swUtilResult.textContent = `${utilization.toFixed(2)}%`;
+        }
+        swRttSlider.addEventListener('input', updateSwUtilization);
+        swTdSlider.addEventListener('input', updateSwUtilization);
+        updateSwUtilization();
+
+
+        // --- 连续ARQ协议模拟 ---
+        const timelineArq = document.getElementById('timeline-arq');
+        const logArq = document.getElementById('log-arq');
+        const senderAArq = document.getElementById('sender-a-arq');
+        const receiverBArq = document.getElementById('receiver-b-arq');
+        
+        async function runArq(scenario) {
+            if (isSimulating) return;
+            isSimulating = true;
+            timelineArq.innerHTML = '';
+            logArq.innerHTML = '';
+            senderAArq.innerHTML = '准备发送...';
+            receiverBArq.innerHTML = '等待分组...';
+
+            const delay = (ms) => new Promise(res => setTimeout(res, ms));
+            const windowSize = 5;
+            let packetsSent = 0;
+            let lastAcked = 0;
+
+            logMessage(logArq, `发送方使用 ${windowSize} 的窗口大小进行流水线传输`);
+            senderAArq.innerHTML = `已发送 ${packetsSent}, 已确认 ${lastAcked}`;
+            
+            for (let i = 1; i <= windowSize; i++) {
+                logMessage(logArq, `A 发送分组 M${i}`);
+                const packet = createPacket(timelineArq, `M${i}`, false, `${10 + (i-1)*18}%`);
+                
+                if (scenario === 'go-back-n' && i === 3) {
+                    await delay(200);
+                    packet.classList.add('packet-lost');
+                    logMessage(logArq, 'M3 在网络中丢失! ❌', true);
+                } else {
+                    await delay(200);
+                    packet.classList.add('packet-move-to-receiver');
+                }
+                packetsSent = i;
+                senderAArq.innerHTML = `已发送 ${packetsSent}, 已确认 ${lastAcked}`;
+                await delay(400);
+            }
+            
+            if (scenario === 'normal') {
+                await delay(2500);
+                logMessage(logArq, `B 收到 M1-M5, 发送累积确认 ACK5`);
+                receiverBArq.innerHTML = '收到 M1-M5';
+                const ack = createPacket(timelineArq, 'ACK5', true);
+                await delay(200);
+                ack.classList.add('packet-move-to-sender');
+                await delay(2200);
+                lastAcked = 5;
+                logMessage(logArq, `A 收到 ACK5, 窗口向前滑动`);
+                senderAArq.innerHTML = `已发送 ${packetsSent}, 已确认 ${lastAcked} ✔️`;
+            } else if (scenario === 'go-back-n') {
+                await delay(2500);
+                logMessage(logArq, `B 只收到 M1, M2, M4, M5 (乱序)`);
+                logMessage(logArq, `B 只能对按序到达的 M2 发送累积确认`);
+                receiverBArq.innerHTML = '收到 M1, M2...';
+                const ack2 = createPacket(timelineArq, 'ACK2', true);
+                await delay(200);
+                ack2.classList.add('packet-move-to-sender');
+                await delay(2200);
+                lastAcked = 2;
+                logMessage(logArq, 'A 收到 ACK2');
+                senderAArq.innerHTML = `已发送 ${packetsSent}, 已确认 ${lastAcked}`;
+                await delay(1000);
+                logMessage(logArq, `A 的 M3 计时器超时...`, true);
+                logMessage(logArq, `触发 Go-Back-N (回退N) 机制`);
+                logMessage(logArq, `A 重传 M3, M4, M5...`);
+                senderAArq.innerHTML = `超时! 重传 M3-M5...`;
+
+                for (let i = 3; i <= windowSize; i++) {
+                    const packet = createPacket(timelineArq, `M${i} (重传)`, false, `${10 + (i-1)*18}%`);
+                    packet.style.backgroundColor = '#fca5a5';
+                    await delay(200);
+                    packet.classList.add('packet-move-to-receiver');
+                    await delay(400);
+                }
+
+                await delay(2500);
+                logMessage(logArq, `B 收到重传的 M3, M4, M5`);
+                receiverBArq.innerHTML = '收到所有分组';
+                logMessage(logArq, `B 发送累积确认 ACK5`);
+                const finalAck = createPacket(timelineArq, 'ACK5', true, '50%');
+                await delay(200);
+                finalAck.classList.add('packet-move-to-sender');
+                await delay(2200);
+                lastAcked = 5;
+                logMessage(logArq, `A 收到 ACK5, 完成传输`);
+                senderAArq.innerHTML = `已发送 ${packetsSent}, 已确认 ${lastAcked} ✔️`;
+            }
+
+            logMessage(logArq, '模拟结束。');
+            isSimulating = false;
+        }
+
+    </script>
+</body>
+</html>

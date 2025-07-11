@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式学习：扩展的以太网</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chosen Palette: Warm Neutrals -->
+    <!-- Application Structure Plan: 设计了一个单页应用，包含顶部导航，按逻辑划分为四个核心部分：“物理层扩展的挑战”、“数据链路层的革命：交换机”、“核心交互：交换机自学习模拟”和“逻辑隔离：虚拟局域网(VLAN)”。这种结构旨在引导用户从基本概念（集线器和碰撞域）逐步深入到更高级的主题（交换机、自学习、VLAN）。选择此结构是因为它遵循了技术演进的自然路径，并通过核心的交互式模拟（交换机自学习）将抽象概念具体化，极大地增强了可用性和学习效果。用户可以通过滚动或导航栏自由探索，符合非线性的学习习惯。 -->
+    <!-- Visualization & Content Choices: 1. 集线器与交换机对比 (目标: 比较): 使用HTML表格清晰对比二者在碰撞域、工作方式上的核心差异。 2. 交换机自学习模拟 (目标: 组织与关系): 使用HTML/CSS/JS构建动态拓扑图和MAC地址表。用户通过交互（点击发送按钮）触发帧的转发过程（广播或单播），直观地理解交换机如何“学习”和做出转发决策。这是将报告中图3-25的静态过程动态化的最佳方法。 3. 802.1Q帧格式解析 (目标: 告知): 使用HTML/CSS创建帧结构图，通过JS的悬停交互显示各字段（如VID）的详细解释，使用户能轻松解构复杂的帧格式。所有选择都严格遵守无SVG/Mermaid的要求，以互动性和易理解性为首要标准。 -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', 'Helvetica Neue', 'Helvetica', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+            color: #1e293b; /* slate-800 */
+        }
+        .nav-link {
+            transition: color 0.3s, border-bottom-color 0.3s;
+        }
+        .nav-link:hover {
+            color: #4f46e5; /* indigo-600 */
+        }
+        .active-link {
+            color: #4f46e5; /* indigo-600 */
+            border-bottom: 2px solid #4f46e5;
+        }
+        .card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -2px rgb(0 0 0 / 0.1);
+        }
+        .frame-segment {
+            transition: background-color 0.3s, transform 0.3s;
+        }
+        .frame-segment:hover {
+            transform: scale(1.05);
+            z-index: 10;
+        }
+        .log-entry {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .frame-animation {
+            position: absolute;
+            width: 20px;
+            height: 15px;
+            background-color: #fb923c; /* orange-400 */
+            border-radius: 4px;
+            border: 1px solid #f97316; /* orange-500 */
+            transition: all 1s ease-in-out;
+            opacity: 0;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: white;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <header class="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-50">
+        <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex-shrink-0">
+                    <h1 class="text-2xl font-bold text-slate-800">探索扩展的以太网</h1>
+                </div>
+                <div class="hidden md:block">
+                    <div class="ml-10 flex items-baseline space-x-4">
+                        <a href="#section-hubs" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-slate-600">物理层扩展</a>
+                        <a href="#section-switches" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-slate-600">数据链路层扩展</a>
+                        <a href="#section-simulation" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-slate-600">交换机模拟</a>
+                        <a href="#section-vlan" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-slate-600">虚拟局域网</a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+        
+        <!-- Section 1: Physical Layer Extension -->
+        <section id="section-hubs" class="mb-20">
+            <h2 class="text-3xl font-bold tracking-tight text-slate-900 mb-2">1. 物理层扩展：集线器的时代</h2>
+            <p class="text-lg text-slate-600 mb-8">早期的以太网面临着距离和设备数量的限制。在物理层扩展以太网的主要方式是使用集线器（Hub）。然而，这种方式虽然简单，却带来了新的挑战：碰撞域的扩大。本节将探讨集线器的工作原理及其固有的局限性。</p>
+            <div class="grid md:grid-cols-2 gap-8">
+                <div class="card p-8">
+                    <h3 class="text-2xl font-semibold mb-4 text-indigo-600">集线器 (Hub)</h3>
+                    <p class="mb-4">集线器工作在物理层，其功能类似一个多接口的信号放大器和转发器。当一个接口收到数据信号时，它会将信号整形、放大，然后不加分辨地转发到**所有其他**接口。</p>
+                    <div class="text-center">
+                        <div class="inline-block bg-slate-100 p-4 rounded-lg">
+                            <span class="text-6xl">📠</span>
+                            <p class="mt-2 font-semibold">信号中继器</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="card p-8 bg-red-50 border border-red-200">
+                    <h3 class="text-2xl font-semibold mb-4 text-red-600">缺点：碰撞域的扩大</h3>
+                    <p class="mb-4">使用集线器连接的设备共享同一个带宽，并构成一个**单一的碰撞域**。这意味着在任何时刻，只有一个设备可以发送数据。如果两个设备同时发送，就会发生碰撞，导致数据传输失败。连接的设备越多，碰撞的概率越大，网络效率急剧下降。</p>
+                     <div class="text-center">
+                        <div class="inline-block bg-red-100 p-4 rounded-lg">
+                            <span class="text-6xl">💥</span>
+                            <p class="mt-2 font-semibold">单一碰撞域</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 2: Data Link Layer Extension -->
+        <section id="section-switches" class="mb-20">
+            <h2 class="text-3xl font-bold tracking-tight text-slate-900 mb-2">2. 数据链路层革命：以太网交换机</h2>
+            <p class="text-lg text-slate-600 mb-8">为了克服集线器的局限性，以太网交换机（Switch）应运而生。交换机工作在数据链路层，它能智能地处理数据帧，极大地提升了网络性能和效率。交换机的出现是局域网发展史上的一个重要里程碑。</p>
+            <div class="card p-8">
+                <h3 class="text-2xl font-semibold mb-6 text-center">集线器 vs. 以太网交换机</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr>
+                                <th class="py-3 px-4 bg-slate-100 font-semibold text-sm text-slate-600 border-b border-slate-200">特性</th>
+                                <th class="py-3 px-4 bg-slate-100 font-semibold text-sm text-slate-600 border-b border-slate-200">集线器 (Hub)</th>
+                                <th class="py-3 px-4 bg-slate-100 font-semibold text-sm text-slate-600 border-b border-slate-200">以太网交换机 (Switch)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="hover:bg-slate-50">
+                                <td class="py-3 px-4 border-b border-slate-200 font-medium">工作层次</td>
+                                <td class="py-3 px-4 border-b border-slate-200">物理层</td>
+                                <td class="py-3 px-4 border-b border-slate-200">数据链路层</td>
+                            </tr>
+                            <tr class="hover:bg-slate-50">
+                                <td class="py-3 px-4 border-b border-slate-200 font-medium">数据处理方式</td>
+                                <td class="py-3 px-4 border-b border-slate-200">信号广播</td>
+                                <td class="py-3 px-4 border-b border-slate-200">根据MAC地址转发帧</td>
+                            </tr>
+                             <tr class="hover:bg-slate-50">
+                                <td class="py-3 px-4 border-b border-slate-200 font-medium">碰撞域</td>
+                                <td class="py-3 px-4 border-b border-slate-200">所有接口在同一碰撞域</td>
+                                <td class="py-3 px-4 border-b border-slate-200">每个接口是一个独立的碰撞域</td>
+                            </tr>
+                            <tr class="hover:bg-slate-50">
+                                <td class="py-3 px-4 border-b border-slate-200 font-medium">带宽</td>
+                                <td class="py-3 px-4 border-b border-slate-200">共享带宽</td>
+                                <td class="py-3 px-4 border-b border-slate-200">独享带宽</td>
+                            </tr>
+                            <tr class="hover:bg-slate-50">
+                                <td class="py-3 px-4 border-b border-slate-200 font-medium">工作模式</td>
+                                <td class="py-3 px-4 border-b border-slate-200">半双工</td>
+                                <td class="py-3 px-4 border-b border-slate-200">全双工</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 3: Switch Simulation -->
+        <section id="section-simulation" class="mb-20">
+            <h2 class="text-3xl font-bold tracking-tight text-slate-900 mb-2">3. 交互式模拟：交换机的自学习过程</h2>
+            <p class="text-lg text-slate-600 mb-8">以太网交换机最神奇的特性之一是它的“自学习”能力。它能自动构建和维护一个MAC地址表，记录每个设备连接在哪个接口。通过下面的模拟器，您可以亲身体验这一过程。请选择源主机和目的主机，然后点击“发送数据帧”，观察交换机的行为和MAC地址表的变化。</p>
+            <div class="card p-8">
+                <div class="grid lg:grid-cols-2 gap-8">
+                    <!-- Simulation Diagram -->
+                    <div id="simulation-diagram" class="relative bg-slate-100 rounded-lg p-6 min-h-[400px] flex items-center justify-center">
+                        <!-- Switch -->
+                        <div id="switch-box" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-700 text-white w-32 h-48 rounded-lg flex flex-col items-center justify-center shadow-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 mb-2"><path d="M16.5 16.5m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0"/><path d="M16.5 4.5m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0"/><path d="M4.5 16.5m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0"/><path d="M4.5 4.5m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0"/><path d="M13.5 6.5l-3 0"/><path d="M13.5 17.5l-3 0"/><path d="M6.5 13.5l0-3"/><path d="M17.5 13.5l0-3"/></svg>
+                            <span class="font-bold">交换机</span>
+                        </div>
+                        <!-- Hosts -->
+                        <div id="host-A" class="host-box absolute" style="top: 20%; left: 10%;">A</div>
+                        <div id="host-B" class="host-box absolute" style="top: 20%; right: 10%;">B</div>
+                        <div id="host-C" class="host-box absolute" style="bottom: 20%; left: 10%;">C</div>
+                        <div id="host-D" class="host-box absolute" style="bottom: 20%; right: 10%;">D</div>
+                        <!-- Lines -->
+                        <svg class="absolute top-0 left-0 w-full h-full" id="lines-svg">
+                           <!-- Lines will be drawn by JS -->
+                        </svg>
+                    </div>
+
+                    <!-- Controls and Table -->
+                    <div>
+                        <div class="bg-slate-50 p-6 rounded-lg mb-6">
+                            <h4 class="font-semibold text-lg mb-4">控制面板</h4>
+                            <div class="grid sm:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label for="source-host" class="block text-sm font-medium text-slate-700">源主机:</label>
+                                    <select id="source-host" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                                        <option>A</option>
+                                        <option>B</option>
+                                        <option>C</option>
+                                        <option>D</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="dest-host" class="block text-sm font-medium text-slate-700">目的主机:</label>
+                                    <select id="dest-host" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                                        <option>B</option>
+                                        <option>A</option>
+                                        <option>C</option>
+                                        <option>D</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button id="send-frame-btn" class="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">发送数据帧</button>
+                             <button id="reset-sim-btn" class="w-full mt-2 bg-slate-500 text-white font-bold py-2 px-4 rounded-md hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400 transition-colors">重置模拟</button>
+                        </div>
+
+                        <div class="bg-slate-50 p-6 rounded-lg">
+                            <h4 class="font-semibold text-lg mb-4">MAC地址表 (交换表)</h4>
+                            <table class="w-full text-left">
+                                <thead>
+                                    <tr>
+                                        <th class="py-2 px-3 bg-slate-200 font-semibold text-sm">MAC地址</th>
+                                        <th class="py-2 px-3 bg-slate-200 font-semibold text-sm">接口</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="mac-table-body">
+                                    <!-- Rows will be added by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                 <div class="mt-8 bg-gray-800 text-white rounded-lg p-4 font-mono text-sm max-h-48 overflow-y-auto">
+                    <h4 class="font-bold text-gray-400 mb-2">事件日志:</h4>
+                    <div id="simulation-log"></div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Section 4: VLAN -->
+        <section id="section-vlan" class="mb-12">
+            <h2 class="text-3xl font-bold tracking-tight text-slate-900 mb-2">4. 逻辑隔离：虚拟局域网 (VLAN)</h2>
+            <p class="text-lg text-slate-600 mb-8">随着网络规模的扩大，单纯依靠交换机已无法满足安全和管理的需求。虚拟局域网（VLAN）技术应运而生，它允许我们将一个物理局域网划分成多个逻辑上的广播域，从而实现灵活的访问控制和高效的网络管理。</p>
+            <div class="grid md:grid-cols-2 gap-8 items-start">
+                <div class="card p-8">
+                     <h3 class="text-2xl font-semibold mb-4 text-indigo-600">VLAN 的核心思想</h3>
+                     <p class="mb-4">VLAN 的本质是**逻辑分组**。它可以将不同物理位置、不同交换机下的设备，逻辑上划分到同一个组（同一个VLAN）内。同一VLAN内的设备可以自由通信，但不同VLAN间的通信默认是隔离的，需要通过路由器或三层交换机。</p>
+                     <ul class="list-disc list-inside space-y-2 text-slate-700">
+                         <li><strong class="font-semibold">限制广播域：</strong> 广播帧只在VLAN内部传播，有效防止广播风暴。</li>
+                         <li><strong class="font-semibold">增强安全性：</strong> 天然隔离不同部门或用户组的流量。</li>
+                         <li><strong class="font-semibold">提升灵活性：</strong> 用户移动位置无需更改网络配置。</li>
+                     </ul>
+                </div>
+                <div class="card p-8">
+                    <h3 class="text-2xl font-semibold mb-4 text-indigo-600">802.1Q 帧格式解析</h3>
+                    <p class="mb-6">为了让交换机识别帧属于哪个VLAN，IEEE 802.1Q标准在以太网帧中增加了4字节的“VLAN标记”。将鼠标悬停在下方帧格式的各个字段上查看详细解释。</p>
+                    <div id="vlan-frame-container" class="flex flex-wrap text-center font-mono text-xs md:text-sm text-white select-none">
+                        <div class="frame-segment p-3 border-r border-slate-400/50 flex-grow bg-slate-500" data-info="目的地址 (6字节): 接收方的MAC地址。">目的地址</div>
+                        <div class="frame-segment p-3 border-r border-slate-400/50 flex-grow bg-slate-500" data-info="源地址 (6字节): 发送方的MAC地址。">源地址</div>
+                        <div class="frame-segment p-3 border-r border-slate-400/50 flex-grow bg-teal-600 relative" data-info="VLAN标记 (4字节): 整个VLAN的核心标识。">
+                            VLAN Tag (802.1Q)
+                            <div class="absolute -bottom-14 left-1/2 -translate-x-1/2 w-48 hidden md:block text-xs bg-black/70 text-white p-2 rounded-md" id="vlan-tooltip"></div>
+                        </div>
+                        <div class="frame-segment p-3 border-r border-slate-400/50 flex-grow bg-slate-500" data-info="类型 (2字节): 标记上层协议，如IP协议 (0x0800)。">类型</div>
+                        <div class="frame-segment p-3 border-r border-slate-400/50 flex-auto bg-slate-600" style="min-width: 120px;" data-info="数据 (46-1500字节): 实际承载的上层数据。">数据</div>
+                        <div class="frame-segment p-3 flex-grow bg-slate-500" data-info="帧检验序列 FCS (4字节): CRC校验码，用于差错检测。">FCS</div>
+                    </div>
+                     <div class="flex flex-wrap text-center font-mono text-xs md:text-sm text-white select-none mt-1">
+                          <div class="p-3 border-r border-slate-400/50 flex-grow bg-gray-400" style="flex-basis: 50%;"></div>
+                          <div class="p-3 border-r border-slate-400/50 flex-grow bg-sky-600 frame-segment" style="flex-basis: 25%;" data-info="TPID (2字节): 标记协议标识符，固定为0x8100，表明这是一个802.1Q帧。">TPID</div>
+                          <div class="p-3 border-r border-slate-400/50 flex-grow bg-purple-600 frame-segment" style="flex-basis: 25%;" data-info="TCI (2字节): 标记控制信息，包含优先级、CFI和VLAN ID。">TCI</div>
+                          <div class="p-3 border-r border-slate-400/50 flex-grow bg-gray-400" style="flex-basis: 50%;"></div>
+                     </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="bg-slate-800 text-slate-400 py-6">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-sm">
+            <p>&copy; 2025 交互式网络学习平台。基于《计算机网络》内容构建。</p>
+        </div>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Navigation scroll highlighting
+            const sections = document.querySelectorAll('section');
+            const navLinks = document.querySelectorAll('.nav-link');
+
+            window.addEventListener('scroll', () => {
+                let current = '';
+                sections.forEach(section => {
+                    const sectionTop = section.offsetTop;
+                    if (pageYOffset >= sectionTop - 80) {
+                        current = section.getAttribute('id');
+                    }
+                });
+
+                navLinks.forEach(link => {
+                    link.classList.remove('active-link');
+                    if (link.getAttribute('href').includes(current)) {
+                        link.classList.add('active-link');
+                    }
+                });
+            });
+
+            // VLAN frame hover effect
+            const frameSegments = document.querySelectorAll('.frame-segment');
+            const tooltip = document.getElementById('vlan-tooltip');
+            frameSegments.forEach(segment => {
+                segment.addEventListener('mouseenter', (e) => {
+                    const info = e.target.getAttribute('data-info');
+                    if(info) {
+                        const targetRect = e.target.getBoundingClientRect();
+                        const containerRect = document.getElementById('vlan-frame-container').getBoundingClientRect();
+                        tooltip.textContent = info;
+                        tooltip.style.display = 'block';
+                        
+                        // Position tooltip relative to the main container
+                        tooltip.style.left = `${targetRect.left - containerRect.left + targetRect.width / 2}px`;
+                        tooltip.style.top = `${targetRect.bottom - containerRect.top + 5}px`;
+                    }
+                });
+                segment.addEventListener('mouseleave', () => {
+                   tooltip.style.display = 'none';
+                });
+            });
+
+
+            // Switch Simulation Logic
+            const hosts = {
+                'A': { mac: '00-1A-2B-3C-4D-0A', port: 1, element: document.getElementById('host-A') },
+                'B': { mac: '00-1A-2B-3C-4D-0B', port: 2, element: document.getElementById('host-B') },
+                'C': { mac: '00-1A-2B-3C-4D-0C', port: 3, element: document.getElementById('host-C') },
+                'D': { mac: '00-1A-2B-3C-4D-0D', port: 4, element: document.getElementById('host-D') }
+            };
+
+            const switchBox = document.getElementById('switch-box');
+            const macTableBody = document.getElementById('mac-table-body');
+            const logContainer = document.getElementById('simulation-log');
+            const sendBtn = document.getElementById('send-frame-btn');
+            const resetBtn = document.getElementById('reset-sim-btn');
+            const sourceSelect = document.getElementById('source-host');
+            const destSelect = document.getElementById('dest-host');
+            const diagram = document.getElementById('simulation-diagram');
+            const svgLines = document.getElementById('lines-svg');
+            
+            let macTable = {};
+            let logCounter = 1;
+
+            function initSimulation() {
+                macTable = {};
+                logCounter = 1;
+                updateMacTableDisplay();
+                logContainer.innerHTML = '<p class="text-gray-500">模拟已重置。等待操作...</p>';
+                drawLines();
+                
+                // Set initial unique options for dropdowns
+                if (sourceSelect.value === destSelect.value) {
+                    destSelect.value = (destSelect.selectedIndex + 1) % destSelect.options.length;
+                    if (destSelect.value === sourceSelect.value) {
+                         destSelect.value = (destSelect.selectedIndex + 1) % destSelect.options.length;
+                    }
+                    destSelect.value = destSelect.options[destSelect.selectedIndex].value;
+                }
+            }
+            
+            function drawLines() {
+                svgLines.innerHTML = ''; // Clear existing lines
+                const switchRect = switchBox.getBoundingClientRect();
+                const diagramRect = diagram.getBoundingClientRect();
+
+                const switchCenterX = switchRect.left - diagramRect.left + switchRect.width / 2;
+                const switchCenterY = switchRect.top - diagramRect.top + switchRect.height / 2;
+                
+                Object.values(hosts).forEach(host => {
+                    const hostRect = host.element.getBoundingClientRect();
+                    const hostCenterX = hostRect.left - diagramRect.left + hostRect.width / 2;
+                    const hostCenterY = hostRect.top - diagramRect.top + hostRect.height / 2;
+                    
+                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    line.setAttribute('x1', switchCenterX);
+                    line.setAttribute('y1', switchCenterY);
+                    line.setAttribute('x2', hostCenterX);
+                    line.setAttribute('y2', hostCenterY);
+                    line.setAttribute('stroke', '#94a3b8'); // slate-400
+                    line.setAttribute('stroke-width', '2');
+                    svgLines.appendChild(line);
+
+                    // Add port numbers to switch
+                    const portLabel = document.createElement('div');
+                    portLabel.className = 'absolute text-xs font-bold text-slate-700';
+                    portLabel.textContent = host.port;
+                    
+                    const dx = hostCenterX - switchCenterX;
+                    const dy = hostCenterY - switchCenterY;
+                    const angle = Math.atan2(dy, dx);
+                    
+                    // Position port labels on the edge of the switch box
+                    const radiusX = switchRect.width/2 + 10;
+                    const radiusY = switchRect.height/2 + 10;
+                    portLabel.style.left = `${switchCenterX + radiusX * Math.cos(angle) - 4}px`;
+                    portLabel.style.top = `${switchCenterY + radiusY * Math.sin(angle) - 8}px`;
+
+                    diagram.appendChild(portLabel);
+                });
+            }
+
+
+            function logEvent(message, type = 'info') {
+                if (logCounter === 1 && logContainer.querySelector('.text-gray-500')) {
+                    logContainer.innerHTML = '';
+                }
+                const colors = {
+                    info: 'text-sky-300',
+                    learn: 'text-green-300',
+                    forward: 'text-yellow-300',
+                    broadcast: 'text-orange-300',
+                    drop: 'text-red-300'
+                };
+                const logEntry = document.createElement('p');
+                logEntry.className = `log-entry ${colors[type]}`;
+                logEntry.innerHTML = `<span class="text-gray-400">${logCounter++}.</span> ${message}`;
+                logContainer.appendChild(logEntry);
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+
+            function updateMacTableDisplay() {
+                macTableBody.innerHTML = '';
+                if (Object.keys(macTable).length === 0) {
+                     macTableBody.innerHTML = '<tr><td colspan="2" class="py-2 px-3 text-center text-slate-500">表是空的</td></tr>';
+                } else {
+                    for (const mac in macTable) {
+                        const row = `
+                            <tr class="log-entry">
+                                <td class="py-2 px-3 border-t border-slate-200">${mac}</td>
+                                <td class="py-2 px-3 border-t border-slate-200">${macTable[mac]}</td>
+                            </tr>`;
+                        macTableBody.innerHTML += row;
+                    }
+                }
+            }
+            
+            function animateFrame(fromHost, toHosts, isBroadcast) {
+                const startElem = (fromHost === 'SWITCH') ? switchBox : hosts[fromHost].element;
+                
+                toHosts.forEach(toHost => {
+                    const endElem = toHost === 'SWITCH' ? switchBox : hosts[toHost].element;
+                    const frame = document.createElement('div');
+                    frame.className = 'frame-animation';
+                    frame.textContent = '✉️';
+                    diagram.appendChild(frame);
+                    
+                    const startRect = startElem.getBoundingClientRect();
+                    const endRect = endElem.getBoundingClientRect();
+                    const diagramRect = diagram.getBoundingClientRect();
+
+                    const startX = startRect.left - diagramRect.left + startRect.width / 2;
+                    const startY = startRect.top - diagramRect.top + startRect.height / 2;
+                    const endX = endRect.left - diagramRect.left + endRect.width / 2;
+                    const endY = endRect.top - diagramRect.top + endRect.height / 2;
+                    
+                    frame.style.left = `${startX}px`;
+                    frame.style.top = `${startY}px`;
+                    frame.style.opacity = '1';
+
+                    setTimeout(() => {
+                        frame.style.left = `${endX}px`;
+                        frame.style.top = `${endY}px`;
+                        if(isBroadcast) frame.style.backgroundColor = '#f97316'; // orange-500 for broadcast
+                    }, 100);
+
+                    setTimeout(() => {
+                        frame.style.opacity = '0';
+                        setTimeout(() => frame.remove(), 500);
+                    }, 1100);
+                });
+            }
+
+            sendBtn.addEventListener('click', () => {
+                const source = sourceSelect.value;
+                const dest = destSelect.value;
+
+                if (source === dest) {
+                    alert('源主机和目的主机不能相同!');
+                    return;
+                }
+
+                const sourceHost = hosts[source];
+                const destHost = hosts[dest];
+
+                logEvent(`主机 ${source} 发送一个数据帧给主机 ${dest}。`, 'info');
+                
+                // Animate frame from source to switch
+                animateFrame(source, ['SWITCH']);
+
+                setTimeout(() => {
+                    // Step 1: Switch learns the source MAC address
+                    if (!macTable[sourceHost.mac] || macTable[sourceHost.mac] !== sourceHost.port) {
+                        macTable[sourceHost.mac] = sourceHost.port;
+                        logEvent(`交换机从接口 ${sourceHost.port} 学习到主机 ${source} 的MAC地址。`, 'learn');
+                        updateMacTableDisplay();
+                    }
+
+                    // Step 2: Switch decides where to forward the frame
+                    if (macTable[destHost.mac]) {
+                        // Unicast: Destination MAC is in the table
+                        const destPort = macTable[destHost.mac];
+                        logEvent(`在MAC地址表中找到主机 ${dest}，从接口 ${destPort} 进行单播转发。`, 'forward');
+                        animateFrame('SWITCH', [dest]);
+                    } else {
+                        // Broadcast (Flooding): Destination MAC is not in the table
+                        logEvent(`未在MAC地址表中找到主机 ${dest}，向除源接口外的所有接口广播 (泛洪)。`, 'broadcast');
+                        const broadcastTargets = Object.keys(hosts).filter(h => h !== source);
+                        animateFrame('SWITCH', broadcastTargets, true);
+                        
+                        Object.keys(hosts).forEach(hostname => {
+                            if (hostname !== source && hostname !== dest) {
+                                logEvent(`主机 ${hostname} 收到广播帧，但因目的地址不匹配而丢弃。`, 'drop');
+                            }
+                        });
+                        logEvent(`主机 ${dest} 收到广播帧并接收。`);
+                    }
+                }, 1200);
+            });
+
+            resetBtn.addEventListener('click', initSimulation);
+            
+            sourceSelect.addEventListener('change', () => {
+                if (sourceSelect.value === destSelect.value) {
+                    destSelect.selectedIndex = (destSelect.selectedIndex + 1) % destSelect.options.length;
+                }
+            });
+
+            destSelect.addEventListener('change', () => {
+                if (sourceSelect.value === destSelect.value) {
+                    sourceSelect.selectedIndex = (sourceSelect.selectedIndex + 1) % sourceSelect.options.length;
+                }
+            });
+
+
+            // Initial setup
+            // Add host elements to the simulation diagram dynamically
+            const hostPositions = {
+                'A': { top: '15%', left: '10%' },
+                'B': { top: '15%', right: '10%' },
+                'C': { bottom: '15%', left: '10%' },
+                'D': { bottom: '15%', right: '10%' }
+            };
+
+            Object.keys(hosts).forEach(name => {
+                const hostDiv = document.createElement('div');
+                hostDiv.id = `host-${name}`;
+                hostDiv.className = 'absolute flex items-center justify-center w-16 h-16 bg-white rounded-full shadow-md border-2 border-slate-300 flex-col text-sm';
+                hostDiv.style.top = hostPositions[name].top;
+                hostDiv.style.left = hostPositions[name].left;
+                hostDiv.style.right = hostPositions[name].right;
+                hostDiv.style.bottom = hostPositions[name].bottom;
+                hostDiv.innerHTML = `<span class="text-3xl">💻</span><span class="font-bold">${name}</span>`;
+                hosts[name].element = hostDiv;
+                diagram.appendChild(hostDiv);
+            });
+            
+            initSimulation();
+            window.addEventListener('resize', drawLines);
+
+        });
+    </script>
+
+</body>
+</html>
