@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TCP 拥塞控制交互式解读 (优化版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutral Harmony -->
+    <!-- Application Structure Plan: 本应用采用单页多区域的结构，通过顶部导航栏实现平滑滚动定位。结构依次为：1. 介绍区域，用对比和图表宏观解释拥塞控制。2. 核心算法区域，使用选项卡清晰地分离讲解四种算法。3. 交互式模拟区域，这是应用的核心，通过图表和用户控制的按钮，将抽象的拥塞窗口（cwnd）变化过程动态化、游戏化，让用户亲手触发不同网络事件（如超时、丢包），观察TCP的应对策略，从而将理论与实践相结合。4. AQM区域，作为补充知识点。这个结构遵循了从理论到实践，从宏观到微观的认知规律，旨在最大化用户的理解和学习效率。 -->
+    <!-- Visualization & Content Choices: 1. 吞吐量-负载关系图：[Goal: Inform] [Viz: Chart.js Line Chart] [Interaction: Tooltips] [Justification: 直观展示拥塞的宏观影响，比静态图片更具探索性]。2. 核心算法图解：[Goal: Organize] [Viz: HTML/CSS Flexbox Diagram] [Interaction: None] [Justification: 用结构化的HTML代替静态图片，更易于维护且响应式更好]。3. cwnd变化模拟图：[Goal: Demonstrate Change] [Viz: Chart.js Dynamic Line Chart] [Interaction: Buttons (Next, Reset, Trigger Events)] [Justification: 将笔记中最核心、最复杂的图5.25动态化，是理解算法协作的关键，交互性强，学习效果最好]。所有图表均使用Canvas渲染，无SVG/Mermaid。 -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #f7f9fc;
+            color: #333;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 45vh;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 400px;
+            }
+        }
+        .tab-btn {
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+        }
+        .tab-btn.active {
+            border-color: #3b82f6;
+            color: #3b82f6;
+            font-weight: 600;
+        }
+        .smooth-scroll {
+            scroll-behavior: smooth;
+        }
+        .card {
+            background-color: white;
+            border-radius: 0.75rem;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.08);
+        }
+        .icon {
+            font-size: 1.5rem;
+            margin-right: 0.75rem;
+            color: #3b82f6;
+        }
+        .tech-term {
+            font-family: monospace;
+            color: #5b21b6;
+            background-color: #f5f3ff;
+            padding: 0.1rem 0.4rem;
+            border-radius: 0.25rem;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body class="smooth-scroll">
+
+    <header class="bg-white/90 backdrop-blur-lg sticky top-0 z-50 shadow-md">
+        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-blue-600">TCP 拥塞控制</h1>
+            <div class="hidden md:flex items-center space-x-8 text-lg">
+                <a href="#intro" class="text-gray-700 hover:text-blue-600 transition duration-300">基本原理</a>
+                <a href="#algorithms" class="text-gray-700 hover:text-blue-600 transition duration-300">核心算法</a>
+                <a href="#customization" class="text-gray-700 hover:text-blue-600 transition duration-300">参数自定义</a>
+                <a href="#simulation" class="text-gray-700 hover:text-blue-600 transition duration-300">交互模拟</a>
+                <a href="#aqm" class="text-gray-700 hover:text-blue-600 transition duration-300">队列管理</a>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container mx-auto px-6 py-16">
+
+        <section id="intro" class="mb-24 text-center">
+            <h2 class="text-4xl font-bold mb-6 flex items-center justify-center"><span class="icon">📖</span>基本原理</h2>
+            <p class="max-w-3xl mx-auto text-xl text-gray-600 mb-16 leading-relaxed">
+                拥塞控制是计算机网络中的关键机制，旨在防止因向网络注入过多数据而导致路由器或链路过载，从而维持网络性能的稳定。
+            </p>
+            <div class="grid md:grid-cols-2 gap-10 items-center text-left">
+                <div class="card p-8">
+                    <h3 class="text-2xl font-bold mb-4 text-blue-600">拥塞控制 vs 流量控制</h3>
+                    <p class="mb-3 text-lg"><strong>拥塞控制</strong></p>
+                    <p class="text-gray-600 mb-6 text-base leading-relaxed">是一个<strong class="text-red-500 font-semibold">全局性</strong>的过程，关注整个网络的负载情况，防止网络整体崩溃。它动态地调节发送速率以适应网络当前的承载能力。</p>
+                    <p class="mb-3 text-lg"><strong>流量控制</strong></p>
+                    <p class="text-gray-600 text-base leading-relaxed">是一个<strong class="text-green-500 font-semibold">端到端</strong>的问题，确保发送方的速率不会压垮接收方。它只关心通信双方的处理能力。</p>
+                </div>
+                <div class="card p-8">
+                    <h3 class="text-2xl font-bold mb-4">网络性能的理想与现实</h3>
+                     <p class="text-base text-gray-500 mb-4">此图表直观展示了拥塞控制的作用。在理想情况下，吞吐量随负载线性增长后达到饱和。但现实中，若无拥塞控制，网络吞吐量会在达到峰值后急剧下降。</p>
+                    <div class="chart-container">
+                        <canvas id="throughputChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="algorithms" class="mb-24">
+            <h2 class="text-4xl font-bold mb-12 text-center flex items-center justify-center"><span class="icon">⚙️</span>四大核心算法</h2>
+            <div class="max-w-4xl mx-auto card p-8 md:p-10">
+                <div class="flex border-b-2 border-gray-200 mb-8">
+                    <button class="tab-btn flex-1 pb-3 text-lg" data-tab="slow-start">慢开始</button>
+                    <button class="tab-btn flex-1 pb-3 text-lg" data-tab="congestion-avoidance">拥塞避免</button>
+                    <button class="tab-btn flex-1 pb-3 text-lg" data-tab="fast-retransmit">快重传</button>
+                    <button class="tab-btn flex-1 pb-3 text-lg" data-tab="fast-recovery">快恢复</button>
+                </div>
+                <div id="tab-content" class="min-h-[150px]">
+                    <div class="tab-pane" data-tab-content="slow-start">
+                        <h3 class="text-2xl font-bold mb-3">慢开始 (Slow Start)</h3>
+                        <p class="text-gray-700 text-base leading-relaxed"><strong>目的：</strong>在连接初期探测网络带宽，避免一开始就发送大量数据导致拥塞。</p>
+                        <p class="text-gray-700 mt-2 text-base leading-relaxed"><strong>规则：</strong>拥塞窗口 <span class="tech-term">cwnd</span> 初始值很小。每收到一个新确认，<span class="tech-term">cwnd</span> 就增加一个MSS。效果是每经过一个RTT，<span class="tech-term">cwnd</span> 的大小就<strong>翻倍</strong>，呈指数级增长。</p>
+                    </div>
+                    <div class="tab-pane hidden" data-tab-content="congestion-avoidance">
+                        <h3 class="text-2xl font-bold mb-3">拥塞避免 (Congestion Avoidance)</h3>
+                        <p class="text-gray-700 text-base leading-relaxed"><strong>目的：</strong>当 <span class="tech-term">cwnd</span> 达到慢开始门限 <span class="tech-term">ssthresh</span> 后，采用更温和的方式增加窗口以避免拥塞。</p>
+                        <p class="text-gray-700 mt-2 text-base leading-relaxed"><strong>规则：</strong>每经过一个RTT，<span class="tech-term">cwnd</span> <strong>增加1</strong>。这种线性的增长方式被称为<strong>“加法增大”</strong>。</p>
+                    </div>
+                    <div class="tab-pane hidden" data-tab-content="fast-retransmit">
+                        <h3 class="text-2xl font-bold mb-3">快重传 (Fast Retransmit)</h3>
+                        <p class="text-gray-700 text-base leading-relaxed"><strong>目的：</strong>让发送方尽早知道个别报文段的丢失，而不用等待超时。</p>
+                        <p class="text-gray-700 mt-2 text-base leading-relaxed"><strong>触发：</strong>当发送方连续收到<strong>3个重复的确认</strong>时，就认为一个报文段已丢失，并立即重传。</p>
+                    </div>
+                    <div class="tab-pane hidden" data-tab-content="fast-recovery">
+                        <h3 class="text-2xl font-bold mb-3">快恢复 (Fast Recovery)</h3>
+                        <p class="text-gray-700 text-base leading-relaxed"><strong>目的：</strong>在执行快重传后，适度减小窗口并继续传输，避免将 <span class="tech-term">cwnd</span> 降为1。</p>
+                        <p class="text-gray-700 mt-2 text-base leading-relaxed"><strong>规则：</strong>将 <span class="tech-term">ssthresh</span> 减为当前 <span class="tech-term">cwnd</span> 的一半，然后将 <span class="tech-term">cwnd</span> 也设为新的 <span class="tech-term">ssthresh</span> 值，并进入拥塞避免阶段。这个过程被称为<strong>“乘法减小”</strong>。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="customization" class="mb-24">
+            <h2 class="text-4xl font-bold mb-6 text-center flex items-center justify-center"><span class="icon">🔧</span>参数自定义</h2>
+            <p class="max-w-3xl mx-auto text-xl text-gray-600 mb-12 text-center leading-relaxed">
+                在开始模拟前，您可以调整初始的慢开始门限，观察它如何影响算法的行为。
+            </p>
+            <div class="max-w-lg mx-auto card p-8">
+                <div>
+                    <label for="initial-ssthresh" class="block text-lg font-medium text-gray-800">初始慢开始门限 (ssthresh)</label>
+                    <p class="text-sm text-gray-500 mt-1 mb-3">这个值决定了“慢开始”阶段何时结束，并切换到“拥塞避免”阶段。</p>
+                    <input type="number" id="initial-ssthresh" value="16" min="2" class="mt-1 block w-full px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-lg focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <p class="text-xs text-gray-500 mt-4 text-center">修改后，请点击下方模拟器中的“重置模拟”按钮以应用新设置。</p>
+            </div>
+        </section>
+
+        <section id="simulation" class="mb-24">
+            <h2 class="text-4xl font-bold mb-6 text-center flex items-center justify-center"><span class="icon">📈</span>交互式模拟</h2>
+            <p class="max-w-3xl mx-auto text-xl text-gray-600 mb-12 text-center leading-relaxed">
+                亲手操作，观察TCP拥塞窗口如何根据网络状况动态调整。点击按钮，触发不同网络事件，看看TCP是如何智能应对的。
+            </p>
+
+            <div class="card p-6 md:p-8">
+                <div class="chart-container mb-8">
+                    <canvas id="congestionChart"></canvas>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+                    <div class="lg:col-span-1 space-y-4">
+                        <h4 class="text-xl font-bold text-center">控制面板</h4>
+                        <button id="nextStepBtn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 shadow-md">下一步 (传输轮次)</button>
+                        <button id="simulateLossBtn" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 shadow-md">模拟丢包 (3个重复ACK)</button>
+                        <button id="simulateTimeoutBtn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 shadow-md">模拟超时 (网络拥塞)</button>
+                        <button id="resetBtn" class="w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 shadow-md">重置模拟</button>
+                    </div>
+                    <div class="lg:col-span-2 bg-blue-50/50 p-6 rounded-lg border border-blue-200 min-h-[180px]">
+                        <h4 class="text-xl font-bold mb-3 text-blue-800">状态解读</h4>
+                        <div id="statusText" class="text-gray-800 space-y-2 text-base"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <section id="aqm" class="mb-12">
+            <h2 class="text-4xl font-bold mb-12 text-center flex items-center justify-center"><span class="icon">🚦</span>主动队列管理 (AQM)</h2>
+            <div class="max-w-5xl mx-auto grid md:grid-cols-2 gap-10 items-center">
+                <div class="text-gray-700 leading-relaxed text-base">
+                    <p class="mb-4">传统的路由器丢弃策略是“尾部丢弃”，即队列满了就丢弃新来的分组。这会导致多条TCP连接同时超时，进入慢开始，造成网络流量的剧烈震荡，即<strong class="text-red-500 font-semibold">全局同步</strong>。</p>
+                    <p><strong>主动队列管理 (AQM)</strong> 是一种更智能的策略。它不等到队列完全满了才行动，而是在队列长度达到某个阈值时，就开始以一定的概率<strong class="text-blue-600 font-semibold">主动丢弃</strong>分组。这能提前向发送方发出拥塞信号，避免全局同步，使网络更加平稳。</p>
+                </div>
+                <div class="card p-8">
+                     <h3 class="text-2xl font-bold mb-4 text-center">RED 算法示意</h3>
+                     <div class="space-y-3">
+                        <div class="flex items-center w-full h-10 rounded-md overflow-hidden border">
+                            <div class="w-1/3 h-full bg-green-100 flex items-center justify-center font-semibold text-green-800">正常入队</div>
+                            <div class="w-1/3 h-full bg-amber-100 flex items-center justify-center font-semibold text-amber-800">概率丢弃</div>
+                            <div class="w-1/3 h-full bg-red-100 flex items-center justify-center font-semibold text-red-800">全部丢弃</div>
+                        </div>
+                        <div class="relative flex justify-between text-sm font-medium text-gray-500 px-1">
+                            <span>|</span>
+                            <span>|</span>
+                            <span>|</span>
+                            <div class="absolute w-full flex justify-between top-4">
+                                <span>0</span>
+                                <span>最小门限</span>
+                                <span>最大门限</span>
+                            </div>
+                        </div>
+                        <p class="text-sm text-center text-gray-500 pt-4">← 平均队列长度 →</p>
+                     </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="bg-white border-t mt-16">
+        <div class="container mx-auto px-6 py-6 text-center text-gray-500">
+            <p>基于《计算机网络》教材内容构建的交互式学习应用。</p>
+        </div>
+    </footer>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+
+        const throughputCtx = document.getElementById('throughputChart').getContext('2d');
+        new Chart(throughputCtx, {
+            type: 'line',
+            data: {
+                labels: ['0', '10', '20', '30', '40', '50', '60', '70', '80', '90', '100'],
+                datasets: [{
+                    label: '理想拥塞控制',
+                    data: [0, 10, 20, 30, 40, 50, 50, 50, 50, 50, 50],
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                    borderWidth: 2,
+                    tension: 0.1,
+                    pointRadius: 0,
+                    fill: true
+                }, {
+                    label: '实际的拥塞控制',
+                    data: [0, 9, 18, 26, 33, 38, 42, 44, 45, 45, 44],
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                    borderWidth: 2,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    fill: true
+                }, {
+                    label: '无拥塞控制',
+                    data: [0, 10, 20, 28, 34, 30, 22, 15, 5, 0, 0],
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                    borderWidth: 2,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { title: { display: true, text: '提供的负载' } },
+                    y: { title: { display: true, text: '吞吐量' }, beginAtZero: true }
+                },
+                plugins: { tooltip: { mode: 'index', intersect: false } }
+            }
+        });
+
+        const tabBtns = document.querySelectorAll('.tab-btn');
+        const tabPanes = document.querySelectorAll('.tab-pane');
+        
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                tabBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                
+                tabPanes.forEach(pane => {
+                    pane.classList.toggle('hidden', pane.dataset.tabContent !== btn.dataset.tab);
+                });
+            });
+        });
+        tabBtns[0].click();
+
+        const congestionCtx = document.getElementById('congestionChart').getContext('2d');
+        let congestionChart;
+        let state;
+        const ssthreshInput = document.getElementById('initial-ssthresh');
+        const statusTextEl = document.getElementById('statusText');
+
+        function resetState() {
+            const initialSsthresh = parseInt(ssthreshInput.value, 10) || 16;
+            state = {
+                round: 0,
+                cwnd: 1,
+                ssthresh: initialSsthresh,
+                mode: '慢开始',
+                history: [{ round: 0, cwnd: 1, ssthresh: initialSsthresh }]
+            };
+        }
+
+        function updateStatusText(message) {
+            statusTextEl.innerHTML = `
+                <p><strong>传输轮次:</strong> <span class="font-mono">${state.round}</span></p>
+                <p><strong>拥塞窗口 (cwnd):</strong> <span class="font-mono">${state.cwnd} MSS</span></p>
+                <p><strong>慢开始门限 (ssthresh):</strong> <span class="font-mono">${state.ssthresh} MSS</span></p>
+                <p><strong>当前算法:</strong> <span class="font-bold text-blue-600">${state.mode}</span></p>
+                <p class="mt-2 text-sm text-gray-600 italic">${message}</p>
+            `;
+        }
+
+        function renderCongestionChart() {
+            const labels = state.history.map(h => h.round);
+            const cwndData = state.history.map(h => h.cwnd);
+            const ssthreshData = state.history.map(h => ({ x: h.round, y: h.ssthresh }));
+
+            if (congestionChart) {
+                congestionChart.destroy();
+            }
+
+            congestionChart = new Chart(congestionCtx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '拥塞窗口 (cwnd)',
+                        data: cwndData,
+                        borderColor: 'rgba(59, 130, 246, 1)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                        borderWidth: 3,
+                        tension: 0.1,
+                        fill: true,
+                        pointRadius: 5,
+                        pointBackgroundColor: 'rgba(59, 130, 246, 1)',
+                    }, {
+                        label: '慢开始门限 (ssthresh)',
+                        data: ssthreshData,
+                        borderColor: 'rgba(239, 68, 68, 1)',
+                        borderWidth: 2,
+                        borderDash: [5, 5],
+                        stepped: true,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: '传输轮次' } },
+                        y: { title: { display: true, text: '窗口大小 (MSS)' }, beginAtZero: true }
+                    },
+                     plugins: {
+                        tooltip: {
+                           callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) { label += ': '; }
+                                    if (context.parsed.y !== null) { label += `${context.parsed.y} MSS`; }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+             updateStatusText("模拟已开始。您可随时在上方修改参数并重置。");
+        }
+
+        function handleNextStep() {
+            state.round++;
+            let message = "";
+            
+            if (state.mode === '慢开始') {
+                state.cwnd *= 2;
+                message = `慢开始阶段，cwnd翻倍。`;
+                if (state.cwnd >= state.ssthresh) {
+                    state.mode = '拥塞避免';
+                    message += ` cwnd达到或超过ssthresh，切换到拥塞避免。`;
+                }
+            } else if (state.mode === '拥塞避免') {
+                state.cwnd++;
+                message = `拥塞避免阶段，cwnd加1。`;
+            }
+            
+            state.history.push({ round: state.round, cwnd: state.cwnd, ssthresh: state.ssthresh });
+            renderCongestionChart();
+            updateStatusText(message);
+        }
+
+        function handleTimeout() {
+            state.round++;
+            state.ssthresh = Math.max(Math.floor(state.cwnd / 2), 2);
+            state.cwnd = 1;
+            state.mode = '慢开始';
+            const message = `检测到超时（网络拥塞）！ssthresh减半，cwnd重置为1，重新进入慢开始阶段。`;
+            state.history.push({ round: state.round, cwnd: state.cwnd, ssthresh: state.ssthresh });
+            renderCongestionChart();
+            updateStatusText(message);
+        }
+
+        function handleLoss() {
+            if(state.cwnd < 2) {
+                 updateStatusText("cwnd太小，无法模拟丢包，请先进行几轮传输。");
+                 return;
+            }
+            state.round++;
+            state.ssthresh = Math.max(Math.floor(state.cwnd / 2), 2);
+            state.cwnd = state.ssthresh;
+            state.mode = '拥塞避免';
+            const message = `收到3个重复ACK（模拟丢包）！执行快恢复，ssthresh减半，cwnd设为新的ssthresh，进入拥塞避免。`;
+            state.history.push({ round: state.round, cwnd: state.cwnd, ssthresh: state.ssthresh });
+            renderCongestionChart();
+            updateStatusText(message);
+        }
+
+        function resetSimulation() {
+            resetState();
+            renderCongestionChart();
+        }
+
+        document.getElementById('nextStepBtn').addEventListener('click', handleNextStep);
+        document.getElementById('simulateTimeoutBtn').addEventListener('click', handleTimeout);
+        document.getElementById('simulateLossBtn').addEventListener('click', handleLoss);
+        document.getElementById('resetBtn').addEventListener('click', resetSimulation);
+        
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                document.querySelector(this.getAttribute('href')).scrollIntoView({
+                    behavior: 'smooth'
+                });
+            });
+        });
+
+        resetState();
+        renderCongestionChart();
+    });
+</script>
+
+</body>
+</html>

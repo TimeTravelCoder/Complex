@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TCP 流量控制 - 交互式模拟器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Educational Blue & Neutral Grays -->
+    <!-- Application Structure Plan: A single, comprehensive interactive simulation demonstrating the dynamics of TCP's sliding window flow control. The design focuses on a cause-and-effect learning model, allowing users to control sender/receiver actions and observe the resulting window adjustments, deadlock scenarios, and efficiency mechanisms (Nagle/Silly Window). This hands-on approach is more effective for understanding dynamic protocols than static text. -->
+    <!-- Visualization & Content Choices: 1. Sliding Window/Buffer: [Goal: Inform/Change] [Viz: HTML/CSS colored divs] [Interaction: JS updates width/position based on state] [Justification: Provides a direct visual metaphor for the abstract window concept.] 2. Control Panel: [Goal: Interact] [Viz: HTML buttons/toggles] [Interaction: User clicks trigger state changes] [Justification: Empowers user to drive the simulation and test different scenarios.] 3. Log Panel: [Goal: Explain] [Viz: Text block] [Interaction: JS updates text to narrate simulation events] [Justification: Provides real-time context and reinforces learning by linking user actions to protocol behavior.] CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #f8fafc; }
+        .card { background-color: white; border-radius: 0.75rem; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); }
+        .buffer { background-color: #e5e7eb; border: 2px solid #9ca3af; height: 50px; position: relative; overflow: hidden; }
+        .buffer-data { position: absolute; top: 0; height: 100%; transition: all 0.5s ease; }
+        .sent-data { background-color: #60a5fa; }
+        .acked-data { background-color: #4ade80; }
+        .received-data { background-color: #fbbf24; }
+        .window-marker { position: absolute; top: -25px; bottom: -25px; border-left: 2px dashed; transition: all 0.5s ease; }
+        .packet {
+            position: absolute;
+            width: auto;
+            min-width: 60px;
+            padding: 4px 8px;
+            background-color: #3b82f6;
+            color: white;
+            border-radius: 0.375rem;
+            font-size: 0.75rem;
+            text-align: center;
+            opacity: 0;
+            transition: all 0.8s ease-in-out;
+            z-index: 10;
+            transform: translateX(-50%);
+        }
+        .ack-packet { background-color: #22c55e; }
+        .probe-packet { background-color: #f97316; }
+        .log-entry { border-left: 3px solid; padding-left: 1rem; margin-bottom: 0.75rem; }
+        .log-send { border-color: #3b82f6; }
+        .log-receive { border-color: #f59e0b; }
+        .log-ack { border-color: #22c55e; }
+        .log-sys { border-color: #6b7280; }
+        .log-warn { border-color: #ef4444; }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <main class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-10">
+            <h1 class="text-3xl md:text-4xl font-bold text-blue-600">TCP 流量控制交互模拟</h1>
+            <p class="mt-2 max-w-2xl mx-auto text-lg text-gray-600">通过控制发送和接收过程，直观理解滑动窗口、零窗口探测和传输效率优化机制。</p>
+        </header>
+
+        <div class="card p-6 md:p-8">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <!-- Controls -->
+                <div class="lg:col-span-1 space-y-6">
+                    <div class="border-b pb-4">
+                        <h3 class="font-bold text-lg mb-3">发送方 (A) 控制</h3>
+                        <div class="space-y-4">
+                            <button id="send-data-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center gap-2"><i class="fas fa-paper-plane"></i>应用进程发送数据</button>
+                            <div>
+                                <label for="nagle-toggle" class="flex items-center cursor-pointer">
+                                    <input type="checkbox" id="nagle-toggle" class="sr-only peer" checked>
+                                    <div class="relative w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                    <span class="ms-3 text-sm font-medium text-gray-900">启用Nagle算法</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="border-b pb-4">
+                         <h3 class="font-bold text-lg mb-3">接收方 (B) 控制</h3>
+                         <div class="space-y-4">
+                            <button id="read-data-btn" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center gap-2"><i class="fas fa-book-open"></i>应用进程读取数据</button>
+                            <div>
+                               <label for="silly-window-toggle" class="flex items-center cursor-pointer">
+                                    <input type="checkbox" id="silly-window-toggle" class="sr-only peer" checked>
+                                    <div class="relative w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+                                    <span class="ms-3 text-sm font-medium text-gray-900">避免糊涂窗口</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                     <div>
+                        <h3 class="font-bold text-lg mb-3">模拟控制</h3>
+                        <button id="reset-sim-btn" class="w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center gap-2"><i class="fas fa-undo"></i>重置模拟</button>
+                    </div>
+                </div>
+
+                <!-- Visualization & Log -->
+                <div class="lg:col-span-2 space-y-8">
+                    <!-- Visualization Area -->
+                    <div id="vis-area" class="relative space-y-12">
+                        <!-- Sender -->
+                        <div>
+                            <div class="flex justify-between items-end mb-1">
+                                <h4 class="font-bold">发送方 (A)</h4>
+                                <div id="sender-status" class="text-sm text-gray-500"></div>
+                            </div>
+                            <div class="buffer rounded-md">
+                                <div id="sender-acked-data" class="buffer-data acked-data"></div>
+                                <div id="sender-sent-data" class="buffer-data sent-data"></div>
+                                <div id="sender-window" class="window-marker border-blue-500">
+                                    <div class="absolute -top-6 text-xs text-blue-500">发送窗口</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Channel -->
+                        <div id="channel" class="relative h-20 bg-gray-100 rounded-md border-dashed border-2">
+                             <!-- Packets will be animated here -->
+                        </div>
+
+                        <!-- Receiver -->
+                        <div>
+                            <div class="flex justify-between items-end mb-1">
+                                <h4 class="font-bold">接收方 (B)</h4>
+                                <div id="receiver-status" class="text-sm text-gray-500"></div>
+                            </div>
+                            <div class="buffer rounded-md">
+                                <div id="receiver-received-data" class="buffer-data received-data"></div>
+                                <div id="receiver-window" class="window-marker border-amber-500">
+                                     <div class="absolute -top-6 text-xs text-amber-500">接收窗口 (rwnd)</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Log Area -->
+                    <div>
+                        <h4 class="font-bold text-lg mb-4">事件日志</h4>
+                        <div id="log-area" class="h-64 overflow-y-auto bg-gray-50 p-4 rounded-lg border">
+                           <!-- Log entries will appear here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // DOM Elements
+    const elements = {
+        sendDataBtn: document.getElementById('send-data-btn'),
+        readDataBtn: document.getElementById('read-data-btn'),
+        resetSimBtn: document.getElementById('reset-sim-btn'),
+        nagleToggle: document.getElementById('nagle-toggle'),
+        sillyWindowToggle: document.getElementById('silly-window-toggle'),
+        
+        senderStatus: document.getElementById('sender-status'),
+        senderAckedData: document.getElementById('sender-acked-data'),
+        senderSentData: document.getElementById('sender-sent-data'),
+        senderWindow: document.getElementById('sender-window'),
+        
+        receiverStatus: document.getElementById('receiver-status'),
+        receiverReceivedData: document.getElementById('receiver-received-data'),
+        receiverWindow: document.getElementById('receiver-window'),
+        
+        channel: document.getElementById('channel'),
+        logArea: document.getElementById('log-area'),
+    };
+
+    // Simulation State
+    let state = {};
+    const MAX_BUFFER_SIZE = 1000;
+    const MSS = 100;
+    let persistenceTimer = null;
+
+    function resetState() {
+        if (persistenceTimer) clearInterval(persistenceTimer);
+        persistenceTimer = null;
+        
+        state = {
+            // Sender state
+            lastByteAcked: 0,
+            lastByteSent: 0,
+            senderBuffer: 0, // App data written but not yet sent
+            rwnd: 400, // Receiver's advertised window
+            
+            // Receiver state
+            lastByteRead: 0,
+            nextByteExpected: 0,
+            receiverBuffer: 0, // Data received but not yet read by app
+            
+            // Toggles
+            nagleEnabled: elements.nagleToggle.checked,
+            sillyWindowEnabled: elements.sillyWindowToggle.checked,
+
+            // animation queue
+            packetQueue: [],
+        };
+        addLog('sys', '模拟已重置。初始接收窗口 rwnd = 400。');
+        render();
+    }
+    
+    function addLog(type, message) {
+        const entry = document.createElement('div');
+        entry.className = `log-entry log-${type}`;
+        const time = new Date().toLocaleTimeString();
+        entry.innerHTML = `<p class="font-semibold text-gray-700">${message}</p><p class="text-xs text-gray-500">${time}</p>`;
+        elements.logArea.prepend(entry);
+    }
+    
+    function render() {
+        // --- Sender Render ---
+        const sendableWindow = Math.min(state.rwnd, MAX_BUFFER_SIZE - state.lastByteAcked);
+        elements.senderStatus.textContent = `发送窗口: ${sendableWindow} B`;
+        elements.senderAckedData.style.width = `${(state.lastByteAcked / MAX_BUFFER_SIZE) * 100}%`;
+        elements.senderSentData.style.left = `${(state.lastByteAcked / MAX_BUFFER_SIZE) * 100}%`;
+        elements.senderSentData.style.width = `${((state.lastByteSent - state.lastByteAcked) / MAX_BUFFER_SIZE) * 100}%`;
+        elements.senderWindow.style.left = `${(state.lastByteAcked / MAX_BUFFER_SIZE) * 100}%`;
+        elements.senderWindow.style.width = `${(sendableWindow / MAX_BUFFER_SIZE) * 100}%`;
+
+        // --- Receiver Render ---
+        const receiverFreeSpace = MAX_BUFFER_SIZE - state.receiverBuffer;
+        elements.receiverStatus.textContent = `可用缓存: ${receiverFreeSpace} B`;
+        elements.receiverReceivedData.style.width = `${(state.receiverBuffer / MAX_BUFFER_SIZE) * 100}%`;
+        elements.receiverReceivedData.style.left = `${(state.nextByteExpected / MAX_BUFFER_SIZE) * 100}%`;
+        
+        elements.receiverWindow.style.left = `${(state.nextByteExpected / MAX_BUFFER_SIZE) * 100}%`;
+        elements.receiverWindow.style.width = `${(receiverFreeSpace / MAX_BUFFER_SIZE) * 100}%`;
+
+        // --- Disable/Enable buttons ---
+        const canSend = (state.lastByteAcked + state.senderBuffer) < MAX_BUFFER_SIZE;
+        elements.sendDataBtn.disabled = !canSend;
+        elements.sendDataBtn.style.opacity = canSend ? '1' : '0.5';
+
+        const canRead = state.receiverBuffer > 0;
+        elements.readDataBtn.disabled = !canRead;
+        elements.readDataBtn.style.opacity = canRead ? '1' : '0.5';
+    }
+    
+    function animatePacket(type, text, yStart, yEnd, delay = 100, duration = 1500) {
+        return new Promise(resolve => {
+            setTimeout(() => {
+                const packet = document.createElement('div');
+                packet.className = `packet ${type}`;
+                packet.textContent = text;
+                elements.channel.appendChild(packet);
+                
+                packet.style.top = yStart;
+                packet.style.left = '50%';
+                
+                setTimeout(() => {
+                    packet.style.opacity = '1';
+                    packet.style.top = yEnd;
+                }, 50);
+
+                setTimeout(() => {
+                    packet.remove();
+                    resolve();
+                }, duration);
+            }, delay);
+        });
+    }
+
+    // --- Event Handlers ---
+    elements.sendDataBtn.addEventListener('click', () => {
+        const dataToWrite = MSS;
+        if ((state.lastByteAcked + state.senderBuffer + dataToWrite) > MAX_BUFFER_SIZE) return;
+        
+        state.senderBuffer += dataToWrite;
+        addLog('send', `应用向TCP发送缓存写入 ${dataToWrite} B数据。`);
+        
+        // Nagle's algorithm logic
+        const effectiveWindow = Math.min(state.rwnd, MAX_BUFFER_SIZE - state.lastByteSent);
+        if (state.nagleEnabled) {
+            if (state.lastByteSent === state.lastByteAcked && state.senderBuffer > 0) {
+                // First byte can go immediately if window allows
+                sendDataSegment();
+            } else {
+                 addLog('sys', `Nagle算法生效，数据被缓存。等待ACK或缓存达到MSS。`);
+            }
+        } else {
+            // Nagle disabled, send whatever we can
+            while(state.senderBuffer > 0 && (state.lastByteSent - state.lastByteAcked) < state.rwnd){
+                sendDataSegment();
+            }
+        }
+        render();
+    });
+
+    function sendDataSegment() {
+        const effectiveWindow = Math.min(state.rwnd, MAX_BUFFER_SIZE - state.lastByteSent);
+        const dataToSend = Math.min(state.senderBuffer, MSS, effectiveWindow);
+        
+        if (dataToSend <= 0) return;
+
+        const seq = state.lastByteSent;
+        state.lastByteSent += dataToSend;
+        state.senderBuffer -= dataToSend;
+
+        addLog('send', `发送方发送报文段, seq=${seq + 1}, len=${dataToSend}`);
+        animatePacket('data-packet', `SEQ=${seq+1}`, '15%', '85%').then(() => {
+            // Arrived at receiver
+            state.receiverBuffer += dataToSend;
+            state.nextByteExpected += dataToSend; // Simplified: assume in-order
+            addLog('receive', `接收方收到 ${dataToSend} B数据，存入缓存。`);
+            
+            // Send ACK
+            sendAck();
+            render();
+        });
+        render();
+    }
+    
+    function sendAck() {
+        let ackRwnd = MAX_BUFFER_SIZE - state.receiverBuffer;
+
+        // Silly Window Syndrome Avoidance
+        if (state.sillyWindowEnabled && ackRwnd < Math.min(MSS, MAX_BUFFER_SIZE / 2) && ackRwnd > 0) {
+            addLog('sys', `糊涂窗口避免机制生效，接收方推迟发送ACK，等待更大窗口。`);
+            return;
+        }
+
+        const ackNum = state.nextByteExpected;
+        state.rwnd = ackRwnd;
+        addLog('ack', `接收方发送ACK, ack=${ackNum + 1}, rwnd=${state.rwnd}`);
+        
+        animatePacket('ack-packet', `ACK=${ackNum+1}, rwnd=${state.rwnd}`, '85%', '15%').then(() => {
+            // Arrived at sender
+            addLog('ack', `发送方收到ACK=${ackNum + 1}。`);
+            state.lastByteAcked = ackNum;
+            
+            // Handle zero window
+            if(state.rwnd === 0) {
+                addLog('warn', `收到零窗口通知！发送方暂停发送。启动持续计时器。`);
+                if (!persistenceTimer) {
+                    persistenceTimer = setInterval(sendProbe, 3000);
+                }
+            } else {
+                if(persistenceTimer) {
+                    clearInterval(persistenceTimer);
+                    persistenceTimer = null;
+                    addLog('sys', `收到非零窗口，停止持续计时器。`);
+                }
+            }
+            
+            // If Nagle was buffering, send now
+            if (state.nagleEnabled && state.senderBuffer > 0) {
+                 addLog('sys', `收到ACK，Nagle算法现在发送缓存的数据。`);
+                 sendDataSegment();
+            }
+            render();
+        });
+    }
+
+    function sendProbe() {
+        addLog('sys', '持续计时器超时，发送零窗口探测报文段。');
+        animatePacket('probe-packet', 'Probe (1B)', '15%', '85%').then(() => {
+            addLog('receive', '接收方收到探测报文。');
+            sendAck();
+        });
+    }
+
+    elements.readDataBtn.addEventListener('click', () => {
+        const dataToRead = Math.min(state.receiverBuffer, MSS * 2); // Read up to 2 MSS
+        if (dataToRead <= 0) return;
+        
+        state.receiverBuffer -= dataToRead;
+        // This is simplified. In reality, lastByteRead would track this.
+        // For this sim, we just free up buffer space.
+        addLog('receive', `应用从接收缓存读取了 ${dataToRead} B数据。`);
+        
+        // Now that buffer is freed, send an ACK with the new window
+        sendAck();
+        render();
+    });
+
+    elements.nagleToggle.addEventListener('change', (e) => {
+        state.nagleEnabled = e.target.checked;
+        addLog('sys', `Nagle算法已${state.nagleEnabled ? '启用' : '禁用'}。`);
+    });
+    
+    elements.sillyWindowToggle.addEventListener('change', (e) => {
+        state.sillyWindowEnabled = e.target.checked;
+        addLog('sys', `糊涂窗口避免机制已${state.sillyWindowEnabled ? '启用' : '禁用'}。`);
+    });
+
+    elements.resetSimBtn.addEventListener('click', resetState);
+
+    // Initial setup
+    resetState();
+});
+</script>
+
+</body>
+</html>

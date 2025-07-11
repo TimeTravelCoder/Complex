@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>扩展的以太网 - 交互式模拟器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Tech Blue & Slate Gray -->
+    <!-- Application Structure Plan: 应用采用垂直叙事结构，引导用户从最基础的物理层扩展（集线器）开始，逐步深入到更高级的数据链路层扩展（交换机）和逻辑划分（VLAN）。整体分为三个核心交互模块：1.集线器模拟，2.交换机自学习模拟，3.VLAN广播域隔离模拟。每个模块都包含一个控制面板、一个动态的可视化拓扑图和一个实时更新的解说区域。这种“从简单到复杂”的递进式结构，符合认知规律，让用户在操作中构建对“碰撞域”、“广播域”等核心概念的深刻理解。 -->
+    <!-- Visualization & Content Choices: 1. 设备拓扑图: [Goal: Organize/Compare] [Viz: HTML/CSS Flexbox/Grid] [Interaction: JS-driven animations of data frames] [Justification: 动态展示数据帧的流动路径是核心。通过动画直观对比集线器的广播行为和交换机的精确转发行为。] 2. MAC地址交换表: [Goal: Show Change] [Viz: HTML Table] [Interaction: JS dynamically adds/updates rows during simulation] [Justification: 实时更新的表格清晰地揭示了交换机“自学习”的内部过程，将不可见的算法转化为可见的数据变化。] 3. VLAN配置: [Goal: Interact] [Viz: Color-coded ports and input fields] [Interaction: User can assign ports to VLANs] [Justification: 赋予用户配置能力，通过亲手划分VLAN并测试通信，能更深刻地理解VLAN隔离广播域的原理。] 确认无SVG/Mermaid。 -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #f0f4f8; }
+        .card { background-color: white; border-radius: 0.75rem; box-shadow: 0 4px 15px rgba(0,0,0,0.07); border: 1px solid #e5e7eb; }
+        .tab-btn { transition: all 0.3s ease; border-bottom: 3px solid transparent; }
+        .tab-btn.active { border-color: #3b82f6; color: #3b82f6; font-weight: 700; }
+        .smooth-scroll { scroll-behavior: smooth; }
+        .host, .port, .device { transition: all 0.3s ease; }
+        .frame {
+            position: absolute;
+            width: 2rem;
+            height: 1.5rem;
+            background-color: #3b82f6;
+            color: white;
+            border-radius: 0.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            opacity: 0;
+            transition: all 1s ease-in-out;
+            z-index: 10;
+        }
+        .vlan10 { border-color: #2dd4bf !important; background-color: #f0fdfa !important; color: #0d9488 !important; }
+        .vlan20 { border-color: #f472b6 !important; background-color: #fdf2f8 !important; color: #db2777 !important; }
+        .vis-container {
+            position: relative;
+            min-height: 380px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+    </style>
+</head>
+<body class="smooth-scroll text-gray-800">
+
+    <header class="bg-white/95 backdrop-blur-lg sticky top-0 z-50 shadow-sm">
+        <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-blue-600">扩展的以太网</h1>
+            <nav class="hidden md:flex items-center space-x-8 text-base">
+                <a href="#hub-sim" class="text-gray-600 hover:text-blue-600">集线器模拟</a>
+                <a href="#switch-sim" class="text-gray-600 hover:text-blue-600">交换机模拟</a>
+                <a href="#vlan-sim" class="text-gray-600 hover:text-blue-600">VLAN模拟</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-6 py-12">
+        <section class="text-center mb-16">
+            <h2 class="text-3xl md:text-4xl font-bold mb-4">从共享到交换：以太网的演进之路</h2>
+            <p class="max-w-3xl mx-auto text-lg text-gray-600">本应用将通过交互式模拟，带您了解以太网如何从简单的物理层扩展，演进到高效的数据链路层交换和逻辑VLAN划分。</p>
+        </section>
+
+        <!-- Hub Simulation -->
+        <section id="hub-sim" class="mb-16">
+            <div class="card p-6 md:p-8">
+                <h3 class="text-2xl font-bold mb-2 text-center">1. 物理层扩展：集线器 (Hub)</h3>
+                <p class="text-gray-600 text-center mb-6">集线器工作在物理层，它将所有设备连接成一个大的<strong>碰撞域</strong>。</p>
+                <div class="flex flex-col md:flex-row gap-8">
+                    <!-- Hub Controls -->
+                    <div class="md:w-1/3">
+                        <h4 class="font-bold text-lg mb-4">控制面板</h4>
+                        <div class="space-y-4">
+                            <div>
+                                <label for="hub-source" class="block text-sm font-medium text-gray-700">选择源主机</label>
+                                <select id="hub-source" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                                    <option>主机 A</option><option>主机 B</option><option>主机 C</option><option>主机 D</option>
+                                </select>
+                            </div>
+                            <button id="hub-send-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-transform transform hover:scale-105">发送数据帧</button>
+                        </div>
+                    </div>
+                    <!-- Hub Visualization -->
+                    <div class="md:w-2/3 vis-container" id="hub-vis-area">
+                        <div class="device w-32 h-20 bg-gray-700 text-white flex items-center justify-center rounded-lg font-bold text-xl">HUB</div>
+                        <!-- Hosts will be positioned absolutely -->
+                    </div>
+                </div>
+                <div id="hub-explanation" class="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-gray-700 min-h-[50px]">
+                    请选择源主机并点击“发送数据帧”，观察集线器的行为。
+                </div>
+            </div>
+        </section>
+
+        <!-- Switch Simulation -->
+        <section id="switch-sim" class="mb-16">
+            <div class="card p-6 md:p-8">
+                <h3 class="text-2xl font-bold mb-2 text-center">2. 数据链路层扩展：交换机 (Switch)</h3>
+                <p class="text-gray-600 text-center mb-6">交换机通过<strong>自学习MAC地址</strong>实现智能转发，每个端口都是一个独立的碰撞域。</p>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <!-- Switch Controls & MAC Table -->
+                    <div class="lg:col-span-1 space-y-6">
+                        <div>
+                           <h4 class="font-bold text-lg mb-4">控制面板</h4>
+                           <div class="space-y-4">
+                                <div>
+                                    <label for="switch-source" class="block text-sm font-medium text-gray-700">源主机</label>
+                                    <select id="switch-source" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                                        <option>主机 A</option><option>主机 B</option><option>主机 C</option><option>主机 D</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="switch-dest" class="block text-sm font-medium text-gray-700">目的主机</label>
+                                    <select id="switch-dest" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                                        <option>主机 B</option><option>主机 C</option><option>主机 D</option><option>主机 A</option>
+                                    </select>
+                                </div>
+                                <button id="switch-send-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-transform transform hover:scale-105">发送数据帧</button>
+                           </div>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-lg mb-2">MAC 地址交换表</h4>
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MAC 地址</th>
+                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">接口</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="mac-table-body" class="bg-white divide-y divide-gray-200">
+                                        <!-- Rows will be injected here -->
+                                    </tbody>
+                                </table>
+                            </div>
+                             <button id="mac-table-reset-btn" class="mt-2 text-xs text-blue-500 hover:underline">清空交换表</button>
+                        </div>
+                    </div>
+                    <!-- Switch Visualization -->
+                    <div class="lg:col-span-2 vis-container" id="switch-vis-area">
+                        <div class="device w-48 h-32 bg-gray-700 text-white flex items-center justify-center rounded-lg font-bold text-xl">SWITCH</div>
+                    </div>
+                </div>
+                 <div id="switch-explanation" class="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-gray-700 min-h-[50px]">
+                    请选择源和目的主机，点击“发送数据帧”来观察交换机的自学习和转发过程。
+                </div>
+            </div>
+        </section>
+
+        <!-- VLAN Simulation -->
+        <section id="vlan-sim" class="mb-16">
+            <div class="card p-6 md:p-8">
+                <h3 class="text-2xl font-bold mb-2 text-center">3. 逻辑划分：虚拟局域网 (VLAN)</h3>
+                <p class="text-gray-600 text-center mb-6">VLAN可以跨越物理设备，将网络划分为多个独立的<strong>广播域</strong>，增强安全性和管理效率。</p>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <!-- VLAN Controls -->
+                    <div class="lg:col-span-1 space-y-6">
+                        <div>
+                            <h4 class="font-bold text-lg mb-4">VLAN 配置</h4>
+                            <div id="vlan-config" class="space-y-3">
+                                <!-- Config inputs will be injected here -->
+                            </div>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-lg mb-4">发送测试广播</h4>
+                            <div>
+                                <label for="vlan-source" class="block text-sm font-medium text-gray-700">选择广播源主机</label>
+                                <select id="vlan-source" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                                    <!-- Options will be injected -->
+                                </select>
+                            </div>
+                            <button id="vlan-send-btn" class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-transform transform hover:scale-105">发送广播帧</button>
+                        </div>
+                    </div>
+                    <!-- VLAN Visualization -->
+                    <div class="lg:col-span-2 vis-container" id="vlan-vis-area">
+                         <div class="relative w-56 h-40">
+                            <div class="device absolute inset-0 m-auto w-48 h-32 bg-gray-700 text-white flex items-center justify-center rounded-lg font-bold text-xl">SWITCH</div>
+                             <!-- Ports will be positioned absolutely -->
+                         </div>
+                    </div>
+                </div>
+                 <div id="vlan-explanation" class="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-gray-700 min-h-[50px]">
+                    请为每个端口配置VLAN ID，然后发送广播帧来测试VLAN的广播域隔离效果。
+                </div>
+            </div>
+        </section>
+
+    </main>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const hosts = {
+        '主机 A': { mac: 'A' },
+        '主机 B': { mac: 'B' },
+        '主机 C': { mac: 'C' },
+        '主机 D': { mac: 'D' },
+    };
+    const hostKeys = Object.keys(hosts);
+
+    function animateFrame(visArea, fromHost, toHosts) {
+        const fromEl = document.getElementById(fromHost.id);
+        const frame = document.createElement('div');
+        frame.className = 'frame';
+        frame.innerHTML = '<i class="fa-solid fa-envelope"></i>';
+        visArea.appendChild(frame);
+        
+        const fromRect = fromEl.getBoundingClientRect();
+        const areaRect = visArea.getBoundingClientRect();
+        
+        frame.style.left = `${fromRect.left - areaRect.left + fromRect.width / 2}px`;
+        frame.style.top = `${fromRect.top - areaRect.top + fromRect.height / 2}px`;
+        frame.style.transform = 'translate(-50%, -50%)';
+
+        setTimeout(() => {
+            frame.style.opacity = '1';
+            frame.style.left = '50%';
+            frame.style.top = '50%';
+        }, 100);
+
+        setTimeout(() => {
+            if (Array.isArray(toHosts) && toHosts.length > 0) {
+                toHosts.forEach((host, index) => {
+                    const toEl = document.getElementById(host.id);
+                    const toRect = toEl.getBoundingClientRect();
+                    let finalFrame;
+                    if (index === 0) {
+                        finalFrame = frame;
+                    } else {
+                        finalFrame = frame.cloneNode(true);
+                        visArea.appendChild(finalFrame);
+                    }
+                    finalFrame.style.left = `${toRect.left - areaRect.left + toRect.width / 2}px`;
+                    finalFrame.style.top = `${toRect.top - areaRect.top + toRect.height / 2}px`;
+                });
+            } else {
+                 frame.style.opacity = '0';
+            }
+        }, 1200);
+
+        setTimeout(() => {
+            visArea.querySelectorAll('.frame').forEach(f => f.remove());
+        }, 2300);
+    }
+    
+    // --- Hub Simulation ---
+    const hubVisArea = document.getElementById('hub-vis-area');
+    const hubSourceSelect = document.getElementById('hub-source');
+    const hubSendBtn = document.getElementById('hub-send-btn');
+    const hubExplanation = document.getElementById('hub-explanation');
+    
+    hostKeys.forEach((name, i) => {
+        const hostEl = document.createElement('div');
+        hostEl.id = `hub-${hosts[name].mac}`;
+        hostEl.className = 'host absolute flex flex-col items-center p-2 text-center w-24';
+        hostEl.innerHTML = `<i class="fas fa-desktop text-3xl text-gray-600"></i><span class="text-sm mt-1">${name}</span>`;
+        
+        if (i === 0) { hostEl.style.cssText = 'top: 0; left: 50%; transform: translateX(-50%);'; }
+        if (i === 1) { hostEl.style.cssText = 'top: 50%; right: 0; transform: translateY(-50%);'; }
+        if (i === 2) { hostEl.style.cssText = 'bottom: 0; left: 50%; transform: translateX(-50%);'; }
+        if (i === 3) { hostEl.style.cssText = 'top: 50%; left: 0; transform: translateY(-50%);'; }
+        
+        hubVisArea.appendChild(hostEl);
+    });
+
+    hubSendBtn.addEventListener('click', () => {
+        const sourceName = hubSourceSelect.value;
+        const sourceMAC = hosts[sourceName].mac;
+        const sourceId = `hub-${sourceMAC}`;
+        
+        hubExplanation.innerHTML = `主机 ${sourceName} 发送一个数据帧。由于集线器工作在物理层，它不识别MAC地址，只是简单地将信号放大并复制到<strong>所有其他端口</strong>。`;
+
+        const allOtherHosts = hostKeys.filter(name => name !== sourceName).map(name => ({ id: `hub-${hosts[name].mac}`}));
+        animateFrame(hubVisArea, {id: sourceId}, allOtherHosts);
+    });
+
+    // --- Switch Simulation ---
+    const switchVisArea = document.getElementById('switch-vis-area');
+    const switchSourceSelect = document.getElementById('switch-source');
+    const switchDestSelect = document.getElementById('switch-dest');
+    const switchSendBtn = document.getElementById('switch-send-btn');
+    const macTableBody = document.getElementById('mac-table-body');
+    const macTableResetBtn = document.getElementById('mac-table-reset-btn');
+    const switchExplanation = document.getElementById('switch-explanation');
+    let macTable = {};
+
+    function updateMacTable() {
+        macTableBody.innerHTML = '';
+        if (Object.keys(macTable).length === 0) {
+             macTableBody.innerHTML = '<tr><td colspan="2" class="text-center text-gray-400 py-3">交换表为空</td></tr>';
+        } else {
+            Object.entries(macTable).forEach(([mac, port]) => {
+                const row = macTableBody.insertRow();
+                row.innerHTML = `<td class="px-4 py-2 text-sm font-mono">${mac}</td><td class="px-4 py-2 text-sm font-mono">${port}</td>`;
+            });
+        }
+    }
+
+    hostKeys.forEach((name, i) => {
+        const hostEl = document.createElement('div');
+        const port = i + 1;
+        hostEl.id = `switch-${hosts[name].mac}`;
+        hostEl.className = 'host absolute flex flex-col items-center p-2 text-center w-28';
+        hostEl.innerHTML = `<i class="fas fa-desktop text-3xl text-gray-600"></i><span class="text-sm mt-1">${name} (接口${port})</span>`;
+
+        if (i < 2) { hostEl.style.cssText = `top: 0; left: ${20 + i * 60}%; transform: translateX(-50%);`; }
+        else { hostEl.style.cssText = `bottom: 0; left: ${20 + (i - 2) * 60}%; transform: translateX(-50%);`; }
+        
+        switchVisArea.appendChild(hostEl);
+    });
+    
+    macTableResetBtn.addEventListener('click', () => {
+        macTable = {};
+        updateMacTable();
+        switchExplanation.innerHTML = "交换表已清空。请重新发送数据帧以观察自学习过程。";
+    });
+
+    switchSendBtn.addEventListener('click', () => {
+        const sourceName = switchSourceSelect.value;
+        const destName = switchDestSelect.value;
+        if (sourceName === destName) {
+            switchExplanation.innerHTML = `<strong class="text-red-500">错误：</strong>源主机和目的主机不能相同。`;
+            return;
+        }
+
+        const sourceMAC = hosts[sourceName].mac;
+        const destMAC = hosts[destName].mac;
+        const sourcePort = hostKeys.indexOf(sourceName) + 1;
+        const sourceId = `switch-${sourceMAC}`;
+        
+        let explanation = `<strong>第1步 (自学习):</strong> 交换机从接口 ${sourcePort} 收到一个帧，记录下源地址 <span class="font-mono text-green-600">${sourceMAC}</span> 来自接口 ${sourcePort}，并更新交换表。<br>`;
+        macTable[sourceMAC] = sourcePort;
+        updateMacTable();
+
+        if (macTable[destMAC]) {
+            const destPort = macTable[destMAC];
+            explanation += `<strong>第2步 (精确转发):</strong> 交换机查找交换表，发现目的地址 <span class="font-mono text-blue-600">${destMAC}</span> 位于接口 ${destPort}。因此，将该帧<strong>仅从接口 ${destPort} 转发</strong>出去。`;
+            animateFrame(switchVisArea, {id: sourceId}, [{id: `switch-${destMAC}`}]);
+        } else {
+            explanation += `<strong>第2步 (广播):</strong> 交换机查找交换表，未找到目的地址 <span class="font-mono text-red-600">${destMAC}</span>。因此，将该帧向<strong>除源接口外的所有其他接口广播</strong>。`;
+            const allOtherHosts = hostKeys.filter(name => name !== sourceName).map(name => ({ id: `switch-${hosts[name].mac}`}));
+            animateFrame(switchVisArea, {id: sourceId}, allOtherHosts);
+        }
+        switchExplanation.innerHTML = explanation;
+    });
+
+    // --- VLAN Simulation ---
+    const vlanVisArea = document.getElementById('vlan-vis-area');
+    const vlanConfigEl = document.getElementById('vlan-config');
+    const vlanSourceSelect = document.getElementById('vlan-source');
+    const vlanSendBtn = document.getElementById('vlan-send-btn');
+    const vlanExplanation = document.getElementById('vlan-explanation');
+    let vlanConfig = {};
+
+    hostKeys.forEach((name, i) => {
+        const port = i + 1;
+        const hostMAC = hosts[name].mac;
+        vlanConfig[port] = 1;
+
+        const hostEl = document.createElement('div');
+        hostEl.id = `vlan-${hostMAC}`;
+        hostEl.className = 'host absolute flex flex-col items-center p-2 text-center w-28';
+        hostEl.innerHTML = `<i class="fas fa-desktop text-3xl text-gray-600"></i><span class="text-sm mt-1">${name}</span>`;
+        if (i < 2) { hostEl.style.cssText = `top: 0; left: ${20 + i * 60}%; transform: translateX(-50%);`; } 
+        else { hostEl.style.cssText = `bottom: 0; left: ${20 + (i - 2) * 60}%; transform: translateX(-50%);`; }
+        vlanVisArea.appendChild(hostEl);
+
+        const portEl = document.createElement('div');
+        portEl.id = `vlan-port-${port}`;
+        portEl.className = 'port absolute p-1 border-2 border-gray-400 rounded-md bg-white font-mono';
+        portEl.innerHTML = `P${port}`;
+        if (i === 0) { portEl.style.cssText = `top: 50%; left: 0; transform: translate(-100%, -50%);`; } 
+        if (i === 1) { portEl.style.cssText = `top: 0; left: 50%; transform: translate(-50%, -100%);`; } 
+        if (i === 2) { portEl.style.cssText = `top: 50%; right: 0; transform: translate(100%, -50%);`; } 
+        if (i === 3) { portEl.style.cssText = `bottom: 0; left: 50%; transform: translate(-50%, 100%);`; }
+        vlanVisArea.querySelector('.relative').appendChild(portEl);
+
+        const configDiv = document.createElement('div');
+        configDiv.innerHTML = `
+            <label for="vlan-port-cfg-${port}" class="block text-sm font-medium text-gray-700">接口 ${port} (主机 ${hostMAC}) VLAN ID:</label>
+            <input type="number" id="vlan-port-cfg-${port}" value="1" min="1" class="vlan-input mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 rounded-md" data-port="${port}">
+        `;
+        vlanConfigEl.appendChild(configDiv);
+        
+        vlanSourceSelect.innerHTML += `<option>${name}</option>`;
+    });
+
+    function updateVlanColors() {
+        for (let port = 1; port <= 4; port++) {
+            const portEl = document.getElementById(`vlan-port-${port}`);
+            portEl.classList.remove('vlan10', 'vlan20', 'text-gray-800');
+            const vlanId = vlanConfig[port];
+            if (vlanId === 10) portEl.classList.add('vlan10');
+            else if (vlanId === 20) portEl.classList.add('vlan20');
+            else portEl.classList.add('text-gray-800');
+        }
+    }
+    
+    vlanConfigEl.addEventListener('change', (e) => {
+        if (e.target.classList.contains('vlan-input')) {
+            const port = e.target.dataset.port;
+            let vlanId = parseInt(e.target.value);
+            if(isNaN(vlanId) || vlanId < 1) vlanId = 1;
+            vlanConfig[port] = vlanId;
+            e.target.value = vlanId;
+            updateVlanColors();
+        }
+    });
+
+    vlanSendBtn.addEventListener('click', () => {
+        const sourceName = vlanSourceSelect.value;
+        const sourceMAC = hosts[sourceName].mac;
+        const sourcePort = hostKeys.indexOf(sourceName) + 1;
+        const sourceVlan = vlanConfig[sourcePort];
+        const sourceId = `vlan-${sourceMAC}`;
+
+        let explanation = `主机 ${sourceName} (VLAN ${sourceVlan}) 发送一个广播帧。<br>交换机只会将这个广播帧转发到所有属于<strong>同一个VLAN (${sourceVlan})</strong> 的其他端口。`;
+        vlanExplanation.innerHTML = explanation;
+
+        const broadcastTargets = [];
+        for (let port = 1; port <= 4; port++) {
+            if (port !== sourcePort && vlanConfig[port] === sourceVlan) {
+                const targetName = hostKeys[port - 1];
+                const targetMAC = hosts[targetName].mac;
+                broadcastTargets.push({ id: `vlan-${targetMAC}` });
+            }
+        }
+        
+        if (broadcastTargets.length === 0) {
+             vlanExplanation.innerHTML += `<br><strong>结果:</strong> 网络中没有其他主机属于VLAN ${sourceVlan}，广播被完全隔离，没有转发到任何其他端口。`;
+        }
+
+        animateFrame(vlanVisArea, {id: sourceId}, broadcastTargets);
+    });
+    
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            e.preventDefault();
+            const targetElement = document.querySelector(this.getAttribute('href'));
+            if(targetElement) {
+                targetElement.scrollIntoView({
+                    behavior: 'smooth'
+                });
+            }
+        });
+    });
+
+    // Initial state
+    updateMacTable();
+    updateVlanColors();
+});
+</script>
+
+</body>
+</html>
