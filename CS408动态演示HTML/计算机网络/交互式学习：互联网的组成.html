@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式学习应用：互联网的组成 (时空图版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chosen Palette: Modern Blue (背景: #F8FAFC, 文本: #334155, 主色: #3B82F6, 强调色: #10B981) -->
+    <!-- Application Structure Plan: 本应用采用单页选项卡式布局(Tabbed Layout)，将内容划分为三大核心模块：“总体架构”、“边缘部分”和“核心部分”。这种结构将原始笔记的线性内容分解为独立且相关的学习单元，便于用户按需探索，避免信息过载。用户可以通过顶部导航在模块间切换。“边缘部分”使用并排卡片对比两种通信模式。“核心部分”是应用亮点，包含一个交互式Canvas动画，用于动态演示并对比“电路交换”和“分组交换”过程，将抽象理论可视化，极大地提升了理解效率和趣味性。新增一个时空图，与动画同步展示，从时间和空间两个维度对比交换技术。(优化说明: 视觉层面进行了全面提升，增强了专业感和易读性)。 -->
+    <!-- Visualization & Content Choices: 1. 总体架构: (目标:告知) 使用HTML/CSS构建一个简洁的、响应式的两栏布局图，展示边缘与核心的关系。(理由:清晰直观，符合现代网页设计)。 2. 边缘部分: (目标:对比) 使用并排的卡片(Cards)来对比C/S和P2P模式，每张卡片包含一个简单的HTML/CSS示意图和关键特征列表。(理由:便于并列比较，信息密度高)。 3. 核心部分: (目标:对比和解释过程) 使用两个并排的Canvas，一个用于过程示意动画，另一个新增的用于绘制时空图。两者由同一组按钮控制，同步演示电路交换和分组交换，从而提供更全面的可视化解释。(确认:未使用SVG或Mermaid.js)。 -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #F8FAFC; /* Slate 50 */
+            color: #334155; /* Slate 700 */
+        }
+        .tab-btn {
+            transition: all 0.3s ease-in-out;
+            border-bottom: 3px solid transparent;
+        }
+        .tab-active {
+            border-bottom-color: #3B82F6; /* Blue 500 */
+            color: #1E40AF; /* Blue 800 */
+            font-weight: 700;
+        }
+        .tab-inactive {
+            color: #64748B; /* Slate 500 */
+        }
+        .card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.04);
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: 1px solid #E2E8F0; /* Slate 200 */
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+        .btn {
+            background-color: #3B82F6; /* Blue 500 */
+            color: white;
+            padding: 0.6rem 1.2rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            transition: background-color 0.2s, transform 0.2s;
+            box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+        }
+        .btn:hover {
+            background-color: #2563EB; /* Blue 600 */
+            transform: translateY(-2px);
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            height: 300px;
+            max-height: 400px;
+        }
+        .canvas-bg {
+            background: linear-gradient(145deg, #ffffff, #e6e9f0);
+            border: 1px solid #E5E7EB;
+            border-radius: 0.75rem;
+            box-shadow: inset 5px 5px 10px #d1d4d9, inset -5px -5px 10px #ffffff;
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        <header class="text-center mb-10">
+            <h1 class="text-3xl md:text-5xl font-bold text-slate-800">交互式学习：互联网的组成</h1>
+            <p class="mt-3 text-lg text-slate-500">通过互动探索互联网的基础架构与工作原理</p>
+        </header>
+
+        <nav class="flex justify-center border-b border-slate-200 mb-10">
+            <button class="tab-btn py-3 px-6 text-lg" data-tab="architecture">总体架构</button>
+            <button class="tab-btn py-3 px-6 text-lg" data-tab="edge">边缘部分</button>
+            <button class="tab-btn py-3 px-6 text-lg" data-tab="core">核心部分</button>
+        </nav>
+
+        <main>
+            <!-- 总体架构 Section -->
+            <section id="architecture" class="tab-content">
+                <div class="bg-white p-6 md:p-8 rounded-xl shadow-lg animate-fade-in">
+                    <h2 class="text-2xl md:text-3xl font-bold mb-4 text-slate-800">两大组成部分</h2>
+                    <p class="mb-8 text-slate-600 leading-relaxed max-w-4xl mx-auto">从工作方式上，互联网可以被清晰地划分为两大块：边缘部分和核心部分。边缘部分由用户直接使用的主机组成，负责进行信息处理和资源共享；而核心部分则由大量的网络和路由器构成，为边缘部分提供数据交换和连通服务。两者协同工作，构成了我们今天所知的互联网。</p>
+                    <div class="flex flex-col lg:flex-row gap-8 items-center">
+                        <!-- Diagram -->
+                        <div class="w-full lg:w-1/2 bg-slate-50 p-6 rounded-lg border border-slate-200">
+                           <div class="relative border-2 border-dashed border-slate-300 rounded-full p-10 flex justify-center items-center aspect-square">
+                                <span class="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-50 px-3 text-slate-600 font-semibold text-lg">边缘部分</span>
+                                <div class="relative w-full h-full border-2 border-slate-300 rounded-full p-8 flex justify-center items-center">
+                                    <span class="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-50 px-3 text-slate-600 font-semibold text-lg">核心部分</span>
+                                    <div class="text-center">
+                                        <div class="font-bold text-xl text-slate-700">路由器与网络</div>
+                                        <div class="text-sm text-slate-500 mt-1">提供连通性与交换</div>
+                                    </div>
+                                </div>
+                                <div class="absolute top-10 left-0 transform -translate-x-1/2 -translate-y-1/2 text-center">
+                                    <div class="p-2 bg-white rounded-full shadow-md"><span class="text-3xl">💻</span></div><p class="text-sm font-medium mt-1">主机</p>
+                                </div>
+                                 <div class="absolute bottom-10 right-0 transform translate-x-1/2 translate-y-1/2 text-center">
+                                    <div class="p-2 bg-white rounded-full shadow-md"><span class="text-3xl">📱</span></div><p class="text-sm font-medium mt-1">端系统</p>
+                                </div>
+                                <div class="absolute bottom-10 left-0 transform -translate-x-1/2 translate-y-1/2 text-center">
+                                    <div class="p-2 bg-white rounded-full shadow-md"><span class="text-3xl">🖥️</span></div><p class="text-sm font-medium mt-1">主机</p>
+                                </div>
+                                <div class="absolute top-10 right-0 transform translate-x-1/2 -translate-y-1/2 text-center">
+                                    <div class="p-2 bg-white rounded-full shadow-md"><span class="text-3xl">💻</span></div><p class="text-sm font-medium mt-1">端系统</p>
+                                </div>
+                           </div>
+                        </div>
+                        <!-- Text -->
+                        <div class="w-full lg:w-1/2 space-y-6">
+                             <div class="card p-6">
+                                <h3 class="font-bold text-xl text-blue-600">边缘部分 (Edge Part)</h3>
+                                <p class="text-slate-600 mt-2">由所有连接在互联网上的主机 (host) 或端系统 (end system) 组成。这部分是用户直接进行通信和资源共享的地方。例如，我们使用的个人电脑、智能手机、服务器等都属于边缘部分。</p>
+                            </div>
+                             <div class="card p-6">
+                                <h3 class="font-bold text-xl text-teal-600">核心部分 (Core Part)</h3>
+                                <p class="text-slate-600 mt-2">由大量的网络和连接这些网络的路由器 (router) 组成。它的主要任务是转发分组，为边缘部分提供高效、可靠的数据传输通道，确保信息能够在全球范围内流动。</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 边缘部分 Section -->
+            <section id="edge" class="tab-content hidden">
+                 <div class="bg-white p-6 md:p-8 rounded-xl shadow-lg animate-fade-in">
+                    <h2 class="text-2xl md:text-3xl font-bold mb-4 text-slate-800">边缘部分的通信模式</h2>
+                    <p class="mb-8 text-slate-600 leading-relaxed max-w-4xl mx-auto">在互联网的边缘，端系统之间的通信主要有两种模式：客户-服务器 (C/S) 模式 和 对等 (P2P) 模式。这两种模式定义了应用进程之间如何进行服务请求与提供。</p>
+                    <div class="grid md:grid-cols-2 gap-8">
+                        <!-- C/S Card -->
+                        <div class="card p-6 flex flex-col">
+                            <h3 class="text-xl font-bold mb-4 text-blue-600">客户-服务器 (Client/Server) 模式</h3>
+                            <p class="mb-4 text-slate-600 flex-grow">最传统和最常见的模式。通信双方角色固定：一方作为客户请求服务，另一方作为服务器提供服务。</p>
+                            <div class="text-center my-4 p-4 rounded-lg bg-slate-50 border">
+                                <div class="flex items-center justify-around">
+                                    <div class="text-center"><div class="text-4xl">💻</div><p class="font-semibold mt-1">客户</p><p class="text-sm text-slate-500">主动发起请求</p></div>
+                                    <div class="flex flex-col items-center font-semibold text-blue-500"><span class="text-2xl">→</span><span class="text-sm">请求</span><span class="text-2xl mt-1">←</span><span class="text-sm">响应</span></div>
+                                    <div class="text-center"><div class="text-4xl">🗄️</div><p class="font-semibold mt-1">服务器</p><p class="text-sm text-slate-500">被动等待请求</p></div>
+                                </div>
+                            </div>
+                            <h4 class="font-semibold mt-6 mb-2 text-slate-700">主要特点:</h4>
+                            <ul class="list-disc list-inside space-y-2 text-slate-600">
+                                <li><span class="font-semibold text-slate-800">角色固定:</span> 客户是服务请求方，服务器是服务提供方。</li>
+                                <li><span class="font-semibold text-slate-800">客户主动:</span> 客户程序必须知道服务器地址，并主动发起通信。</li>
+                                <li><span class="font-semibold text-slate-800">服务器被动:</span> 服务器程序持续运行，等待请求，无需知道客户地址。</li>
+                                <li><span class="font-semibold text-slate-800">集中式:</span> 服务和数据集中存储在服务器上，易于管理，但也可能成为瓶颈。</li>
+                            </ul>
+                        </div>
+                        <!-- P2P Card -->
+                        <div class="card p-6 flex flex-col">
+                            <h3 class="text-xl font-bold mb-4 text-teal-600">对等 (Peer-to-Peer) 模式</h3>
+                             <p class="mb-4 text-slate-600 flex-grow">通信的参与者（对等方）角色平等，既可以是客户，也可以是服务器。</p>
+                             <div class="text-center my-4 p-4 rounded-lg bg-slate-50 border">
+                                <div class="flex items-center justify-around">
+                                    <div class="text-center"><div class="text-4xl">💻</div><p class="font-semibold mt-1">对等方 A</p></div>
+                                    <div class="font-semibold text-teal-500 text-2xl">↔</div>
+                                    <div class="text-center"><div class="text-4xl">💻</div><p class="font-semibold mt-1">对等方 B</p></div>
+                                </div>
+                            </div>
+                            <h4 class="font-semibold mt-6 mb-2 text-slate-700">主要特点:</h4>
+                            <ul class="list-disc list-inside space-y-2 text-slate-600">
+                                <li><span class="font-semibold text-slate-800">角色动态:</span> 每一台主机既是客户，又是服务器。</li>
+                                <li><span class="font-semibold text-slate-800">直接通信:</span> 对等方之间直接交换信息，无需通过中央服务器。</li>
+                                <li><span class="font-semibold text-slate-800">分布式:</span> 资源和服务分散在各个对等方节点上，健壮性高。</li>
+                                <li><span class="font-semibold text-slate-800">可扩展性好:</span> 参与者越多，系统总服务能力越强。</li>
+                            </ul>
+                        </div>
+                    </div>
+                 </div>
+            </section>
+
+            <!-- 核心部分 Section -->
+            <section id="core" class="tab-content hidden">
+                 <div class="bg-white p-6 md:p-8 rounded-xl shadow-lg animate-fade-in">
+                    <h2 class="text-2xl md:text-3xl font-bold mb-4 text-slate-800">核心部分的交换技术</h2>
+                    <p class="mb-6 text-slate-600 leading-relaxed max-w-4xl mx-auto">互联网的核心部分负责在庞大的网络中转发数据。其关键技术是交换。历史上和现在主要有两种交换方式：电路交换和分组交换。理解它们的区别是掌握网络工作原理的基础。</p>
+                    <p class="mb-8 text-slate-600 max-w-4xl mx-auto">点击下方按钮，观看两种交换方式的动画演示，直观感受数据传输过程的差异。</p>
+
+                    <div class="grid lg:grid-cols-2 gap-8">
+                        <div>
+                            <h3 class="text-xl font-bold mb-4 text-center text-slate-700">过程示意图</h3>
+                            <div class="chart-container canvas-bg">
+                                <canvas id="switchingAnimationCanvas"></canvas>
+                            </div>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-bold mb-4 text-center text-slate-700">时空关系图</h3>
+                            <div class="chart-container canvas-bg">
+                                <canvas id="spacetimeDiagramCanvas"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-center gap-4 my-8">
+                        <button id="playCircuitBtn" class="btn">▶️ 播放电路交换</button>
+                        <button id="playPacketBtn" class="btn">▶️ 播放分组交换</button>
+                    </div>
+                    <div id="animation-explanation" class="text-center text-slate-600 min-h-[3rem] p-3 bg-slate-100 rounded-md border border-slate-200">
+                        请选择一种交换方式以开始动画。
+                    </div>
+                    
+                    <hr class="my-10 border-slate-200">
+
+                    <h3 class="text-xl font-bold mb-4 text-slate-700 text-center">分组交换的主要优点</h3>
+                     <p class="mb-6 text-slate-600 max-w-4xl mx-auto text-center">分组交换之所以成为现代互联网的基石，是因为它相比电路交换具有显著的优势，尤其适合于突发式的计算机数据通信。</p>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full bg-white border border-slate-200 rounded-lg shadow-sm">
+                            <thead class="bg-slate-100">
+                                <tr>
+                                    <th class="py-3 px-6 text-left font-semibold text-slate-600">优点</th>
+                                    <th class="py-3 px-6 text-left font-semibold text-slate-600">实现方式</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="border-t border-slate-200">
+                                    <td class="py-4 px-6 font-medium text-slate-800">高效</td>
+                                    <td class="py-4 px-6 text-slate-600">在分组传输过程中动态分配传输带宽，对通信链路是逐段占用。</td>
+                                </tr>
+                                <tr class="border-t border-slate-200 bg-slate-50">
+                                    <td class="py-4 px-6 font-medium text-slate-800">灵活</td>
+                                    <td class="py-4 px-6 text-slate-600">为每一个分组独立地选择最合适的转发路由。</td>
+                                </tr>
+                                <tr class="border-t border-slate-200">
+                                    <td class="py-4 px-6 font-medium text-slate-800">迅速</td>
+                                    <td class="py-4 px-6 text-slate-600">以分组作为传送单位，可以不先建立连接就能向其他主机发送分组。</td>
+                                </tr>
+                                <tr class="border-t border-slate-200 bg-slate-50">
+                                    <td class="py-4 px-6 font-medium text-slate-800">可靠</td>
+                                    <td class="py-4 px-6 text-slate-600">保证可靠性的网络协议；分布式多路由的分组交换网，使网络有很好的生存性。</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                 </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const tabs = document.querySelectorAll('.tab-btn');
+            const contents = document.querySelectorAll('.tab-content');
+            const animCanvas = document.getElementById('switchingAnimationCanvas');
+            const animCtx = animCanvas.getContext('2d');
+            const spacetimeCanvas = document.getElementById('spacetimeDiagramCanvas');
+            const spacetimeCtx = spacetimeCanvas.getContext('2d');
+            const explanationDiv = document.getElementById('animation-explanation');
+            let animationFrameId;
+
+            function resizeCanvases() {
+                [animCanvas, spacetimeCanvas].forEach(canvas => {
+                    if (!canvas) return;
+                    const container = canvas.parentElement;
+                    canvas.width = container.clientWidth;
+                    canvas.height = container.clientHeight;
+                });
+                drawInitialState();
+                drawSpacetimeInitialState();
+            }
+
+            function setActiveTab(tab) {
+                tabs.forEach(item => {
+                    item.classList.remove('tab-active');
+                    item.classList.add('tab-inactive');
+                });
+                tab.classList.add('tab-active');
+                tab.classList.remove('tab-inactive');
+
+                const target = tab.getAttribute('data-tab');
+                contents.forEach(content => {
+                    if (content.id === target) {
+                        content.classList.remove('hidden');
+                    } else {
+                        content.classList.add('hidden');
+                    }
+                });
+                
+                if (target === 'core') {
+                    setTimeout(resizeCanvases, 0);
+                }
+            }
+            
+            tabs.forEach(tab => tab.addEventListener('click', () => setActiveTab(tab)));
+            setActiveTab(tabs[0]);
+            
+            function drawNode(ctx, x, y, label) {
+                ctx.beginPath();
+                ctx.arc(x, y, 22, 0, Math.PI * 2);
+                ctx.fillStyle = '#60A5FA';
+                ctx.fill();
+                ctx.strokeStyle = '#2563EB';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 16px "Noto Sans SC"';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, x, y);
+            }
+
+            function drawInitialState() {
+                if (!animCtx) return;
+                animCtx.clearRect(0, 0, animCanvas.width, animCanvas.height);
+                const w = animCanvas.width;
+                const h = animCanvas.height;
+                const nodes = {
+                    A: { x: w * 0.1, y: h / 2, label: 'A' },
+                    B: { x: w * 0.37, y: h / 2, label: 'B' },
+                    C: { x: w * 0.64, y: h / 2, label: 'C' },
+                    D: { x: w * 0.9, y: h / 2, label: 'D' },
+                };
+                
+                animCtx.strokeStyle = '#E2E8F0';
+                animCtx.lineWidth = 3;
+                animCtx.beginPath();
+                animCtx.moveTo(nodes.A.x, nodes.A.y);
+                animCtx.lineTo(nodes.D.x, nodes.D.y);
+                animCtx.stroke();
+
+                for (let key in nodes) {
+                    drawNode(animCtx, nodes[key].x, nodes[key].y, nodes[key].label);
+                }
+            }
+            
+            const stNodes = ['A', 'B', 'C', 'D'];
+            const stPadding = { top: 20, bottom: 20, left: 40, right: 20 };
+
+            function drawSpacetimeInitialState() {
+                if (!spacetimeCtx) return;
+                const w = spacetimeCanvas.width;
+                const h = spacetimeCanvas.height;
+                spacetimeCtx.clearRect(0, 0, w, h);
+                
+                spacetimeCtx.strokeStyle = '#9CA3AF';
+                spacetimeCtx.fillStyle = '#6B7280';
+                spacetimeCtx.font = '12px "Noto Sans SC"';
+                spacetimeCtx.textAlign = 'center';
+
+                spacetimeCtx.beginPath();
+                spacetimeCtx.moveTo(stPadding.left, stPadding.top);
+                spacetimeCtx.lineTo(stPadding.left, h - stPadding.bottom);
+                spacetimeCtx.stroke();
+                spacetimeCtx.fillText('时间', stPadding.left - 20, h / 2);
+
+                stNodes.forEach((node, i) => {
+                    const x = stPadding.left + (w - stPadding.left - stPadding.right) * (i / (stNodes.length - 1));
+                    spacetimeCtx.beginPath();
+                    spacetimeCtx.moveTo(x, stPadding.top);
+                    spacetimeCtx.lineTo(x, h - stPadding.bottom);
+                    spacetimeCtx.setLineDash([2, 4]);
+                    spacetimeCtx.stroke();
+                    spacetimeCtx.setLineDash([]);
+                    spacetimeCtx.fillText(node, x, stPadding.top - 10);
+                });
+            }
+
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+
+            function animateCircuitSwitching() {
+                if (animationFrameId) cancelAnimationFrame(animationFrameId);
+                const w = animCanvas.width;
+                const h = animCanvas.height;
+                const startX = w * 0.1;
+                const endX = w * 0.9;
+                let phase = 0; 
+                const phases = [
+                    { duration: 100, text: "1. 建立连接：在A和D之间建立一条专用的物理通路..." },
+                    { duration: 200, text: "2. 数据传送：整个报文在已建立的链路上连续传输..." },
+                    { duration: 100, text: "3. 释放连接：通信结束，释放占用的物理通路。" },
+                ];
+                let phaseProgress = 0;
+
+                function animate() {
+                    phaseProgress++;
+                    if (phaseProgress > phases[phase].duration) {
+                        phaseProgress = 0;
+                        phase++;
+                        if (phase >= phases.length) {
+                             drawInitialState();
+                             explanationDiv.textContent = "电路交换完成！";
+                             cancelAnimationFrame(animationFrameId);
+                             return;
+                        }
+                    }
+                    
+                    explanationDiv.textContent = phases[phase].text;
+                    animCtx.clearRect(0, 0, w, h);
+                    drawInitialState();
+                    
+                    animCtx.strokeStyle = '#EF4444';
+                    animCtx.lineWidth = 10;
+                    animCtx.lineCap = 'round';
+
+                    if (phase === 0) {
+                        const currentEnd = startX + (endX - startX) * (phaseProgress / phases[phase].duration);
+                        animCtx.beginPath();
+                        animCtx.moveTo(startX, h / 2);
+                        animCtx.lineTo(currentEnd, h / 2);
+                        animCtx.stroke();
+                    } else if (phase === 1) {
+                        animCtx.beginPath();
+                        animCtx.moveTo(startX, h / 2);
+                        animCtx.lineTo(endX, h / 2);
+                        animCtx.stroke();
+                        animCtx.fillStyle = '#FEE2E2';
+                        animCtx.font = 'bold 14px "Noto Sans SC"';
+                        const messageWidth = animCtx.measureText("完整报文").width + 20;
+                        const messageX = startX + (endX - startX - messageWidth) * (phaseProgress / phases[phase].duration);
+                        animCtx.fillRect(messageX - 5, h / 2 - 15, messageWidth, 30);
+                        animCtx.fillStyle = '#B91C1C';
+                        animCtx.fillText("完整报文", messageX + messageWidth/2 - 5, h/2);
+                    } else if (phase === 2) {
+                        const currentStart = startX + (endX - startX) * (phaseProgress / phases[phase].duration);
+                        animCtx.strokeStyle = '#E2E8F0';
+                        animCtx.beginPath();
+                        animCtx.moveTo(currentStart, h/2);
+                        animCtx.lineTo(endX, h/2);
+                        animCtx.stroke();
+                    }
+                    animationFrameId = requestAnimationFrame(animate);
+                }
+                animate();
+            }
+            
+            function animatePacketSwitching() {
+                if (animationFrameId) cancelAnimationFrame(animationFrameId);
+                const w = animCanvas.width;
+                const h = animCanvas.height;
+                const nodesX = [w * 0.1, w * 0.37, w * 0.64, w * 0.9];
+                const packets = [
+                    { id: 1, progress: 0, segment: 0, color: '#3B82F6' },
+                    { id: 2, progress: 0, segment: 0, color: '#10B981' },
+                    { id: 3, progress: 0, segment: 0, color: '#F59E0B' }
+                ];
+                let frame = 0;
+
+                function animate() {
+                    frame++;
+                    animCtx.clearRect(0, 0, w, h);
+                    drawInitialState();
+                    let allFinished = true;
+                    packets.forEach((packet, index) => {
+                         if (packet.segment >= 3) return;
+                         allFinished = false;
+                         if (frame > index * 50) packet.progress += 0.015;
+                         if (packet.progress >= 1.0) {
+                             packet.progress = 0;
+                             packet.segment++;
+                         }
+                        if(packet.segment < 3) {
+                             const startX = nodesX[packet.segment];
+                             const endX = nodesX[packet.segment + 1];
+                             const currentX = startX + (endX - startX) * packet.progress;
+                             animCtx.fillStyle = packet.color;
+                             animCtx.beginPath();
+                             animCtx.rect(currentX, h / 2 - 12, 35, 24);
+                             animCtx.fill();
+                             animCtx.fillStyle = 'white';
+                             animCtx.font = 'bold 14px sans-serif';
+                             animCtx.fillText(`P${packet.id}`, currentX + 17.5, h/2);
+                        }
+                    });
+                    
+                    const firstPacketSegment = packets[0].segment;
+                    if(firstPacketSegment === 0 && packets[1].segment === 0) explanationDiv.textContent = "1. 分组1从A发出，前往B...";
+                    else if(firstPacketSegment === 1 && packets[2].segment === 0) explanationDiv.textContent = "2. 分组1在B存储转发，同时分组2从A发出...";
+                    else if(firstPacketSegment === 2) explanationDiv.textContent = "3. 各分组在网络中存储转发，流水线式传输...";
+
+                    if (allFinished) {
+                        explanationDiv.textContent = "分组交换完成！所有分组都到达了D。";
+                        cancelAnimationFrame(animationFrameId);
+                        animCtx.clearRect(0, 0, w, h);
+                        drawInitialState();
+                        const finalX = nodesX[3];
+                        packets.forEach((packet, index) => {
+                            const yPos = (h / 2) - 30 + (index * 28);
+                            animCtx.fillStyle = packet.color;
+                            animCtx.beginPath();
+                            animCtx.rect(finalX + 30, yPos, 35, 24);
+                            animCtx.fill();
+                            animCtx.fillStyle = 'white';
+                            animCtx.font = 'bold 14px sans-serif';
+                            animCtx.fillText(`P${packet.id}`, finalX + 30 + 17.5, yPos + 12);
+                        });
+                        return;
+                    }
+                    animationFrameId = requestAnimationFrame(animate);
+                }
+                animate();
+            }
+
+            function animateCircuitSpacetime() {
+                const w = spacetimeCanvas.width;
+                const h = spacetimeCanvas.height;
+                const totalDuration = 400;
+                const propTime = 60;
+                const sendTime = 160;
+                const setupTime = propTime;
+                const dataStartTime = setupTime;
+                const dataEndTime = dataStartTime + sendTime;
+                const releaseTime = dataEndTime + propTime;
+                
+                const getX = (nodeIndex) => stPadding.left + (w - stPadding.left - stPadding.right) * (nodeIndex / (stNodes.length - 1));
+                const getY = (time) => stPadding.top + (h - stPadding.top - stPadding.bottom) * (time / totalDuration);
+
+                let frame = 0;
+                function animate() {
+                    frame++;
+                    drawSpacetimeInitialState();
+                    
+                    if (frame > 0) {
+                        spacetimeCtx.strokeStyle = '#F59E0B';
+                        spacetimeCtx.lineWidth = 2;
+                        spacetimeCtx.beginPath();
+                        spacetimeCtx.moveTo(getX(0), getY(0));
+                        spacetimeCtx.lineTo(getX(3), getY(Math.min(frame, setupTime)));
+                        spacetimeCtx.stroke();
+                    }
+                    
+                    if (frame > setupTime) {
+                        spacetimeCtx.fillStyle = 'rgba(239, 68, 68, 0.3)';
+                        spacetimeCtx.strokeStyle = '#EF4444';
+                        spacetimeCtx.lineWidth = 1;
+                        const currentDataEndTime = Math.min(frame, dataEndTime);
+                        spacetimeCtx.beginPath();
+                        spacetimeCtx.moveTo(getX(0), getY(dataStartTime));
+                        spacetimeCtx.lineTo(getX(3), getY(dataStartTime + propTime));
+                        spacetimeCtx.lineTo(getX(3), getY(currentDataEndTime + propTime));
+                        spacetimeCtx.lineTo(getX(0), getY(currentDataEndTime));
+                        spacetimeCtx.closePath();
+                        spacetimeCtx.fill();
+                        spacetimeCtx.stroke();
+                    }
+
+                    if (frame > releaseTime) {
+                        spacetimeCtx.strokeStyle = '#6B7280';
+                        spacetimeCtx.lineWidth = 2;
+                        spacetimeCtx.beginPath();
+                        spacetimeCtx.moveTo(getX(3), getY(dataEndTime + propTime));
+                        spacetimeCtx.lineTo(getX(0), getY(dataEndTime + 2 * propTime));
+                        spacetimeCtx.stroke();
+                    }
+
+                    if (frame < totalDuration) {
+                        animationFrameId = requestAnimationFrame(animate);
+                    }
+                }
+                animate();
+            }
+
+            function animatePacketSpacetime() {
+                const w = spacetimeCanvas.width;
+                const h = spacetimeCanvas.height;
+                const totalDuration = 400;
+                const propTime = 50;
+                const sendTimePerPacket = 40;
+                const processTime = 10;
+
+                const getX = (nodeIndex) => stPadding.left + (w - stPadding.left - stPadding.right) * (nodeIndex / (stNodes.length - 1));
+                const getY = (time) => stPadding.top + (h - stPadding.top - stPadding.bottom) * (time / totalDuration);
+                
+                const packets = [
+                    { startTime: 0, color: '#3B82F6' },
+                    { startTime: sendTimePerPacket, color: '#10B981' },
+                    { startTime: sendTimePerPacket * 2, color: '#F59E0B' }
+                ];
+
+                let frame = 0;
+                function animate() {
+                    frame++;
+                    drawSpacetimeInitialState();
+
+                    packets.forEach(p => {
+                        if (frame < p.startTime) return;
+
+                        spacetimeCtx.fillStyle = p.color;
+                        spacetimeCtx.strokeStyle = p.color;
+                        spacetimeCtx.lineWidth = 2;
+                        
+                        let currentTime = p.startTime;
+                        const sendEndY = Math.min(frame, currentTime + sendTimePerPacket);
+                        spacetimeCtx.fillRect(getX(0) - 2, getY(currentTime), 4, getY(sendEndY) - getY(currentTime));
+                        currentTime += sendTimePerPacket;
+
+                        for (let i = 0; i < stNodes.length - 1; i++) {
+                            if (frame < currentTime) break;
+                            const startNodeTime = currentTime;
+                            const endNodeTime = startNodeTime + propTime;
+                            const currentEndNodeTime = Math.min(frame, endNodeTime);
+
+                            spacetimeCtx.beginPath();
+                            spacetimeCtx.moveTo(getX(i), getY(startNodeTime));
+                            spacetimeCtx.lineTo(getX(i) + (getX(i+1)-getX(i)) * ((currentEndNodeTime-startNodeTime)/propTime) , getY(currentEndNodeTime));
+                            spacetimeCtx.stroke();
+                            
+                            currentTime = endNodeTime;
+                            if (i < stNodes.length - 2) {
+                                if (frame > currentTime) {
+                                    const processEndY = Math.min(frame, currentTime + processTime);
+                                    spacetimeCtx.fillRect(getX(i+1) - 2, getY(currentTime), 4, getY(processEndY) - getY(currentTime));
+                                }
+                                currentTime += processTime;
+                            }
+                        }
+                    });
+
+                    if (frame < totalDuration) {
+                        animationFrameId = requestAnimationFrame(animate);
+                    }
+                }
+                animate();
+            }
+
+            document.getElementById('playCircuitBtn').addEventListener('click', () => {
+                if (animationFrameId) cancelAnimationFrame(animationFrameId);
+                animateCircuitSwitching();
+                animateCircuitSpacetime();
+            });
+            document.getElementById('playPacketBtn').addEventListener('click', () => {
+                if (animationFrameId) cancelAnimationFrame(animationFrameId);
+                animatePacketSwitching();
+                animatePacketSpacetime();
+            });
+
+            window.addEventListener('resize', resizeCanvases);
+        });
+    </script>
+</body>
+</html>
