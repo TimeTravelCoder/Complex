@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RIP协议交互式模拟器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Professional Green & Neutral Grays -->
+    <!-- Application Structure Plan: This application is now a focused RIP simulator. The structure is simplified to a control panel, a network topology view, and a display area for routing tables and an event log. This allows the user to concentrate solely on the step-by-step process of RIP's distance-vector algorithm, observing how routing tables converge over several rounds of updates. -->
+    <!-- Visualization & Content Choices: 1. Network Topology: [Goal: Inform] [Viz: HTML/CSS/JS] [Interaction: Highlights active routers/links] [Justification: Provides a visual context for the simulation.] 2. RIP Simulation: [Goal: Demonstrate Change] [Viz: Animated packets, updating tables] [Interaction: Step-by-step button clicks] [Justification: Deconstructs the distance-vector algorithm into understandable update rounds.] 3. Routing Tables: [Goal: Analyze] [Viz: HTML tables] [Interaction: JS updates on each step] [Justification: Shows the direct output and state of each router's table.] 4. Event Log: [Goal: Explain] [Viz: Text block] [Interaction: JS updates to narrate events] [Justification: Provides clear, real-time explanations for the visual changes.] CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #f3f4f6; }
+        .card { background-color: white; border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
+        .log-entry { border-left: 4px solid; padding-left: 1rem; margin-bottom: 0.75rem; transition: background-color 0.3s; }
+        .log-rip { border-color: #16a34a; }
+        .log-sys { border-color: #4b5563; }
+        .router-node-wrapper {
+            position: absolute;
+            width: 120px; height: 120px;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+        }
+        .router-node {
+            position: absolute;
+            left: 50%; top: 50%;
+            transform: translate(-50%, -50%);
+            width: 60px; height: 60px;
+            background-color: #4b5563; color: white;
+            border-radius: 50%; display: flex;
+            align-items: center; justify-content: center;
+            flex-direction: column; font-size: 0.8rem;
+            border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            z-index: 10;
+        }
+        .ip-label {
+            position: absolute;
+            font-size: 0.65rem;
+            color: #4b5563;
+            background-color: rgba(243, 244, 246, 0.8);
+            padding: 1px 3px;
+            border-radius: 3px;
+            white-space: nowrap;
+            z-index: 15;
+        }
+        .link-line {
+            position: absolute;
+            background-color: #6b7280;
+            height: 3px;
+            z-index: 5;
+            transform-origin: 0 0;
+        }
+        .packet {
+            position: absolute;
+            width: 20px; height: 20px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            z-index: 30; transition: all 1.5s ease-in-out;
+        }
+        .packet i { font-size: 10px; color: white; }
+        .packet-rip { background-color: #16a34a; }
+    </style>
+</head>
+<body class="text-gray-800">
+
+<main class="container mx-auto p-4 md:p-6">
+    <header class="text-center mb-8">
+        <h1 class="text-3xl md:text-4xl font-bold text-gray-800">RIP协议交互式模拟器</h1>
+        <p class="mt-2 max-w-3xl mx-auto text-lg text-gray-600">通过分步模拟，直观理解RIP（路由信息协议）的距离向量算法如何工作。</p>
+    </header>
+
+    <div class="card p-6 md:p-8">
+        <!-- Control Panel -->
+        <div class="flex flex-wrap items-center justify-center gap-4 border-b pb-6 mb-6">
+            <button id="reset-btn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2 transition-transform duration-150 ease-in-out hover:scale-105"><i class="fas fa-undo"></i> 重置模拟</button>
+            <button id="next-step-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2 transition-transform duration-150 ease-in-out hover:scale-105"><i class="fas fa-step-forward"></i> 下一步 (执行一轮更新)</button>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
+            <!-- Visualization -->
+            <div class="space-y-4">
+                <h3 class="font-bold text-xl text-center">网络拓扑</h3>
+                <div id="topology-container" class="relative w-full h-96 bg-gray-100 rounded-lg border">
+                    <!-- Routers and links will be injected here -->
+                </div>
+            </div>
+
+            <!-- Tables and Log -->
+            <div class="space-y-6">
+                 <div>
+                    <h3 class="font-bold text-xl mb-3">路由器路由表</h3>
+                    <div id="routing-tables-container" class="grid grid-cols-1 md:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
+                        <!-- Routing tables will be injected here -->
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-bold text-xl mb-3">事件日志</h3>
+                    <div id="log-area" class="h-64 overflow-y-auto bg-gray-50 p-4 rounded-lg border">
+                         <!-- Log entries will appear here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // --- CONFIGURATION ---
+    const topology = {
+        nodes: [
+            { id: 'R1', label: 'R1', x: 20, y: 50 },
+            { id: 'R2', label: 'R2', x: 40, y: 20 },
+            { id: 'R3', label: 'R3', x: 40, y: 80 },
+            { id: 'R4', label: 'R4', x: 70, y: 20 },
+            { id: 'R5', label: 'R5', x: 70, y: 80 },
+            { id: 'R6', label: 'R6', x: 90, y: 50 },
+        ],
+        links: [
+            { source: 'R1', target: 'R2', metric: 1, network: '192.168.1.0/30' },
+            { source: 'R1', target: 'R3', metric: 1, network: '192.168.2.0/30' },
+            { source: 'R2', target: 'R4', metric: 1, network: '192.168.3.0/30' },
+            { source: 'R3', target: 'R5', metric: 1, network: '192.168.4.0/30' },
+            { source: 'R4', target: 'R5', metric: 1, network: '192.168.5.0/30' },
+            { source: 'R5', target: 'R6', metric: 1, network: '192.168.6.0/30' },
+        ],
+        networks: [
+            { id: 'N1', attachedTo: 'R1', prefix: '10.1.0.0/16' },
+            { id: 'N2', attachedTo: 'R4', prefix: '20.2.0.0/16' },
+            { id: 'N3', attachedTo: 'R6', prefix: '30.3.0.0/16' }
+        ]
+    };
+    
+    // Assign IPs to interfaces
+    topology.nodes.forEach(node => {
+        node.interfaces = {};
+        const attachedNet = topology.networks.find(n => n.attachedTo === node.id);
+        if (attachedNet) {
+            node.interfaces[attachedNet.id] = attachedNet.prefix.replace('/16', '.1');
+        }
+        topology.links.forEach(link => {
+            if (link.source === node.id) {
+                node.interfaces[link.target] = link.network.replace('/30', '.1');
+            } else if (link.target === node.id) {
+                node.interfaces[link.source] = link.network.replace('/30', '.2');
+            }
+        });
+    });
+
+    // --- DOM ELEMENTS ---
+    const elements = {
+        resetBtn: document.getElementById('reset-btn'),
+        nextStepBtn: document.getElementById('next-step-btn'),
+        topologyContainer: document.getElementById('topology-container'),
+        routingTablesContainer: document.getElementById('routing-tables-container'),
+        logArea: document.getElementById('log-area'),
+    };
+    
+    // --- STATE ---
+    let state = {
+        routers: {},
+        simulationQueue: [],
+        converged: false
+    };
+
+    // --- INITIALIZATION ---
+    function initializeSimulation() {
+        drawTopology();
+        resetState();
+        prepareSimulation();
+    }
+    
+    function resetState() {
+        state.simulationQueue = [];
+        state.converged = false;
+        elements.logArea.innerHTML = '';
+        
+        state.routers = {};
+        topology.nodes.forEach(node => {
+            state.routers[node.id] = {
+                id: node.id,
+                interfaces: node.interfaces,
+                neighbors: topology.links.filter(l => l.source === node.id || l.target === node.id).map(l => l.source === node.id ? l.target : l.source),
+                ripTable: {},
+            };
+            const attachedNet = topology.networks.find(n => n.attachedTo === node.id);
+            if (attachedNet) {
+                state.routers[node.id].ripTable[attachedNet.prefix] = { dest: attachedNet.prefix, cost: 1, nextHop: 'Direct' };
+            }
+        });
+        
+        updateRoutingTablesUI();
+        addLog('sys', '模拟已重置。点击“下一步”开始路由交换。');
+        elements.nextStepBtn.disabled = false;
+    }
+
+    // --- UI & DRAWING ---
+    function drawTopology() {
+        elements.topologyContainer.innerHTML = '';
+        topology.links.forEach(link => {
+            const sourceNode = topology.nodes.find(n => n.id === link.source);
+            const targetNode = topology.nodes.find(n => n.id === link.target);
+            const dx = (targetNode.x - sourceNode.x) * elements.topologyContainer.clientWidth / 100;
+            const dy = (targetNode.y - sourceNode.y) * elements.topologyContainer.clientHeight / 100;
+            const length = Math.sqrt(dx*dx + dy*dy);
+            const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+
+            const line = document.createElement('div');
+            line.className = 'link-line';
+            line.style.left = `${sourceNode.x}%`;
+            line.style.top = `${sourceNode.y}%`;
+            line.style.width = `${length}px`;
+            line.style.transform = `rotate(${angle}deg)`;
+            elements.topologyContainer.appendChild(line);
+        });
+        
+        topology.nodes.forEach(node => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'router-node-wrapper';
+            wrapper.style.left = `${node.x}%`;
+            wrapper.style.top = `${node.y}%`;
+
+            const nodeDiv = document.createElement('div');
+            nodeDiv.id = `router-${node.id}`;
+            nodeDiv.className = 'router-node';
+            nodeDiv.innerHTML = `<i class="fas fa-server"></i><span>${node.label}</span>`;
+            wrapper.appendChild(nodeDiv);
+
+            Object.entries(node.interfaces).forEach(([key, ip]) => {
+                const ipLabel = document.createElement('span');
+                ipLabel.className = 'ip-label';
+                ipLabel.textContent = ip;
+                if (key.startsWith('R')) {
+                    const neighbor = topology.nodes.find(n => n.id === key);
+                    const angle = Math.atan2(neighbor.y - node.y, neighbor.x - node.x);
+                    const offsetX = 50 + 45 * Math.cos(angle);
+                    const offsetY = 50 + 45 * Math.sin(angle);
+                    ipLabel.style.left = `${offsetX}%`;
+                    ipLabel.style.top = `${offsetY}%`;
+                    
+                    // Adjust label position to avoid overlapping the line
+                    if (Math.abs(Math.cos(angle)) > Math.abs(Math.sin(angle))) { // Horizontal-ish
+                       ipLabel.style.transform = `translate(-50%, ${Math.sin(angle) > 0 ? '10px' : '-100%'})`;
+                    } else { // Vertical-ish
+                       ipLabel.style.transform = `translate(${Math.cos(angle) > 0 ? '10px' : '-100%'}, -50%)`;
+                    }
+                } else {
+                    ipLabel.style.left = '50%';
+                    ipLabel.style.top = '100%';
+                    ipLabel.style.transform = 'translate(-50%, 10px)';
+                }
+                wrapper.appendChild(ipLabel);
+            });
+            elements.topologyContainer.appendChild(wrapper);
+        });
+    }
+    
+    function updateRoutingTablesUI() {
+        elements.routingTablesContainer.innerHTML = '';
+        Object.values(state.routers).forEach(router => {
+            const tableContainer = document.createElement('div');
+            tableContainer.className = 'card p-3 text-sm';
+            
+            let tableHTML = `<h4 class="font-bold mb-2">${router.id} 的路由表</h4><table class="w-full text-left"><thead><tr class="border-b"><th>目的网络</th><th>距离</th><th>下一跳</th></tr></thead><tbody>`;
+            let hasRows = false;
+
+            const entries = Object.values(router.ripTable);
+            if (entries.length > 0) {
+                hasRows = true;
+                entries.sort((a,b) => a.dest.localeCompare(b.dest)).forEach(entry => {
+                    tableHTML += `<tr><td>${entry.dest}</td><td>${entry.cost}</td><td>${entry.nextHop}</td></tr>`;
+                });
+            }
+            
+            if (!hasRows) {
+                tableHTML += '<tr><td colspan="3" class="text-center text-gray-400 py-3">无路由信息</td></tr>';
+            }
+            tableHTML += '</tbody></table>';
+            tableContainer.innerHTML = tableHTML;
+            elements.routingTablesContainer.appendChild(tableContainer);
+        });
+    }
+
+    // --- SIMULATION LOGIC ---
+    function prepareSimulation() {
+        for (let i = 0; i < 8; i++) { // Increased rounds for larger topology
+            const roundActions = [];
+            Object.keys(state.routers).forEach(routerId => {
+                 const router = state.routers[routerId];
+                 router.neighbors.forEach(neighborId => {
+                     roundActions.push({ type: 'rip-exchange', from: routerId, to: neighborId, table: JSON.parse(JSON.stringify(router.ripTable)) });
+                 });
+            });
+            state.simulationQueue.push({ round: i + 1, actions: roundActions });
+        }
+    }
+
+    function executeNextStep() {
+        if (state.converged || state.simulationQueue.length === 0) {
+            addLog('sys', '模拟已完成或收敛。');
+            state.converged = true;
+            elements.nextStepBtn.disabled = true;
+            return;
+        }
+
+        const currentStep = state.simulationQueue.shift();
+        addLog('rip', `--- 第 ${currentStep.round} 轮路由交换 ---`);
+
+        let hasChanged = false;
+        const promises = [];
+        
+        currentStep.actions.forEach(action => {
+            const fromRouter = state.routers[action.from];
+            const toRouter = state.routers[action.to];
+
+            promises.push(animatePacket(action.from, action.to, 'rip'));
+            Object.values(action.table).forEach(entry => {
+                const newCost = entry.cost + 1;
+                if (newCost < 16) {
+                    const existingEntry = toRouter.ripTable[entry.dest];
+                    const nextHopIp = fromRouter.interfaces[toRouter.id];
+                    
+                    if (!existingEntry || newCost < existingEntry.cost) {
+                        toRouter.ripTable[entry.dest] = { dest: entry.dest, cost: newCost, nextHop: nextHopIp };
+                        hasChanged = true;
+                        addLog('rip', `${action.to} 从 ${action.from} 学到: 到 ${entry.dest} 距离为 ${newCost} (下一跳 ${nextHopIp})。`);
+                    }
+                }
+            });
+        });
+        
+        Promise.all(promises).then(() => {
+            if (!hasChanged) {
+                state.converged = true;
+                addLog('sys', '路由表已收敛，没有更多更新。');
+                elements.nextStepBtn.disabled = true;
+            }
+            updateRoutingTablesUI();
+        });
+    }
+    
+    function animatePacket(fromId, toId, protocolClass) {
+        return new Promise(resolve => {
+            const fromNode = document.getElementById(`router-${fromId}`).parentElement;
+            const toNode = document.getElementById(`router-${toId}`).parentElement;
+            
+            const packet = document.createElement('div');
+            packet.className = `packet packet-${protocolClass}`;
+            packet.innerHTML = `<i class="fas fa-envelope"></i>`;
+            elements.topologyContainer.appendChild(packet);
+            
+            packet.style.left = fromNode.style.left;
+            packet.style.top = fromNode.style.top;
+            
+            setTimeout(() => {
+                packet.style.left = toNode.style.left;
+                packet.style.top = toNode.style.top;
+            }, 50);
+
+            setTimeout(() => {
+                packet.remove();
+                resolve();
+            }, 1550);
+        });
+    }
+
+    // --- EVENT LISTENERS ---
+    elements.resetBtn.addEventListener('click', () => {
+        resetState();
+        prepareSimulation();
+    });
+
+    elements.nextStepBtn.addEventListener('click', executeNextStep);
+
+    function addLog(type, message) {
+        const entry = document.createElement('div');
+        entry.className = `log-entry log-${type}`;
+        entry.innerHTML = `<p class="font-medium text-gray-800">${message}</p>`;
+        elements.logArea.prepend(entry);
+    }
+
+    // --- START ---
+    initializeSimulation();
+});
+</script>
+
+</body>
+</html>

@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VPN 与 NAT 交互式模拟器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Professional Blues & Grays -->
+    <!-- Application Structure Plan: A two-tab interactive simulator. Tab 1 visualizes VPN tunneling and encapsulation. Tab 2 demonstrates NAT/NAPT address and port translation with a dynamic translation table. This modular, interactive design helps users grasp the core packet transformation logic of each technology, which is superior to static text. -->
+    <!-- Visualization & Content Choices: 1. Network Diagrams: [Goal: Context] [Viz: HTML/CSS] [Interaction: Packet animation] [Justification: Provides a clear stage for the simulation.] 2. Control Buttons: [Goal: Engagement] [Viz: Buttons] [Interaction: Triggers simulations] [Justification: Puts the user in control of the learning process.] 3. Dynamic Tables & Logs: [Goal: Explain] [Viz: HTML tables/divs] [Interaction: Real-time updates] [Justification: Shows the internal state of the router (NAT table) and narrates the step-by-step process, making the logic explicit.] -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #f3f4f6; }
+        .card { background-color: white; border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
+        .tab-btn { padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 500; cursor: pointer; transition: all 0.2s; border: 2px solid transparent; }
+        .tab-btn.active { background-color: #3b82f6; color: white; }
+        .tab-btn:not(.active) { background-color: #e5e7eb; color: #374151; }
+        .log-entry { border-left: 4px solid; padding-left: 1rem; margin-bottom: 0.75rem; transition: background-color 0.3s; }
+        .log-vpn { border-color: #8b5cf6; }
+        .log-nat { border-color: #10b981; }
+        .log-sys { border-color: #6b7280; }
+        .node { position: absolute; text-align: center; z-index: 10; width: 80px;}
+        .node-icon { margin: 0 auto; width: 48px; height: 48px; background-color: #4b5563; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        .node-icon.host { background-color: #1d4ed8; border-radius: 0.25rem; }
+        .node-label { font-size: 0.8rem; font-weight: 500; margin-top: 4px; }
+        .node-ip { font-size: 0.7rem; color: #4b5563; }
+        .network-area { position: absolute; border: 2px dashed #9ca3af; border-radius: 1rem; text-align: center; }
+        .network-label { font-weight: bold; color: #6b7280; background-color: #f3f4f6; padding: 0 10px; position: relative; top: -14px; }
+        .packet-container { position: absolute; z-index: 20; transition: all 1.5s ease-in-out; width: 220px; }
+        .packet { border: 2px solid; padding: 4px; border-radius: 0.25rem; background-color: white; box-shadow: 0 2px 5px rgba(0,0,0,0.2); font-size: 0.75rem; line-height: 1.2; text-align: left; }
+        .packet-header { font-weight: bold; border-bottom: 1px solid #ccc; margin-bottom: 2px; padding-bottom: 2px; }
+        .packet-data { font-style: italic; color: #6b7280; }
+        .packet-outer { border-color: #6d28d9; background-color: #f5f3ff; }
+        .packet-inner { border-color: #1d4ed8; background-color: #eff6ff; }
+        .packet-encrypted { background-color: #e5e7eb; color: #6b7280; }
+        .packet-nat { border-color: #059669; }
+        .highlight-row { background-color: #a7f3d0 !important; transition: background-color 0.5s; }
+    </style>
+</head>
+<body class="text-gray-800">
+
+<main class="container mx-auto p-4 md:p-6">
+    <header class="text-center mb-6">
+        <h1 class="text-3xl md:text-4xl font-bold text-gray-800">VPN 与 NAT 交互式模拟器</h1>
+        <p class="mt-2 max-w-3xl mx-auto text-lg text-gray-600">通过分步动画，直观理解VPN隧道技术和网络地址转换（NAT）的数据包处理流程。</p>
+    </header>
+
+    <div class="card p-6 md:p-8">
+        <!-- Tabs -->
+        <div id="tabs" class="flex flex-wrap items-center justify-center gap-2 mb-6">
+            <button class="tab-btn active" data-tab="vpn">VPN 隧道技术模拟</button>
+            <button class="tab-btn" data-tab="nat">NAPT 地址转换模拟</button>
+        </div>
+
+        <!-- Content Area -->
+        <div id="tab-content">
+            <!-- VPN SIMULATION -->
+            <div id="vpn-tab" class="tab-pane">
+                <p class="text-center text-gray-600 mb-4">本模拟演示了位于两个不同专用网的主机，如何通过公共互联网上的VPN隧道进行安全通信。</p>
+                <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+                    <div class="lg:col-span-3">
+                        <h3 class="font-bold text-xl text-center mb-4">网络拓扑</h3>
+                        <div id="vpn-topology" class="relative w-full h-96 bg-gray-100 rounded-lg border"></div>
+                    </div>
+                    <div class="lg:col-span-2 space-y-4">
+                        <div>
+                            <h3 class="font-bold text-xl mb-2">控制面板</h3>
+                            <button id="vpn-send-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg w-full"><i class="fas fa-paper-plane"></i> 从主机 X 发送数据到 Y</button>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-xl mb-2">事件日志</h3>
+                            <div id="vpn-log" class="h-96 overflow-y-auto bg-gray-50 p-4 rounded-lg border"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NAT SIMULATION -->
+            <div id="nat-tab" class="tab-pane hidden">
+                 <p class="text-center text-gray-600 mb-4">本模拟演示了专用网内的两台主机如何通过NAPT共用一个全球IP地址访问互联网。</p>
+                <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+                    <div class="lg:col-span-3">
+                        <h3 class="font-bold text-xl text-center mb-4">网络拓扑</h3>
+                        <div id="nat-topology" class="relative w-full h-96 bg-gray-100 rounded-lg border"></div>
+                    </div>
+                    <div class="lg:col-span-2 space-y-4">
+                        <div>
+                            <h3 class="font-bold text-xl mb-2">控制面板</h3>
+                            <div class="grid grid-cols-2 gap-3">
+                                <button id="nat-send-a-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg w-full"><i class="fas fa-paper-plane"></i> 主机 A 发送</button>
+                                <button id="nat-send-b-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg w-full"><i class="fas fa-paper-plane"></i> 主机 B 发送</button>
+                            </div>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-xl mb-2">NAT 转换表</h3>
+                            <div class="bg-gray-50 p-2 rounded-lg border">
+                                <table id="nat-table" class="w-full text-sm text-left">
+                                    <thead class="text-xs text-gray-700 uppercase bg-gray-100">
+                                        <tr><th class="px-4 py-2">本地地址:端口</th><th class="px-4 py-2">全球地址:端口</th></tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-xl mb-2">事件日志</h3>
+                            <div id="nat-log" class="h-96 overflow-y-auto bg-gray-50 p-4 rounded-lg border"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</main>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+    const tabs = document.querySelectorAll('.tab-btn');
+    const tabPanes = document.querySelectorAll('.tab-pane');
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            tabPanes.forEach(pane => {
+                if (pane.id === `${tab.dataset.tab}-tab`) {
+                    pane.classList.remove('hidden');
+                } else {
+                    pane.classList.add('hidden');
+                }
+            });
+        });
+    });
+
+    // --- SHARED UTILS ---
+    function createNode(id, label, ip, type, left, top, container) {
+        const node = document.createElement('div');
+        node.id = `${container.id}-${id}`;
+        node.className = 'node';
+        node.style.left = `${left}%`;
+        node.style.top = `${top}%`;
+
+        const icon = document.createElement('div');
+        icon.className = `node-icon ${type}`;
+        icon.innerHTML = `<i class="fas fa-${type === 'router' ? 'server' : 'desktop'}"></i>`;
+        
+        const labelDiv = document.createElement('div');
+        labelDiv.className = 'node-label';
+        labelDiv.textContent = label;
+
+        const ipDiv = document.createElement('div');
+        ipDiv.className = 'node-ip';
+        ipDiv.textContent = ip;
+
+        node.appendChild(icon);
+        node.appendChild(labelDiv);
+        node.appendChild(ipDiv);
+        container.appendChild(node);
+        return node;
+    }
+
+    function createPacket(container, id, content) {
+        const packet = document.createElement('div');
+        packet.id = id;
+        packet.className = 'packet-container';
+        packet.innerHTML = content;
+        container.appendChild(packet);
+        return packet;
+    }
+    
+    function movePacket(packet, startNode, endNode, onComplete, duration = 1500) {
+        const startRect = startNode.getBoundingClientRect();
+        const endRect = endNode.getBoundingClientRect();
+        const containerRect = packet.parentElement.getBoundingClientRect();
+        
+        packet.style.left = `${startRect.left - containerRect.left + startRect.width / 2 - packet.offsetWidth / 2}px`;
+        packet.style.top = `${startRect.top - containerRect.top + startRect.height / 2 - packet.offsetHeight / 2}px`;
+        
+        setTimeout(() => {
+            packet.style.left = `${endRect.left - containerRect.left + endRect.width / 2 - packet.offsetWidth / 2}px`;
+            packet.style.top = `${endRect.top - containerRect.top + endRect.height / 2 - packet.offsetHeight / 2}px`;
+        }, 100);
+
+        setTimeout(onComplete, duration + 100);
+    }
+    
+    function createPacketHtml(outerClass, innerClass, innerIcon, innerContent, outerContent) {
+        let content = `<div class="packet ${innerClass}">`;
+        if (innerIcon) {
+             content += `<div class="packet-header"><i class="fas ${innerIcon} mr-1"></i> 内部报头</div>`;
+        } else {
+            content += `<div class="packet-header">IP 报头</div>`;
+        }
+        content += `<div class="packet-data">${innerContent}</div></div>`;
+        
+        if (outerContent) {
+            content = `<div class="packet ${outerClass}">
+                <div class="packet-header">外部报头</div>
+                <div class="packet-data">${outerContent}</div>
+                <div class="mt-1">${content}</div>
+            </div>`;
+        }
+        return content;
+    }
+
+    // --- VPN SIMULATION ---
+    const vpnTopologyContainer = document.getElementById('vpn-topology');
+    const vpnSendBtn = document.getElementById('vpn-send-btn');
+    const vpnLogEl = document.getElementById('vpn-log');
+    
+    function initVPN() {
+        vpnTopologyContainer.innerHTML = '';
+        const areaA = document.createElement('div');
+        areaA.className = 'network-area';
+        areaA.style.cssText = 'left: 2%; top: 10%; width: 28%; height: 80%;';
+        areaA.innerHTML = '<span class="network-label">专用网 A (10.1.0.0/16)</span>';
+        vpnTopologyContainer.appendChild(areaA);
+        
+        const areaB = document.createElement('div');
+        areaB.className = 'network-area';
+        areaB.style.cssText = 'right: 2%; top: 10%; width: 28%; height: 80%;';
+        areaB.innerHTML = '<span class="network-label">专用网 B (10.2.0.0/16)</span>';
+        vpnTopologyContainer.appendChild(areaB);
+
+        const internet = document.createElement('div');
+        internet.className = 'network-area border-none';
+        internet.style.cssText = 'left: 30%; top: 48%; width: 40%; height: 4%; background: #bfdbfe; z-index: 1;';
+        internet.innerHTML = '<span class="network-label" style="top: -20px;">互联网 (隧道)</span>';
+        vpnTopologyContainer.appendChild(internet);
+
+        const nodes = {
+            X: createNode('X', '主机 X', '10.1.0.1', 'host', 15, 25, vpnTopologyContainer),
+            R1: createNode('R1', '路由器 R1', '125.1.2.3', 'router', 30, 50, vpnTopologyContainer),
+            R2: createNode('R2', '路由器 R2', '194.4.5.6', 'router', 70, 50, vpnTopologyContainer),
+            Y: createNode('Y', '主机 Y', '10.2.0.3', 'host', 85, 75, vpnTopologyContainer)
+        };
+        
+        vpnSendBtn.onclick = () => runVpnSim(nodes);
+        vpnLogEl.innerHTML = '';
+        logVPN('sys', '模拟环境已就绪。');
+    }
+
+    function logVPN(type, message) {
+        const entry = document.createElement('div');
+        entry.className = `log-entry log-${type}`;
+        entry.textContent = message;
+        vpnLogEl.prepend(entry);
+    }
+
+    async function runVpnSim(nodes) {
+        vpnSendBtn.disabled = true;
+        vpnLogEl.innerHTML = '';
+        logVPN('sys', '开始模拟VPN通信...');
+
+        logVPN('vpn', '1. 主机X向主机Y发送内部数据报。');
+        const pktHtml1 = createPacketHtml('packet-inner', '', null, '源: 10.1.0.1<br>目的: 10.2.0.3');
+        const pkt1 = createPacket(vpnTopologyContainer, 'vpn-packet', pktHtml1);
+        await new Promise(res => movePacket(pkt1, nodes.X, nodes.R1, res));
+        
+        logVPN('vpn', '2. R1收到内部数据报，进行加密和封装。');
+        const pktHtml2 = createPacketHtml(
+            'packet-outer',
+            'packet-inner packet-encrypted', 'fa-lock', '...加密数据...',
+            '源: 125.1.2.3<br>目的: 194.4.5.6'
+        );
+        pkt1.innerHTML = pktHtml2;
+        await new Promise(res => setTimeout(res, 1000));
+
+        logVPN('vpn', '3. R1将封装后的外部数据报通过互联网隧道发送到R2。');
+        await new Promise(res => movePacket(pkt1, nodes.R1, nodes.R2, res, 2000));
+        
+        logVPN('vpn', '4. R2收到外部数据报，解封装并解密。');
+        const pktHtml3 = createPacketHtml('packet-inner', '', 'fa-unlock-alt', '源: 10.1.0.1<br>目的: 10.2.0.3');
+        pkt1.innerHTML = pktHtml3;
+        await new Promise(res => setTimeout(res, 1000));
+
+        logVPN('vpn', '5. R2将恢复后的内部数据报转发给主机Y。');
+        await new Promise(res => movePacket(pkt1, nodes.R2, nodes.Y, res));
+        pkt1.remove();
+        
+        logVPN('sys', '模拟完成！');
+        vpnSendBtn.disabled = false;
+    }
+
+    // --- NAT SIMULATION ---
+    const natTopologyContainer = document.getElementById('nat-topology');
+    const natSendABtn = document.getElementById('nat-send-a-btn');
+    const natSendBBtn = document.getElementById('nat-send-b-btn');
+    const natTableBody = document.querySelector('#nat-table tbody');
+    const natLogEl = document.getElementById('nat-log');
+    
+    const natState = {
+        natTable: {},
+        nextPort: 40001
+    };
+
+    function initNAT() {
+        natTopologyContainer.innerHTML = '';
+        const areaPrivate = document.createElement('div');
+        areaPrivate.className = 'network-area';
+        areaPrivate.style.cssText = 'left: 2%; top: 10%; width: 48%; height: 80%;';
+        areaPrivate.innerHTML = '<span class="network-label">专用网 (192.168.0.0/24)</span>';
+        natTopologyContainer.appendChild(areaPrivate);
+        
+        const areaPublic = document.createElement('div');
+        areaPublic.className = 'network-area border-none';
+        areaPublic.style.cssText = 'left: 55%; top: 10%; width: 43%; height: 80%;';
+        areaPublic.innerHTML = '<span class="network-label">互联网</span>';
+        natTopologyContainer.appendChild(areaPublic);
+
+        const nodes = {
+            A: createNode('A', '主机 A', '192.168.0.3', 'host', 25, 25, natTopologyContainer),
+            B: createNode('B', '主机 B', '192.168.0.4', 'host', 25, 75, natTopologyContainer),
+            NAT: createNode('NAT', 'NAT路由器', '172.38.1.5', 'router', 50, 50, natTopologyContainer),
+            Server: createNode('Server', '服务器', '213.18.2.4', 'host', 85, 50, natTopologyContainer)
+        };
+        
+        natSendABtn.onclick = () => runNatSim(nodes.A, 30000, nodes);
+        natSendBBtn.onclick = () => runNatSim(nodes.B, 30000, nodes);
+        
+        resetNAT();
+    }
+    
+    function resetNAT() {
+        natState.natTable = {};
+        natState.nextPort = 40001;
+        natLogEl.innerHTML = '';
+        updateNatTableUI();
+        logNAT('sys', '模拟环境已就绪。');
+    }
+
+    function logNAT(type, message) {
+        const entry = document.createElement('div');
+        entry.className = `log-entry log-${type}`;
+        entry.textContent = message;
+        natLogEl.prepend(entry);
+    }
+
+    function updateNatTableUI() {
+        natTableBody.innerHTML = '';
+        Object.entries(natState.natTable).forEach(([global, local]) => {
+            const row = document.createElement('tr');
+            row.id = `nat-row-${global.replace(/[:.]/g, '-')}`;
+            row.innerHTML = `<td class="px-4 py-2">${local}</td><td class="px-4 py-2">${global}</td>`;
+            natTableBody.appendChild(row);
+        });
+    }
+
+    async function runNatSim(startNode, startPort, nodes) {
+        natSendABtn.disabled = true;
+        natSendBBtn.disabled = true;
+        
+        const localIP = startNode.querySelector('.node-ip').textContent;
+        const localKey = `${localIP}:${startPort}`;
+        const globalIP = nodes.NAT.querySelector('.node-ip').textContent;
+        let globalKey;
+        
+        logNAT('nat', `1. ${startNode.querySelector('.node-label').textContent} 发送数据包到服务器...`);
+        let pktHtml = createPacketHtml('packet-nat', '', null, `源: ${localKey}<br>目的: 213.18.2.4:80`);
+        let pkt = createPacket(natTopologyContainer, 'nat-packet', pktHtml);
+        await new Promise(res => movePacket(pkt, startNode, nodes.NAT, res));
+
+        logNAT('nat', `2. NAT路由器收到数据包，查找或创建NAPT映射。`);
+        let existingGlobal = Object.keys(natState.natTable).find(k => natState.natTable[k] === localKey);
+        if (existingGlobal) {
+            globalKey = existingGlobal;
+            logNAT('sys', `找到现有映射: ${localKey} -> ${globalKey}`);
+        } else {
+            globalKey = `${globalIP}:${natState.nextPort++}`;
+            natState.natTable[globalKey] = localKey;
+            logNAT('sys', `创建新的NAPT映射: ${localKey} -> ${globalKey}`);
+        }
+        updateNatTableUI();
+        const rowId = `nat-row-${globalKey.replace(/[:.]/g, '-')}`;
+        const row = document.getElementById(rowId);
+        if(row) {
+            row.classList.add('highlight-row');
+            setTimeout(() => row.classList.remove('highlight-row'), 1500);
+        }
+        
+        pktHtml = createPacketHtml('packet-nat', '', null, `源: ${globalKey}<br>目的: 213.18.2.4:80`);
+        pkt.innerHTML = pktHtml;
+        await new Promise(res => setTimeout(res, 1000));
+
+        logNAT('nat', '3. NAT路由器将转换后的包发往互联网上的服务器。');
+        await new Promise(res => movePacket(pkt, nodes.NAT, nodes.Server, res));
+        
+        logNAT('nat', '4. 服务器回复数据包。');
+        pktHtml = createPacketHtml('packet-nat', '', null, `源: 213.18.2.4:80<br>目的: ${globalKey}`);
+        pkt.innerHTML = pktHtml;
+        await new Promise(res => movePacket(pkt, nodes.Server, nodes.NAT, res));
+
+        logNAT('nat', `5. NAT路由器收到回复，根据目的地址 ${globalKey} 查找转换表。`);
+        const originalDest = natState.natTable[globalKey];
+        if(row) {
+            row.classList.add('highlight-row');
+            setTimeout(() => row.classList.remove('highlight-row'), 1500);
+        }
+        
+        pktHtml = createPacketHtml('packet-nat', '', null, `源: 213.18.2.4:80<br>目的: ${originalDest}`);
+        pkt.innerHTML = pktHtml;
+        await new Promise(res => setTimeout(res, 1000));
+
+        logNAT('nat', `6. NAT路由器将包转发给专用网内的 ${startNode.querySelector('.node-label').textContent}。`);
+        await new Promise(res => movePacket(pkt, nodes.NAT, startNode, res));
+        pkt.remove();
+
+        logNAT('sys', '通信完成！');
+        natSendABtn.disabled = false;
+        natSendBBtn.disabled = false;
+    }
+
+    // Initial calls
+    initVPN();
+    initNAT();
+});
+</script>
+
+</body>
+</html>

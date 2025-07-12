@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>路由协议交互式模拟器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Professional Blue, Neutral Grays, Accent Colors for Protocols -->
+    <!-- Application Structure Plan: The application is designed as an interactive simulator to demonstrate and compare the core mechanisms of RIP, OSPF, and BGP. The structure includes a central control panel for protocol selection and simulation control, a network topology visualization area, and a dynamic information panel showing router tables and an event log. This task-oriented, hands-on approach allows users to actively explore protocol behavior (e.g., convergence, loop prevention, policy application) in a controlled environment, which is far more effective for learning than static descriptions. -->
+    <!-- Visualization & Content Choices: 1. Network Topology: [Goal: Inform] [Viz: HTML/CSS/JS] [Interaction: Highlights active routers/links] [Justification: Provides a visual context for the simulation.] 2. Protocol Simulation: [Goal: Compare/Change] [Viz: Animated packets, updating tables] [Interaction: Step-by-step button clicks] [Justification: Deconstructs complex algorithms into understandable steps.] 3. Routing Tables & LSDB: [Goal: Analyze] [Viz: HTML tables] [Interaction: JS updates on each step] [Justification: Shows the direct output and state of each router.] 4. Event Log: [Goal: Explain] [Viz: Text block] [Interaction: JS updates to narrate events] [Justification: Provides clear, real-time explanations for the visual changes.] CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #f3f4f6; }
+        .card { background-color: white; border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
+        .btn-protocol.active { background-color: #2563eb; color: white; }
+        .info-tab { padding: 0.5rem 1rem; cursor: pointer; border-bottom: 2px solid transparent; color: #6b7280; }
+        .info-tab.active { border-color: #2563eb; color: #2563eb; font-weight: 600; }
+        .log-entry { border-left: 4px solid; padding-left: 1rem; margin-bottom: 0.75rem; transition: background-color 0.3s; }
+        .log-rip { border-color: #16a34a; }
+        .log-ospf { border-color: #db2777; }
+        .log-bgp { border-color: #d97706; }
+        .log-sys { border-color: #4b5563; }
+        .router-node-wrapper {
+            position: absolute;
+            width: 120px; height: 120px;
+            transform: translate(-50%, -50%);
+        }
+        .router-node {
+            position: absolute;
+            left: 50%; top: 50%;
+            transform: translate(-50%, -50%);
+            width: 60px; height: 60px;
+            background-color: #4b5563; color: white;
+            border-radius: 50%; display: flex;
+            align-items: center; justify-content: center;
+            flex-direction: column; font-size: 0.8rem;
+            border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            z-index: 10;
+        }
+        .router-node.active-router {
+            background-color: #2563eb;
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.7);
+        }
+        .ip-label {
+            position: absolute;
+            font-size: 0.65rem;
+            color: #4b5563;
+            background-color: rgba(255,255,255,0.7);
+            padding: 1px 3px;
+            border-radius: 3px;
+        }
+        .link-line {
+            position: absolute;
+            background-color: #6b7280;
+            height: 3px;
+            z-index: 5;
+            transform-origin: 0 0;
+        }
+        .packet {
+            position: absolute;
+            width: 20px; height: 20px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            z-index: 20; transition: all 1.5s ease-in-out;
+        }
+        .packet i { font-size: 10px; color: white; }
+        .packet-rip { background-color: #16a34a; }
+        .packet-ospf { background-color: #db2777; }
+        .packet-bgp { background-color: #d97706; }
+        .as-boundary {
+            position: absolute; border: 2px dashed #9ca3af;
+            border-radius: 1.5rem;
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+<main class="container mx-auto p-4 md:p-6">
+    <header class="text-center mb-8">
+        <h1 class="text-3xl md:text-4xl font-bold text-gray-800">路由选择协议交互式模拟器</h1>
+        <p class="mt-2 max-w-3xl mx-auto text-lg text-gray-600">通过分步模拟，直观理解RIP、OSPF、BGP协议如何发现路径、建立路由表。</p>
+    </header>
+
+    <div class="card p-6 md:p-8">
+        <!-- Control Panel -->
+        <div class="flex flex-wrap items-center justify-between gap-4 border-b pb-6 mb-6">
+            <div>
+                <span class="font-bold text-lg mr-4">选择模拟协议:</span>
+                <div id="protocol-selector" class="inline-flex rounded-lg shadow-sm">
+                    <button data-protocol="rip" class="btn-protocol px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-l-lg hover:bg-gray-100 focus:z-10 focus:ring-2 focus:ring-blue-700">RIP</button>
+                    <button data-protocol="ospf" class="btn-protocol px-4 py-2 text-sm font-medium text-gray-900 bg-white border-t border-b border-gray-200 hover:bg-gray-100 focus:z-10 focus:ring-2 focus:ring-blue-700">OSPF</button>
+                    <button data-protocol="bgp" class="btn-protocol px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-r-lg hover:bg-gray-100 focus:z-10 focus:ring-2 focus:ring-blue-700">BGP</button>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                 <button id="reset-btn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2 transition-transform duration-150 ease-in-out hover:scale-105"><i class="fas fa-undo"></i> 重置模拟</button>
+                <button id="next-step-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2 transition-transform duration-150 ease-in-out hover:scale-105"><i class="fas fa-step-forward"></i> 下一步</button>
+            </div>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
+            <!-- Visualization -->
+            <div class="space-y-4">
+                <h3 class="font-bold text-xl text-center">网络拓扑与模拟</h3>
+                <div id="topology-container" class="relative w-full h-96 bg-gray-100 rounded-lg border">
+                    <!-- Routers and links will be injected here -->
+                </div>
+                <div class="text-sm text-gray-600 p-4 bg-gray-50 rounded-lg">
+                    <h4 class="font-bold mb-2">当前模拟说明：</h4>
+                    <p id="simulation-description">请选择一个协议以开始模拟。</p>
+                </div>
+            </div>
+
+            <!-- Tables and Log -->
+            <div class="space-y-6">
+                 <div>
+                    <h3 class="font-bold text-xl mb-3">路由器状态信息</h3>
+                    <div id="info-tabs" class="border-b border-gray-200">
+                        <nav class="-mb-px flex space-x-4" aria-label="Tabs">
+                            <button class="info-tab active" data-tab-target="routing-tables-container">路由表</button>
+                            <button class="info-tab" data-tab-target="lsdb-container">链路状态数据库 (LSDB)</button>
+                        </nav>
+                    </div>
+                    <div class="mt-4">
+                        <div id="routing-tables-container" class="info-panel grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
+                            <!-- Routing tables will be injected here -->
+                        </div>
+                        <div id="lsdb-container" class="info-panel hidden grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
+                            <!-- LSDBs will be injected here -->
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-bold text-xl mb-3">事件日志</h3>
+                    <div id="log-area" class="h-64 overflow-y-auto bg-gray-50 p-4 rounded-lg border">
+                         <!-- Log entries will appear here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // --- CONFIGURATION ---
+    const topology = {
+        nodes: [
+            { id: 'R1', label: 'R1', as: 'AS1', x: 20, y: 50 },
+            { id: 'R2', label: 'R2', as: 'AS1', x: 50, y: 25 },
+            { id: 'R3', label: 'R3', as: 'AS1', x: 50, y: 75 },
+            { id: 'R4', label: 'R4', as: 'AS2', x: 80, y: 50 },
+        ],
+        links: [
+            { source: 'R1', target: 'R2', metric: 1, network: '192.168.1.0/30' },
+            { source: 'R1', target: 'R3', metric: 1, network: '192.168.2.0/30' },
+            { source: 'R2', target: 'R3', metric: 5, network: '192.168.3.0/30' },
+            { source: 'R2', target: 'R4', metric: 1, network: '192.168.4.0/30' },
+            { source: 'R3', target: 'R4', metric: 1, network: '192.168.5.0/30' },
+        ],
+        networks: [
+            { id: 'N1', attachedTo: 'R1', prefix: '10.1.0.0/16' },
+            { id: 'N2', attachedTo: 'R4', prefix: '20.2.0.0/16' }
+        ],
+        as: {
+            AS1: { label: 'AS 1', nodes: ['R1', 'R2', 'R3'], x:5, y:5, width:55, height:90},
+            AS2: { label: 'AS 2', nodes: ['R4'], x:70, y:5, width:25, height:90 }
+        }
+    };
+    
+    // Assign IPs to interfaces
+    topology.nodes.forEach(node => {
+        node.interfaces = {};
+        const attachedNet = topology.networks.find(n => n.attachedTo === node.id);
+        if (attachedNet) {
+            node.interfaces[attachedNet.id] = attachedNet.prefix.replace('/16', '.1');
+        }
+        topology.links.forEach(link => {
+            if (link.source === node.id) {
+                node.interfaces[link.target] = link.network.replace('/30', '.1');
+            } else if (link.target === node.id) {
+                node.interfaces[link.source] = link.network.replace('/30', '.2');
+            }
+        });
+    });
+
+    // --- DOM ELEMENTS ---
+    const elements = {
+        protocolSelector: document.getElementById('protocol-selector'),
+        resetBtn: document.getElementById('reset-btn'),
+        nextStepBtn: document.getElementById('next-step-btn'),
+        topologyContainer: document.getElementById('topology-container'),
+        routingTablesContainer: document.getElementById('routing-tables-container'),
+        lsdbContainer: document.getElementById('lsdb-container'),
+        logArea: document.getElementById('log-area'),
+        simulationDescription: document.getElementById('simulation-description'),
+        infoTabs: document.getElementById('info-tabs')
+    };
+    
+    // --- STATE ---
+    let state = {
+        protocol: null,
+        routers: {},
+        simulationQueue: [],
+        step: 0,
+        converged: false
+    };
+
+    // --- INITIALIZATION ---
+    function initializeSimulation() {
+        drawTopology();
+        resetState();
+    }
+    
+    function resetState() {
+        state.step = 0;
+        state.simulationQueue = [];
+        state.converged = false;
+        elements.logArea.innerHTML = '';
+        elements.routingTablesContainer.innerHTML = '';
+        elements.lsdbContainer.innerHTML = '';
+        
+        state.routers = {};
+        topology.nodes.forEach(node => {
+            state.routers[node.id] = {
+                id: node.id,
+                neighbors: topology.links.filter(l => l.source === node.id || l.target === node.id).map(l => l.source === node.id ? l.target : l.source),
+                as: node.as,
+                ripTable: {},
+                lsa: {},
+                lsdb: {},
+                bgpTable: {}
+            };
+            
+            // LSA is created for all routers in OSPF
+            state.routers[node.id].lsa = {
+                origin: node.id,
+                seq: 1,
+                links: state.routers[node.id].neighbors.reduce((acc, neighbor) => {
+                    const link = topology.links.find(l => (l.source === node.id && l.target === neighbor) || (l.source === neighbor && l.target === node.id));
+                    acc[neighbor] = link.metric;
+                    return acc;
+                }, {})
+            };
+            state.routers[node.id].lsdb[node.id] = JSON.parse(JSON.stringify(state.routers[node.id].lsa));
+
+            const attachedNet = topology.networks.find(n => n.attachedTo === node.id);
+            if (attachedNet) {
+                state.routers[node.id].ripTable[attachedNet.prefix] = { dest: attachedNet.prefix, cost: 1, nextHop: 'Direct' };
+                state.routers[node.id].bgpTable[attachedNet.prefix] = { dest: attachedNet.prefix, path: [state.routers[node.id].as], nextHop: 'Direct' };
+            }
+        });
+        
+        updateInfoPanelsUI();
+        addLog('sys', '模拟已重置。请选择一个协议并点击“下一步”。');
+        document.querySelectorAll('.active-router').forEach(el => el.classList.remove('active-router'));
+        elements.nextStepBtn.disabled = !state.protocol;
+    }
+
+    // --- UI & DRAWING ---
+    function drawTopology() {
+        elements.topologyContainer.innerHTML = ''; // Clear previous drawings
+        Object.values(topology.as).forEach(as => {
+            const asDiv = document.createElement('div');
+            asDiv.className = 'as-boundary';
+            asDiv.style.left = `${as.x}%`;
+            asDiv.style.top = `${as.y}%`;
+            asDiv.style.width = `${as.width}%`;
+            asDiv.style.height = `${as.height}%`;
+            const label = document.createElement('span');
+            label.textContent = as.label;
+            label.className = 'absolute -top-6 left-2 font-bold text-gray-500';
+            asDiv.appendChild(label);
+            elements.topologyContainer.appendChild(asDiv);
+        });
+
+        topology.links.forEach(link => {
+            const sourceNode = topology.nodes.find(n => n.id === link.source);
+            const targetNode = topology.nodes.find(n => n.id === link.target);
+            const dx = (targetNode.x - sourceNode.x) * elements.topologyContainer.clientWidth / 100;
+            const dy = (targetNode.y - sourceNode.y) * elements.topologyContainer.clientHeight / 100;
+            const length = Math.sqrt(dx*dx + dy*dy);
+            const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+
+            const line = document.createElement('div');
+            line.className = 'link-line';
+            line.style.left = `${sourceNode.x}%`;
+            line.style.top = `${sourceNode.y}%`;
+            line.style.width = `${length}px`;
+            line.style.transform = `rotate(${angle}deg)`;
+            elements.topologyContainer.appendChild(line);
+        });
+        
+        topology.nodes.forEach(node => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'router-node-wrapper';
+            wrapper.style.left = `${node.x}%`;
+            wrapper.style.top = `${node.y}%`;
+
+            const nodeDiv = document.createElement('div');
+            nodeDiv.id = `router-${node.id}`;
+            nodeDiv.className = 'router-node';
+            nodeDiv.innerHTML = `<i class="fas fa-server"></i><span>${node.label}</span>`;
+            wrapper.appendChild(nodeDiv);
+
+            Object.entries(node.interfaces).forEach(([key, ip]) => {
+                const ipLabel = document.createElement('span');
+                ipLabel.className = 'ip-label';
+                ipLabel.textContent = ip;
+                if (key.startsWith('R')) {
+                    const neighbor = topology.nodes.find(n => n.id === key);
+                    const angle = Math.atan2(neighbor.y - node.y, neighbor.x - node.x);
+                    ipLabel.style.left = `${50 + 40 * Math.cos(angle)}%`;
+                    ipLabel.style.top = `${50 + 40 * Math.sin(angle)}%`;
+                    ipLabel.style.transform = 'translate(-50%, -50%)';
+                } else {
+                    ipLabel.style.left = '50%';
+                    ipLabel.style.top = '100%';
+                    ipLabel.style.transform = 'translateX(-50%)';
+                }
+                wrapper.appendChild(ipLabel);
+            });
+            elements.topologyContainer.appendChild(wrapper);
+        });
+    }
+    
+    function updateInfoPanelsUI() {
+        updateRoutingTablesUI();
+        updateLsdbUI();
+    }
+    
+    function updateRoutingTablesUI() {
+        elements.routingTablesContainer.innerHTML = '';
+        Object.values(state.routers).forEach(router => {
+            const tableContainer = document.createElement('div');
+            tableContainer.className = 'card p-3 text-sm';
+            
+            let tableHTML = `<h4 class="font-bold mb-2">${router.id} 的路由表</h4><table class="w-full text-left"><thead><tr class="border-b">`;
+            let hasRows = false;
+
+            if (state.protocol === 'rip') {
+                tableHTML += `<th>目的网络</th><th>距离</th><th>下一跳</th></tr></thead><tbody>`;
+                const entries = Object.values(router.ripTable);
+                if (entries.length > 0) {
+                    hasRows = true;
+                    entries.sort((a,b) => a.dest.localeCompare(b.dest)).forEach(entry => {
+                        tableHTML += `<tr><td>${entry.dest}</td><td>${entry.cost}</td><td>${entry.nextHop}</td></tr>`;
+                    });
+                }
+            } else if (state.protocol === 'ospf') {
+                 tableHTML += `<th>目的网络</th><th>成本</th><th>下一跳</th></tr></thead><tbody>`;
+                 const paths = dijkstra(router.id);
+                 topology.networks.forEach(net => {
+                     const destRouterId = net.attachedTo;
+                     const pathInfo = paths[destRouterId];
+                     if (pathInfo && pathInfo.cost !== Infinity) {
+                         const cost = pathInfo.cost + (destRouterId === router.id ? 0 : 1);
+                         const nextHop = pathInfo.path.length > 1 ? pathInfo.path[1] : 'Direct';
+                         tableHTML += `<tr><td>${net.prefix}</td><td>${cost}</td><td>${nextHop}</td></tr>`;
+                         hasRows = true;
+                     }
+                 });
+            } else if (state.protocol === 'bgp') {
+                tableHTML += `<th>网络前缀</th><th>AS路径</th><th>下一跳</th></tr></thead><tbody>`;
+                const entries = Object.values(router.bgpTable);
+                if (entries.length > 0) {
+                    hasRows = true;
+                    entries.sort((a,b) => a.dest.localeCompare(b.dest)).forEach(entry => {
+                         tableHTML += `<tr><td>${entry.dest}</td><td>&lt;${entry.path.join(' ')}&gt;</td><td>${entry.nextHop}</td></tr>`;
+                    });
+                }
+            }
+            
+            if (!hasRows) {
+                tableHTML += '<tr><td colspan="3" class="text-center text-gray-400 py-3">无路由信息</td></tr>';
+            }
+            tableHTML += '</tbody></table>';
+            tableContainer.innerHTML = tableHTML;
+            elements.routingTablesContainer.appendChild(tableContainer);
+        });
+    }
+
+    function updateLsdbUI() {
+        elements.lsdbContainer.innerHTML = '';
+        if (state.protocol !== 'ospf') {
+            elements.lsdbContainer.innerHTML = '<p class="text-center text-gray-500 col-span-full">只有 OSPF 协议使用链路状态数据库。</p>';
+            return;
+        }
+        Object.values(state.routers).forEach(router => {
+            const tableContainer = document.createElement('div');
+            tableContainer.className = 'card p-3 text-sm';
+            let tableHTML = `<h4 class="font-bold mb-2">${router.id} 的 LSDB</h4><table class="w-full text-left"><thead><tr class="border-b"><th>源路由器</th><th>序列号</th><th>链路</th></tr></thead><tbody>`;
+            let hasRows = false;
+            const entries = Object.values(router.lsdb);
+            if (entries.length > 0) {
+                hasRows = true;
+                entries.sort((a,b) => a.origin.localeCompare(b.origin)).forEach(lsa => {
+                    const linksStr = Object.entries(lsa.links).map(([neighbor, metric]) => `${neighbor}(${metric})`).join(', ');
+                    tableHTML += `<tr><td>${lsa.origin}</td><td>${lsa.seq}</td><td>${linksStr || 'N/A'}</td></tr>`;
+                });
+            }
+            if (!hasRows) {
+                 tableHTML += '<tr><td colspan="3" class="text-center text-gray-400 py-3">LSDB 为空</td></tr>';
+            }
+            tableHTML += '</tbody></table>';
+            tableContainer.innerHTML = tableHTML;
+            elements.lsdbContainer.appendChild(tableContainer);
+        });
+    }
+
+    // --- SIMULATION LOGIC ---
+    function prepareSimulation() {
+        state.simulationQueue = [];
+        state.step = 0;
+        state.converged = false;
+        
+        switch (state.protocol) {
+            case 'rip':
+                elements.simulationDescription.textContent = 'RIP (距离向量协议): 路由器与相邻路由器交换完整的路由表。距离(跳数)小的路径被优先选择。';
+                for (let i = 0; i < 5; i++) {
+                    const roundActions = [];
+                    Object.keys(state.routers).forEach(routerId => {
+                         const router = state.routers[routerId];
+                         router.neighbors.forEach(neighborId => {
+                             roundActions.push({ type: 'rip-exchange', from: routerId, to: neighborId, table: JSON.parse(JSON.stringify(router.ripTable)) });
+                         });
+                    });
+                    state.simulationQueue.push({ round: i + 1, actions: roundActions });
+                }
+                break;
+            case 'ospf':
+                elements.simulationDescription.textContent = 'OSPF (链路状态协议): 路由器向全网洪泛其链路状态，每个路由器独立构建全网拓扑并计算最短路径。';
+                const floodActions = [];
+                 Object.keys(state.routers).forEach(routerId => {
+                     const router = state.routers[routerId];
+                     router.neighbors.forEach(neighborId => {
+                        floodActions.push({ type: 'ospf-flood', from: routerId, to: neighborId, lsa: JSON.parse(JSON.stringify(router.lsa)) });
+                     });
+                 });
+                state.simulationQueue.push({ round: 1, name: "泛洪链路状态 (LSA)", actions: floodActions });
+                 for(let i=0; i < 3; i++) {
+                     state.simulationQueue.push({round: i+2, name: `同步链路状态数据库 (第 ${i+1} 轮)`, actions: [{ type: 'ospf-sync' }] });
+                 }
+                break;
+            case 'bgp':
+                elements.simulationDescription.textContent = 'BGP (路径向量协议): 在自治系统(AS)之间交换路由信息，包含完整的AS路径以防止环路，并可实施策略。';
+                state.simulationQueue.push({ round: 1, name: 'AS1 通告其网络', actions: [{ type: 'bgp-advertise', from: 'R1', to: 'R2', network: '10.1.0.0/16' }] });
+                state.simulationQueue.push({ round: 2, name: 'AS1 内部传播', actions: [{ type: 'bgp-internal', from: 'R2', to: 'R3', network: '10.1.0.0/16', path: ['AS1']}] });
+                state.simulationQueue.push({ round: 3, name: 'AS1 向 AS2 通告', actions: [{ type: 'bgp-external', from: 'R2', to: 'R4', network: '10.1.0.0/16', path: ['AS1'] }, { type: 'bgp-external', from: 'R3', to: 'R4', network: '10.1.0.0/16', path: ['AS1'] }] });
+                break;
+        }
+    }
+
+    function executeNextStep() {
+        if (state.converged || state.simulationQueue.length === 0) {
+            addLog('sys', '模拟已完成或收敛。');
+            state.converged = true;
+            return;
+        }
+
+        const currentStep = state.simulationQueue.shift();
+        addLog(state.protocol, `--- 第 ${currentStep.round} 轮: ${currentStep.name || '路由交换'} ---`);
+
+        let hasChanged = false;
+        const promises = [];
+        
+        currentStep.actions.forEach(action => {
+            const fromRouter = state.routers[action.from];
+            const toRouter = state.routers[action.to];
+
+            if(action.type === 'rip-exchange'){
+                promises.push(animatePacket(action.from, action.to, 'rip'));
+                Object.values(action.table).forEach(entry => {
+                    const newCost = entry.cost + 1;
+                    if (newCost < 16) {
+                        const existingEntry = toRouter.ripTable[entry.dest];
+                        if (!existingEntry || newCost < existingEntry.cost) {
+                            toRouter.ripTable[entry.dest] = { dest: entry.dest, cost: newCost, nextHop: action.from };
+                            hasChanged = true;
+                            addLog('rip', `${action.to} 从 ${action.from} 学到: 到 ${entry.dest} 距离为 ${newCost}。`);
+                        }
+                    }
+                });
+            } else if (action.type === 'ospf-flood') {
+                promises.push(animatePacket(action.from, action.to, 'ospf'));
+                addLog('ospf', `${action.from} 向 ${action.to} 泛洪自己的LSA。`);
+                 if (!toRouter.lsdb[action.lsa.origin] || toRouter.lsdb[action.lsa.origin].seq < action.lsa.seq) {
+                     toRouter.lsdb[action.lsa.origin] = JSON.parse(JSON.stringify(action.lsa));
+                     hasChanged = true;
+                 }
+            } else if (action.type === 'ospf-sync') {
+                 Object.keys(state.routers).forEach(senderId => {
+                     const sender = state.routers[senderId];
+                     sender.neighbors.forEach(receiverId => {
+                         const receiver = state.routers[receiverId];
+                         Object.values(sender.lsdb).forEach(lsa => {
+                              if (!receiver.lsdb[lsa.origin] || receiver.lsdb[lsa.origin].seq < lsa.seq) {
+                                  receiver.lsdb[lsa.origin] = JSON.parse(JSON.stringify(lsa));
+                                  hasChanged = true;
+                                  addLog('ospf', `${receiverId} 从 ${senderId} 同步了 ${lsa.origin} 的LSA。`);
+                              }
+                         });
+                     });
+                 });
+            } else if (action.type.startsWith('bgp-')) {
+                 promises.push(animatePacket(action.from, action.to, 'bgp'));
+                 const newPath = [fromRouter.as, ...(action.path || [])];
+                 const existingEntry = toRouter.bgpTable[action.network];
+
+                 if (!existingEntry || newPath.length < existingEntry.path.length) {
+                     if (!newPath.includes(toRouter.as)) {
+                        toRouter.bgpTable[action.network] = { dest: action.network, path: newPath, nextHop: action.from };
+                        hasChanged = true;
+                        addLog('bgp', `${action.to} 从 ${action.from} 学到: 到 ${action.network} 的路径为 <${newPath.join(' ')}>`);
+                     } else {
+                        addLog('bgp', `${action.to} 检测到路径环路 <${newPath.join(' ')}>，丢弃该路由。`);
+                     }
+                 }
+            }
+        });
+        
+        Promise.all(promises).then(() => {
+            if (!hasChanged && state.protocol !== 'bgp') { // BGP doesn't converge in this simple model
+                state.converged = true;
+                addLog('sys', '路由信息已收敛。');
+            }
+            updateInfoPanelsUI();
+        });
+    }
+    
+    function dijkstra(startNodeId) {
+        const lsdb = state.routers[startNodeId].lsdb;
+        const costs = {};
+        const parents = {};
+        const processed = new Set();
+        
+        topology.nodes.forEach(node => {
+            costs[node.id] = Infinity;
+            parents[node.id] = null;
+        });
+        costs[startNodeId] = 0;
+
+        let node = findLowestCostNode(costs, processed);
+        while(node) {
+            const cost = costs[node];
+            const lsa = lsdb[node];
+            
+            if (lsa && lsa.links) {
+                Object.keys(lsa.links).forEach(neighborId => {
+                    if (costs.hasOwnProperty(neighborId)) {
+                        const newCost = cost + lsa.links[neighborId];
+                        if (newCost < costs[neighborId]) {
+                            costs[neighborId] = newCost;
+                            parents[neighborId] = node;
+                        }
+                    }
+                });
+            }
+            processed.add(node);
+            node = findLowestCostNode(costs, processed);
+        }
+
+        const finalPaths = {};
+        topology.nodes.forEach(n => {
+            const cost = costs[n.id];
+            const path = [];
+            if (cost !== Infinity) {
+                let curr = n.id;
+                while(curr) {
+                    path.unshift(curr);
+                    curr = parents[curr];
+                }
+            }
+            finalPaths[n.id] = { cost, path };
+        });
+        return finalPaths;
+    }
+
+    function findLowestCostNode(costs, processed) {
+        return Object.keys(costs).reduce((lowest, node) => {
+            if (lowest === null || costs[node] < costs[lowest]) {
+                if (!processed.has(node)) {
+                    lowest = node;
+                }
+            }
+            return lowest;
+        }, null);
+    }
+    
+    function animatePacket(fromId, toId, protocolClass) {
+        return new Promise(resolve => {
+            const fromNode = document.getElementById(`router-${fromId}`).parentElement;
+            const toNode = document.getElementById(`router-${toId}`).parentElement;
+            
+            const packet = document.createElement('div');
+            packet.className = `packet packet-${protocolClass}`;
+            packet.innerHTML = `<i class="fas fa-envelope"></i>`;
+            elements.topologyContainer.appendChild(packet);
+            
+            packet.style.left = fromNode.style.left;
+            packet.style.top = fromNode.style.top;
+            
+            setTimeout(() => {
+                packet.style.left = toNode.style.left;
+                packet.style.top = toNode.style.top;
+            }, 50);
+
+            setTimeout(() => {
+                packet.remove();
+                resolve();
+            }, 1550);
+        });
+    }
+
+    // --- EVENT LISTENERS ---
+    elements.protocolSelector.addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON') {
+            const selectedProtocol = e.target.dataset.protocol;
+            if (state.protocol !== selectedProtocol) {
+                state.protocol = selectedProtocol;
+                document.querySelectorAll('.btn-protocol').forEach(btn => btn.classList.remove('active'));
+                e.target.classList.add('active');
+                elements.infoTabs.querySelector('[data-tab-target="routing-tables-container"]').click();
+                resetState();
+                prepareSimulation();
+            }
+        }
+    });
+    
+    elements.infoTabs.addEventListener('click', (e) => {
+        if (e.target.classList.contains('info-tab')) {
+            document.querySelectorAll('.info-tab').forEach(tab => tab.classList.remove('active'));
+            e.target.classList.add('active');
+            const targetId = e.target.dataset.tabTarget;
+            document.querySelectorAll('.info-panel').forEach(panel => {
+                panel.classList.toggle('hidden', panel.id !== targetId);
+            });
+        }
+    });
+
+    elements.resetBtn.addEventListener('click', () => {
+        if (state.protocol) {
+            resetState();
+            prepareSimulation();
+        }
+    });
+
+    elements.nextStepBtn.addEventListener('click', executeNextStep);
+
+    function addLog(type, message) {
+        const entry = document.createElement('div');
+        entry.className = `log-entry log-${type}`;
+        entry.innerHTML = `<p class="font-medium text-gray-800">${message}</p>`;
+        elements.logArea.prepend(entry);
+    }
+
+    // --- START ---
+    initializeSimulation();
+});
+</script>
+
+</body>
+</html>
