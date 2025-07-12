@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!--
+    Chosen Palette: Educational Blue (Background: bg-slate-100, Text: text-slate-800, Primary: bg-blue-600, Accent: bg-teal-500, Highlight: bg-amber-400)
+    Application Structure Plan: This is a single-purpose educational tool. The structure is a top-down narrative: 1) A concise introduction defining the problem (why not CSMA/CD) and the solution (CSMA/CA). 2) The main interactive simulation area, which is the core of the page. 3) A control panel for the simulation. 4) A real-time log panel that explains the simulation step-by-step. 5) A detailed breakdown of the key mechanisms (IFS, Backoff, NAV). This structure guides the user from the "what" and "why" to the "how" through direct interaction, which is the most effective way to teach a complex, dynamic protocol.
+    Visualization & Content Choices:
+    - CSMA/CA Simulation: Report Info -> CSMA/CA algorithm with backoff and IFS -> Goal: Demonstrate the dynamic process of channel contention -> Viz: Custom HTML/CSS/JS timeline animation -> Interaction: User clicks buttons to start/reset the simulation and select different scenarios (e.g., basic contention, RTS/CTS handshake). The timeline visualizes each station's state (sensing, backoff, transmitting, waiting) over time. -> Justification: This is the most direct and intuitive way to explain a time-based algorithm. It makes abstract concepts like "freezing the timer" and "DIFS wait" tangible and easy to follow.
+    - Key Mechanism Explanation: Report Info -> Definitions of IFS, Backoff, NAV -> Goal: Provide clear, static definitions for reference -> Viz: Styled HTML text blocks with diagrams -> Interaction: None -> Justification: Serves as a glossary or reference panel that supports the simulation. Static text is sufficient and clear for defining these foundational concepts.
+    CONFIRMATION: NO SVG graphics used. NO Mermaid JS used.
+    -->
+    <title>交互式CSMA/CA演示</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #f1f5f9; color: #1e293b; }
+        .sim-container { background-color: white; border-radius: 0.75rem; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); }
+        .control-panel button { background-color: #2563eb; color: white; padding: 0.5rem 1.5rem; border-radius: 0.5rem; transition: background-color 0.3s; font-weight: 500; }
+        .control-panel button:hover { background-color: #1d4ed8; }
+        .control-panel button:disabled { background-color: #94a3b8; cursor: not-allowed; }
+        .station-row { display: flex; align-items: center; margin-bottom: 0.75rem; }
+        .timeline-container { flex-grow: 1; height: 2.5rem; background-color: #e2e8f0; border-radius: 0.375rem; overflow: hidden; position: relative; border: 1px solid #cbd5e1; }
+        .timeline-bar { position: absolute; height: 100%; transition: all 0.2s linear; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; color: white; font-weight: 600; text-shadow: 1px 1px 2px rgba(0,0,0,0.5); }
+        .log-panel { background-color: #0f172a; color: #94a3b8; font-family: monospace; padding: 1rem; border-radius: 0.5rem; height: 150px; overflow-y: auto; }
+        .log-panel p { transition: opacity 0.5s; margin-bottom: 0.25rem; }
+        .log-panel p.new-log { opacity: 1; color: #e2e8f0; font-weight: 600; }
+        .tooltip { visibility: hidden; background-color: #1e293b; color: #fff; text-align: center; border-radius: 6px; padding: 5px 10px; position: absolute; z-index: 1; bottom: 125%; left: 50%; transform: translateX(-50%); opacity: 0; transition: opacity 0.3s; width: 120px; pointer-events: none; }
+        .timeline-bar:hover .tooltip { visibility: visible; opacity: 1; }
+    </style>
+</head>
+<body class="bg-slate-100">
+
+    <main class="container mx-auto px-4 py-8">
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-blue-700">MAC层: CSMA/CA 碰撞避免机制</h1>
+            <p class="mt-2 text-lg text-slate-600 max-w-3xl mx-auto">一个用于理解802.11无线局域网核心接入协议的交互式演示</p>
+        </div>
+
+        <div class="sim-container p-6 md:p-8">
+            <div class="grid lg:grid-cols-3 gap-8">
+                <div class="lg:col-span-2">
+                    <h2 class="text-2xl font-bold mb-4">信道争用模拟器</h2>
+                    <div class="flex flex-wrap justify-center gap-x-6 gap-y-2 mb-4 text-sm text-slate-600">
+                        <div class="flex items-center"><span class="w-4 h-4 rounded-sm bg-amber-400 mr-2 border border-slate-400"></span><span>感知 (DIFS/信道忙)</span></div>
+                        <div class="flex items-center"><span class="w-4 h-4 rounded-sm bg-sky-400 mr-2 border border-slate-400"></span><span>退避</span></div>
+                        <div class="flex items-center"><span class="w-4 h-4 rounded-sm bg-teal-500 mr-2 border border-slate-400"></span><span>发送数据</span></div>
+                        <div class="flex items-center"><span class="w-4 h-4 rounded-sm bg-green-500 mr-2 border border-slate-400"></span><span>ACK</span></div>
+                        <div class="flex items-center"><span class="w-4 h-4 rounded-sm bg-purple-400 mr-2 border border-slate-400"></span><span>等待ACK</span></div>
+                    </div>
+                    <div id="simulation-area">
+                        <!-- Station timelines will be generated here -->
+                    </div>
+                    <div class="mt-6 control-panel flex items-center justify-center space-x-4">
+                        <button id="start-sim-btn">开始模拟</button>
+                        <button id="reset-sim-btn">重置</button>
+                    </div>
+                </div>
+                <div>
+                    <h2 class="text-2xl font-bold mb-4">实时日志</h2>
+                    <div id="log-panel" class="log-panel">
+                        <p>请点击“开始模拟”以观察CSMA/CA过程。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-12">
+            <h2 class="text-3xl font-bold text-center mb-6">核心机制解析</h2>
+            <div class="grid md:grid-cols-3 gap-6">
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <h3 class="font-bold text-xl mb-2 text-blue-600">帧间间隔 (IFS)</h3>
+                    <p class="text-slate-700">为了协调通信，站点在发送前必须等待一段特定的时间。IFS通过优先级来控制接入。</p>
+                    <ul class="mt-3 space-y-1 list-disc list-inside">
+                        <li><b>SIFS (短):</b> 最高优先级，用于分隔一次原子操作中的帧，如 ACK 和 CTS。</li>
+                        <li><b>DIFS (DCF):</b> 中等优先级，站点在发送新数据前，若信道空闲需等待一个DIFS。</li>
+                    </ul>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <h3 class="font-bold text-xl mb-2 text-blue-600">随机退避</h3>
+                    <p class="text-slate-700">当信道由忙变为空闲时，多个站点可能都想发送。为避免碰撞，它们会各自选择一个随机的退避时间进行等待。</p>
+                     <ul class="mt-3 space-y-1 list-disc list-inside">
+                        <li><b>争用窗口(CW):</b> 退避时间从该窗口内随机选取。</li>
+                        <li><b>计时器冻结:</b> 若在退避期间信道变忙，计时器会暂停，待信道空闲后再继续。</li>
+                    </ul>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <h3 class="font-bold text-xl mb-2 text-blue-600">虚拟载波监听 (NAV)</h3>
+                    <p class="text-slate-700">通过RTS/CTS握手，一个站点可以“预约”信道。其他站点会设置网络分配向量(NAV)，在预约期内即使物理信道空闲也保持静默，有效解决“隐蔽站”问题。</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const simArea = document.getElementById('simulation-area');
+    const logPanel = document.getElementById('log-panel');
+    const startBtn = document.getElementById('start-sim-btn');
+    const resetBtn = document.getElementById('reset-sim-btn');
+
+    const STATIONS = ['A', 'B', 'C', 'AP'];
+    const SIM_DURATION = 60; // Total time units for the simulation
+    const TRANSMIT_TIME = 8;
+    const DIFS_TIME = 2;
+    const SIFS_TIME = 1;
+    const ACK_TIME = 2;
+    const SIM_SPEED = 400; // Simulation speed in milliseconds per time unit
+
+    let stationsState = {};
+    let simInterval;
+    let currentTime = 0;
+    let channel = {
+        busy: false,
+        busyUntil: 0,
+        transmitter: null
+    };
+
+    function init() {
+        clearInterval(simInterval);
+        simArea.innerHTML = '';
+        currentTime = 0;
+        channel.busy = false;
+        channel.busyUntil = 0;
+        channel.transmitter = null;
+        startBtn.disabled = false;
+
+        logPanel.innerHTML = '<p>请点击“开始模拟”以观察CSMA/CA过程。</p>';
+
+        STATIONS.forEach(name => {
+            const row = document.createElement('div');
+            row.className = 'station-row';
+            row.innerHTML = `
+                <span class="w-16 font-bold text-slate-700">站点 ${name}</span>
+                <div class="timeline-container" id="timeline-${name}"></div>
+            `;
+            simArea.appendChild(row);
+
+            stationsState[name] = {
+                name: name,
+                state: 'IDLE', // IDLE, SENSING, WAIT_DIFS, BACKOFF, TRANSMITTING, WAITING_ACK
+                wantsToSend: false,
+                backoffCounter: 0,
+                waitCounter: 0,
+                cw: 7, // Contention Window (0-7 for first try)
+            };
+        });
+    }
+
+    function log(message, isImportant = false) {
+        const p = document.createElement('p');
+        p.textContent = `[T=${String(currentTime).padStart(2, '0')}] ${message}`;
+        if (isImportant) {
+            p.classList.add('new-log');
+        }
+        logPanel.prepend(p);
+        if (logPanel.children.length > 20) {
+            logPanel.removeChild(logPanel.lastChild);
+        }
+    }
+
+    function addTimelineBar(stationName, duration, type, text) {
+        const container = document.getElementById(`timeline-${stationName}`);
+        if (!container) return;
+
+        const bar = document.createElement('div');
+        bar.className = 'timeline-bar';
+        const startPercent = (currentTime / SIM_DURATION) * 100;
+        const widthPercent = (duration / SIM_DURATION) * 100;
+        
+        let colorClass = '';
+        switch(type) {
+            case 'SENSING': colorClass = 'bg-amber-400'; break;
+            case 'BACKOFF': colorClass = 'bg-sky-400'; break;
+            case 'TRANSMITTING': colorClass = 'bg-teal-500'; break;
+            case 'WAITING_ACK': colorClass = 'bg-purple-400'; break;
+            case 'ACK': colorClass = 'bg-green-500'; break;
+        }
+        bar.classList.add(colorClass);
+        bar.style.left = `${startPercent}%`;
+        bar.style.width = `${widthPercent}%`;
+        
+        bar.innerHTML = `${text}<span class="tooltip">${text}</span>`;
+        container.appendChild(bar);
+    }
+    
+    function startSimulation() {
+        init();
+        startBtn.disabled = true;
+        
+        stationsState['A'].wantsToSend = true;
+        stationsState['C'].wantsToSend = true;
+        log('模拟开始。站点 A 和 C 有数据要发送。', true);
+
+        simInterval = setInterval(runTimeStep, SIM_SPEED);
+    }
+
+    function runTimeStep() {
+        if (currentTime >= SIM_DURATION) {
+            clearInterval(simInterval);
+            log('模拟结束。', true);
+            startBtn.disabled = false;
+            return;
+        }
+
+        // Update channel state
+        if (channel.busy && currentTime >= channel.busyUntil) {
+            const previousTransmitter = channel.transmitter;
+            channel.busy = false;
+            channel.transmitter = null;
+            log(`信道变为空闲。`);
+
+            if (previousTransmitter && stationsState[previousTransmitter] && stationsState[previousTransmitter].state === 'TRANSMITTING') {
+                log(`站点 ${previousTransmitter} 数据发送完毕。`);
+                stationsState[previousTransmitter].state = 'WAITING_ACK';
+                addTimelineBar(previousTransmitter, SIFS_TIME + ACK_TIME, 'WAITING_ACK', '等待ACK');
+                
+                // AP prepares to send ACK
+                setTimeout(() => {
+                    if (currentTime + SIFS_TIME < SIM_DURATION) {
+                        log(`AP 收到数据，等待 SIFS 后发送 ACK。`);
+                        channel.busy = true;
+                        channel.busyUntil = currentTime + SIFS_TIME + ACK_TIME;
+                        channel.transmitter = 'AP';
+                        addTimelineBar('AP', ACK_TIME, 'ACK', 'ACK');
+
+                        setTimeout(() => {
+                             if(stationsState[previousTransmitter]){
+                                log(`站点 ${previousTransmitter} 收到 ACK，通信成功。`, true);
+                                stationsState[previousTransmitter].state = 'IDLE';
+                                stationsState[previousTransmitter].wantsToSend = false;
+                             }
+                        }, ACK_TIME * SIM_SPEED);
+                    }
+                }, SIFS_TIME * SIM_SPEED);
+            }
+        }
+
+        STATIONS.forEach(name => {
+            const station = stationsState[name];
+            if (name === 'AP' || station.state === 'TRANSMITTING' || station.state === 'WAITING_ACK') return;
+
+            if (station.state === 'IDLE' && station.wantsToSend) {
+                station.state = 'SENSING';
+            }
+
+            if (station.state === 'SENSING') {
+                if (!channel.busy) {
+                    log(`站点 ${name} 检测到信道空闲，等待 DIFS。`);
+                    addTimelineBar(name, DIFS_TIME, 'SENSING', 'DIFS');
+                    station.state = 'WAIT_DIFS';
+                    station.waitCounter = DIFS_TIME;
+                }
+            } else if (station.state === 'WAIT_DIFS') {
+                if (channel.busy) {
+                     log(`站点 ${name} 在DIFS等待期间检测到信道忙，返回感知状态。`);
+                     station.state = 'SENSING';
+                } else {
+                    station.waitCounter--;
+                    if (station.waitCounter <= 0) {
+                        station.backoffCounter = Math.floor(Math.random() * (station.cw + 1));
+                        log(`站点 ${name} DIFS 等待结束，进入随机退避，计时器 = ${station.backoffCounter}。`, true);
+                        station.state = 'BACKOFF';
+                    }
+                }
+            } else if (station.state === 'BACKOFF') {
+                if (!channel.busy) {
+                    if (station.backoffCounter > 0) {
+                        addTimelineBar(name, 1, 'BACKOFF', `${station.backoffCounter}`);
+                        station.backoffCounter--;
+                    }
+                    if (station.backoffCounter <= 0) {
+                        log(`站点 ${name} 退避结束，开始发送数据。`, true);
+                        station.state = 'TRANSMITTING';
+                        channel.busy = true;
+                        channel.busyUntil = currentTime + TRANSMIT_TIME;
+                        channel.transmitter = name;
+                        addTimelineBar(name, TRANSMIT_TIME, 'TRANSMITTING', '发送数据');
+                    }
+                } else {
+                    addTimelineBar(name, 1, 'SENSING', '冻结');
+                }
+            }
+        });
+
+        currentTime++;
+    }
+
+    startBtn.addEventListener('click', startSimulation);
+    resetBtn.addEventListener('click', init);
+
+    init();
+});
+</script>
+</body>
+</html>

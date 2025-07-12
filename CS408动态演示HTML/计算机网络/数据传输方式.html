@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式学习应用：网络层提供的两种服务</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chosen Palette: Scholarly Blue & Neutral Gray -->
+    <!-- Application Structure Plan: 应用采用单页垂直布局，引导用户逐步深入。首先，通过一个引人注目的交互式动画模拟器，让用户直观感受“虚电路”和“数据报”服务的核心区别。用户点击按钮即可播放相应动画。动画下方，是两种服务的详细文字介绍卡片，最后是总结性的对比表格。这种“先体验，后学习，再总结”的结构，旨在将抽象概念具体化，提升学习效率和趣味性。 -->
+    <!-- Visualization & Content Choices: 1. 核心概念(Goal: Compare): 使用HTML/CSS/JS构建一个交互式网络图。节点（主机、路由器）用div表示，连线也用div。通过JS控制数据包（也是div）的移动、路径选择和状态变化。虚电路动画会展示“连接建立-数据传输-连接释放”三阶段，数据包沿固定路径有序到达。数据报动画则展示每个数据包独立选路、无序到达的过程。动画与下方的解释文本同步更新。2. 详细介绍与对比(Goal: Inform): 使用并列的卡片布局介绍两种服务的特点和阶段。最后用一个清晰的HTML表格，将笔记中的对比内容进行格式化展示。(CONFIRMATION: NO SVG graphics used. NO Mermaid JS used.) -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #f1f5f9; /* slate-100 */
+            color: #334155; /* slate-700 */
+        }
+        .card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            border: 1px solid #e2e8f0;
+        }
+        .network-node {
+            position: absolute;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            font-weight: bold;
+            border: 3px solid;
+            background-color: white;
+            z-index: 10;
+        }
+        .host { border-color: #0ea5e9; /* sky-500 */ }
+        .router { border-color: #64748b; /* slate-500 */ }
+        .network-link {
+            position: absolute;
+            background-color: #cbd5e1; /* slate-300 */
+            height: 4px;
+            transform-origin: 0 50%;
+            z-index: 5;
+            transition: background-color 0.5s ease;
+        }
+        .network-link.active-vc {
+            background-color: #f59e0b; /* amber-500 */
+        }
+        .packet {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            border-radius: 0.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: bold;
+            color: white;
+            opacity: 0;
+            z-index: 20;
+            transition: all 1s ease-in-out;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-5xl">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold text-slate-800">网络层提供的两种服务</h1>
+            <p class="mt-4 text-lg text-slate-500">虚电路 vs. 数据报：两种网络设计的哲学</p>
+        </header>
+
+        <!-- Interactive Simulation -->
+        <section class="mb-16">
+            <div class="card p-6 md:p-8">
+                <h2 class="text-2xl font-bold text-center mb-4">交互式模拟：数据包的旅程</h2>
+                <div id="simulation-stage" class="relative w-full h-80 bg-slate-50 rounded-lg border border-dashed border-slate-300 mb-6">
+                    <!-- Nodes -->
+                    <div id="node-A" class="network-node host" style="top: 50%; left: 5%; transform: translateY(-50%);">
+                        <span>主机 A</span>
+                        <span class="text-xs font-normal">源</span>
+                    </div>
+                    <div id="node-R1" class="network-node router" style="top: 20%; left: 50%; transform: translateX(-50%);">R1</div>
+                    <div id="node-R2" class="network-node router" style="top: 80%; left: 50%; transform: translateY(-100%);">R2</div>
+                    <div id="node-B" class="network-node host" style="top: 50%; right: 5%; transform: translateY(-50%);">
+                        <span>主机 B</span>
+                        <span class="text-xs font-normal">目的</span>
+                    </div>
+                    <!-- Links will be drawn by JS -->
+                </div>
+                 <div class="text-center mb-6">
+                    <button id="play-vc" class="py-2 px-5 bg-amber-500 text-white font-semibold rounded-lg shadow-md hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-opacity-75 transition-all">播放虚电路动画</button>
+                    <button id="play-dg" class="ml-4 py-2 px-5 bg-sky-500 text-white font-semibold rounded-lg shadow-md hover:bg-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-opacity-75 transition-all">播放数据报动画</button>
+                    <button id="reset-sim" class="ml-4 py-2 px-5 bg-slate-500 text-white font-semibold rounded-lg shadow-md hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-opacity-75 transition-all">重置</button>
+                </div>
+                <div id="explanation-box" class="min-h-[3rem] p-3 bg-slate-100 text-slate-600 border-l-4 border-slate-400 rounded-r-lg">
+                    <p id="explanation-text" class="font-medium">点击按钮开始动画模拟。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Detailed Explanations -->
+        <section class="mb-16">
+             <div class="grid md:grid-cols-2 gap-8">
+                <div class="card p-6">
+                    <h3 class="text-2xl font-bold mb-3 text-amber-600">虚电路服务 (面向连接)</h3>
+                    <p class="text-slate-600 mb-4">模仿电信网络，在通信前建立一条逻辑路径。所有数据包都沿着这条预设的“虚拟电路”有序传输，网络层负责可靠性。</p>
+                    <div class="space-y-3">
+                        <div class="p-3 bg-amber-50 rounded-lg">
+                            <h4 class="font-bold">1. 虚电路建立</h4>
+                            <p class="text-sm">发送“呼叫请求”分组，全网为该连接确定一条固定路径，并分配虚电路号(VCI)。</p>
+                        </div>
+                        <div class="p-3 bg-amber-50 rounded-lg">
+                            <h4 class="font-bold">2. 数据传输</h4>
+                            <p class="text-sm">所有分组携带VCI，沿固定路径被转发，保证按序到达。</p>
+                        </div>
+                        <div class="p-3 bg-amber-50 rounded-lg">
+                            <h4 class="font-bold">3. 虚电路释放</h4>
+                            <p class="text-sm">发送“释放请求”分组，拆除虚电路，释放网络资源。</p>
+                        </div>
+                    </div>
+                </div>
+                 <div class="card p-6">
+                    <h3 class="text-2xl font-bold mb-3 text-sky-600">数据报服务 (无连接)</h3>
+                    <p class="text-slate-600 mb-4">无需预先建立连接，每个数据包（数据报）独立选路，网络层仅“尽力而为”地交付，可靠性由上层负责。</p>
+                    <div class="space-y-3">
+                        <div class="p-3 bg-sky-50 rounded-lg">
+                            <h4 class="font-bold">独立路由</h4>
+                            <p class="text-sm">每个分组都携带完整的目的地址，路由器为其独立选择下一跳。</p>
+                        </div>
+                        <div class="p-3 bg-sky-50 rounded-lg">
+                            <h4 class="font-bold">不保证可靠性</h4>
+                            <p class="text-sm">分组可能丢失、重复或失序到达，网络不负责纠错。</p>
+                        </div>
+                        <div class="p-3 bg-sky-50 rounded-lg">
+                            <h4 class="font-bold">互联网的选择</h4>
+                            <p class="text-sm">该模式简化了网络核心，将复杂性（如可靠性控制）移至端系统，是互联网成功的关键设计。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Comparison Table -->
+        <section>
+            <h2 class="text-3xl font-bold text-slate-700 text-center mb-8">服务对比总结</h2>
+            <div class="card overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead class="bg-slate-50 border-b border-slate-200">
+                        <tr>
+                            <th class="p-4 font-bold text-slate-800">特性</th>
+                            <th class="p-4 font-bold text-slate-800">虚电路服务</th>
+                            <th class="p-4 font-bold text-slate-800">数据报服务</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="border-b border-slate-200">
+                            <td class="p-4 font-semibold">连接性</td>
+                            <td class="p-4">面向连接</td>
+                            <td class="p-4">无连接</td>
+                        </tr>
+                        <tr class="bg-slate-50 border-b border-slate-200">
+                            <td class="p-4 font-semibold">分组路径</td>
+                            <td class="p-4">所有分组路径相同</td>
+                            <td class="p-4">每个分组独立选路</td>
+                        </tr>
+                        <tr class="border-b border-slate-200">
+                            <td class="p-4 font-semibold">分组顺序</td>
+                            <td class="p-4 text-green-600">保证按序到达</td>
+                            <td class="p-4 text-red-600">不保证按序到达</td>
+                        </tr>
+                        <tr class="bg-slate-50 border-b border-slate-200">
+                            <td class="p-4 font-semibold">可靠性保证</td>
+                            <td class="p-4">由网络层负责</td>
+                            <td class="p-4">由运输层负责</td>
+                        </tr>
+                        <tr class="border-b border-slate-200">
+                            <td class="p-4 font-semibold">地址信息</td>
+                            <td class="p-4">仅连接建立时需完整地址</td>
+                            <td class="p-4">每个分组都需完整地址</td>
+                        </tr>
+                         <tr class="bg-slate-50">
+                            <td class="p-4 font-semibold">典型代表</td>
+                            <td class="p-4">ATM, 帧中继</td>
+                            <td class="p-4">互联网 (IP)</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const stage = document.getElementById('simulation-stage');
+    const nodes = {
+        A: document.getElementById('node-A'),
+        R1: document.getElementById('node-R1'),
+        R2: document.getElementById('node-R2'),
+        B: document.getElementById('node-B')
+    };
+
+    const linksConfig = [
+        { from: 'A', to: 'R1', id: 'A-R1' },
+        { from: 'A', to: 'R2', id: 'A-R2' },
+        { from: 'R1', to: 'B', id: 'R1-B' },
+        { from: 'R2', to: 'B', id: 'R2-B' }
+    ];
+
+    let animationTimeout;
+
+    function drawLink(fromNode, toNode, id) {
+        const fromRect = fromNode.getBoundingClientRect();
+        const toRect = toNode.getBoundingClientRect();
+        const stageRect = stage.getBoundingClientRect();
+        
+        const x1 = fromRect.left + fromRect.width / 2 - stageRect.left;
+        const y1 = fromRect.top + fromRect.height / 2 - stageRect.top;
+        const x2 = toRect.left + toRect.width / 2 - stageRect.left;
+        const y2 = toRect.top + toRect.height / 2 - stageRect.top;
+
+        const length = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+        const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+
+        const link = document.createElement('div');
+        link.id = `link-${id}`;
+        link.className = 'network-link';
+        link.style.width = `${length}px`;
+        link.style.left = `${x1}px`;
+        link.style.top = `${y1}px`;
+        link.style.transform = `rotate(${angle}deg)`;
+        stage.appendChild(link);
+    }
+    
+    function createPacket(id, text, color, startNode) {
+        const packet = document.createElement('div');
+        packet.id = `packet-${id}`;
+        packet.className = 'packet';
+        packet.textContent = text;
+        packet.style.backgroundColor = color;
+        const startRect = startNode.getBoundingClientRect();
+        const stageRect = stage.getBoundingClientRect();
+        packet.style.left = `${startRect.left + startRect.width/2 - 15 - stageRect.left}px`;
+        packet.style.top = `${startRect.top + startRect.height/2 - 15 - stageRect.top}px`;
+        stage.appendChild(packet);
+        return packet;
+    }
+
+    function animatePacket(packet, path) {
+        let promise = Promise.resolve();
+        path.forEach(nodeId => {
+            promise = promise.then(() => {
+                return new Promise(resolve => {
+                    const targetNode = nodes[nodeId];
+                    const targetRect = targetNode.getBoundingClientRect();
+                    const stageRect = stage.getBoundingClientRect();
+                    
+                    packet.style.left = `${targetRect.left + targetRect.width/2 - 15 - stageRect.left}px`;
+                    packet.style.top = `${targetRect.top + targetRect.height/2 - 15 - stageRect.top}px`;
+                    
+                    setTimeout(resolve, 1100);
+                });
+            });
+        });
+        return promise;
+    }
+    
+    function sleep(ms) {
+        return new Promise(resolve => animationTimeout = setTimeout(resolve, ms));
+    }
+
+    const explanationText = document.getElementById('explanation-text');
+    const playVcBtn = document.getElementById('play-vc');
+    const playDgBtn = document.getElementById('play-dg');
+    const resetBtn = document.getElementById('reset-sim');
+
+    function resetSimulation() {
+        clearTimeout(animationTimeout);
+        stage.querySelectorAll('.packet').forEach(p => p.remove());
+        stage.querySelectorAll('.network-link').forEach(l => l.classList.remove('active-vc'));
+        explanationText.textContent = '点击按钮开始动画模拟。';
+        playVcBtn.disabled = false;
+        playDgBtn.disabled = false;
+    }
+
+    async function playVirtualCircuit() {
+        resetSimulation();
+        playVcBtn.disabled = true;
+        playDgBtn.disabled = true;
+
+        explanationText.textContent = '1. 虚电路建立：发送“呼叫请求”分组，建立一条固定路径 A -> R1 -> B...';
+        const callPacket = createPacket('call', '📞', '#fbbf24', nodes.A);
+        callPacket.style.opacity = 1;
+        await animatePacket(callPacket, ['R1', 'B']);
+        await sleep(500);
+        document.getElementById('link-A-R1').classList.add('active-vc');
+        document.getElementById('link-R1-B').classList.add('active-vc');
+        callPacket.remove();
+
+        explanationText.textContent = '2. 数据传输：所有数据包沿已建立的虚电路有序传输。';
+        const p1 = createPacket(1, 'P1', '#f97316', nodes.A);
+        const p2 = createPacket(2, 'P2', '#f97316', nodes.A);
+        const p3 = createPacket(3, 'P3', '#f97316', nodes.A);
+        p1.style.opacity = 1; await sleep(200);
+        p2.style.opacity = 1; await sleep(200);
+        p3.style.opacity = 1;
+        
+        animatePacket(p1, ['R1', 'B']);
+        await sleep(400);
+        animatePacket(p2, ['R1', 'B']);
+        await sleep(400);
+        await animatePacket(p3, ['R1', 'B']);
+        
+        await sleep(1200);
+        explanationText.textContent = '3. 虚电路释放：发送“释放请求”，拆除电路。';
+        const releasePacket = createPacket('release', '🔌', '#475569', nodes.A);
+        releasePacket.style.opacity = 1;
+        await animatePacket(releasePacket, ['R1', 'B']);
+        await sleep(500);
+        stage.querySelectorAll('.network-link').forEach(l => l.classList.remove('active-vc'));
+        stage.querySelectorAll('.packet').forEach(p => p.remove());
+
+        explanationText.textContent = '虚电路动画结束。';
+        playVcBtn.disabled = false;
+        playDgBtn.disabled = false;
+    }
+
+    async function playDatagram() {
+        resetSimulation();
+        playVcBtn.disabled = true;
+        playDgBtn.disabled = true;
+
+        explanationText.textContent = '数据报服务：每个数据包都独立寻路，无需建立连接。';
+        const p1 = createPacket(1, 'P1', '#0ea5e9', nodes.A);
+        const p2 = createPacket(2, 'P2', '#0ea5e9', nodes.A);
+        const p3 = createPacket(3, 'P3', '#0ea5e9', nodes.A);
+        p1.style.opacity = 1; await sleep(200);
+        p2.style.opacity = 1; await sleep(200);
+        p3.style.opacity = 1;
+        
+        explanationText.textContent = '数据包可能选择不同路径，导致失序到达。';
+        animatePacket(p1, ['R1', 'B']);
+        await sleep(400);
+        animatePacket(p2, ['R2', 'B']);
+        await sleep(400);
+        await animatePacket(p3, ['R1', 'B']);
+
+        await sleep(1500);
+        explanationText.textContent = '数据报动画结束。注意P2比P3先出发但后到达。';
+        stage.querySelectorAll('.packet').forEach(p => p.remove());
+        playVcBtn.disabled = false;
+        playDgBtn.disabled = false;
+    }
+    
+    function init() {
+        linksConfig.forEach(link => drawLink(nodes[link.from], nodes[link.to], link.id));
+        playVcBtn.addEventListener('click', playVirtualCircuit);
+        playDgBtn.addEventListener('click', playDatagram);
+        resetBtn.addEventListener('click', resetSimulation);
+    }
+
+    init();
+});
+</script>
+
+</body>
+</html>
