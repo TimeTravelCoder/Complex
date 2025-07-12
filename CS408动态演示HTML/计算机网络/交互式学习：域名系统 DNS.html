@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式学习应用：域名系统DNS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chosen Palette: Scholarly Blue (Background: #F8FAFC, Text: #334155, Primary: #3B82F6, Accent: #10B981) -->
+    <!-- Application Structure Plan: 本应用设计为一个单页应用，包含三个核心功能模块，通过顶部的选项卡导航进行切换。1. “基础概述”模块：使用信息卡片清晰呈现DNS的核心定义与作用。2. “域名空间”模块：将课本中的静态域名树（图6-1）转化为一个交互式、可点击探索的HTML结构图，用户点击不同层级的域名可获得相应解释。3. “解析过程”模块：这是应用的核心。它将课本中的查询流程（图6-5）转化为一个分步动画，用户可以通过按钮触发“迭代查询”和“递归查询”的完整动画过程，直观地理解两种查询方式的区别，极大地提升了学习效果。 -->
+    <!-- Visualization & Content Choices: 1. 概述 (Goal: Inform): 使用Tailwind CSS构建的卡片布局，将关键定义（什么是DNS，为什么需要DNS）分点呈现，增强可读性。2. 域名空间 (Goal: Organize/Explore): 使用嵌套的HTML列表(`ul`, `li`)和Tailwind CSS构建一个可视化的、可交互的域名树，替代静态图片。交互通过JavaScript实现，点击节点会显示相关信息。3. 解析过程 (Goal: Compare/Explain Process): 使用HTML/CSS和JavaScript创建一个动态的、分步的动画演示。用div代表各个服务器，并为其分配了具体的IP地址。通过JS控制报文图标的移动和文本的更新，来模拟DNS查询报文的流动。这将是最具“Wow”效果的部分。(CONFIRMATION: NO SVG graphics used. NO Mermaid JS used.) -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #F8FAFC;
+            color: #334155;
+        }
+        .tab-btn.active {
+            border-bottom-color: #3B82F6;
+            color: #1E3A8A;
+            font-weight: 700;
+        }
+        .tab-btn {
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+        }
+        .card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+            border: 1px solid #E2E8F0;
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        /* Domain Tree Styles */
+        .domain-tree ul { padding-left: 2rem; border-left: 2px solid #D1D5DB; }
+        .domain-tree li { position: relative; padding: 0.25rem 0 0.25rem 1rem; }
+        .domain-tree li::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            width: 1rem;
+            height: 2px;
+            background-color: #D1D5DB;
+            transform: translateY(-50%);
+        }
+        .tree-node {
+            cursor: pointer;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            transition: background-color 0.2s, color 0.2s;
+        }
+        .tree-node:hover {
+            background-color: #EFF6FF;
+            color: #1D4ED8;
+        }
+        /* DNS Query Animation */
+        .dns-server {
+            border: 2px solid #D1D5DB;
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            text-align: center;
+            background-color: #F9FAFB;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        .dns-server.active {
+            border-color: #3B82F6;
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
+            transform: scale(1.05);
+        }
+        .ip-address {
+            font-family: monospace;
+            font-size: 0.75rem;
+            color: #64748B;
+            background-color: #E2E8F0;
+            padding: 0.1rem 0.4rem;
+            border-radius: 0.25rem;
+            margin-top: 0.5rem;
+            display: inline-block;
+        }
+        .message-packet {
+            position: absolute;
+            transition: all 1.2s cubic-bezier(0.4, 0, 0.6, 1);
+            opacity: 0;
+            transform: scale(0.8);
+            z-index: 10;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.375rem;
+            font-size: 0.8rem;
+            color: white;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        <header class="text-center mb-10">
+            <h1 class="text-3xl md:text-5xl font-bold text-slate-800">交互式学习：域名系统 DNS</h1>
+            <p class="mt-3 text-lg text-slate-500">深入理解互联网的地址簿如何工作</p>
+        </header>
+
+        <nav class="flex justify-center border-b border-slate-200 mb-10">
+            <button class="tab-btn py-3 px-6 text-lg" data-tab="overview">基础概述</button>
+            <button class="tab-btn py-3 px-6 text-lg" data-tab="structure">域名空间</button>
+            <button class="tab-btn py-3 px-6 text-lg" data-tab="resolution">解析过程</button>
+        </nav>
+
+        <main>
+            <!-- 基础概述 Section -->
+            <section id="overview" class="tab-content animate-fade-in">
+                <div class="grid md:grid-cols-2 gap-8">
+                    <div class="card p-6 md:p-8">
+                        <h2 class="text-2xl font-bold mb-4 text-blue-700">什么是DNS？</h2>
+                        <p class="text-slate-600 leading-relaxed">
+                            <span class="font-semibold text-slate-700">域名系统 DNS (Domain Name System)</span> 是互联网使用的核心命名系统。它的主要功能，就是把人们容易记忆的<span class="font-semibold text-slate-700">域名</span>（如 `www.google.com`），转换为机器能够识别的 <span class="font-semibold text-slate-700">IP地址</span>（如 `172.217.160.68`）。可以将DNS理解为整个互联网的电话簿。
+                        </p>
+                    </div>
+                     <div class="card p-6 md:p-8">
+                        <h2 class="text-2xl font-bold mb-4 text-blue-700">为什么需要DNS？</h2>
+                        <p class="text-slate-600 leading-relaxed">
+                            由于互联网规模巨大，依赖单个中央服务器来管理所有域名是不可行的，这会造成性能瓶颈和单点故障。因此，DNS被设计成一个采用客户服务器方式的 <span class="font-semibold text-slate-700">联机分布式数据库系统</span>，具有高可用性和高效率。
+                        </p>
+                    </div>
+                </div>
+                 <div class="card p-6 md:p-8 mt-8">
+                    <h2 class="text-2xl font-bold mb-4 text-blue-700">基本工作方式</h2>
+                    <ol class="list-decimal list-inside space-y-3 text-slate-600">
+                        <li><span class="font-semibold text-slate-700">客户端发起请求：</span> 当用户在浏览器输入一个域名时，用户的计算机会调用一个<span class="font-semibold">解析程序(resolver)</span>，并向<span class="font-semibold">本地域名服务器</span>发送一个DNS查询请求。</li>
+                        <li><span class="font-semibold text-slate-700">本地域名服务器响应：</span> 本地域名服务器首先检查自己的缓存。如果找到对应的IP地址，就直接返回给客户端。</li>
+                        <li><span class="font-semibold text-slate-700">向外查询：</span> 如果本地域名服务器无法解析，它会以DNS客户的身份，向更高层次的域名服务器（如根域名服务器）发出查询请求，这个过程可能会涉及多个服务器之间的交互。</li>
+                        <li><span class="font-semibold text-slate-700">返回最终结果：</span> 本地域名服务器在获得最终的IP地址后，会将其返回给用户的计算机，同时缓存这个结果以备后续查询。</li>
+                    </ol>
+                </div>
+            </section>
+
+            <!-- 域名空间 Section -->
+            <section id="structure" class="tab-content hidden animate-fade-in">
+                <div class="flex flex-col lg:flex-row gap-8">
+                    <div class="lg:w-1/2 card p-6">
+                        <h2 class="text-2xl font-bold mb-4 text-slate-800">域名的层次结构</h2>
+                        <div class="domain-tree text-slate-700">
+                            <ul>
+                                <li>
+                                    <span class="font-bold text-lg tree-node" data-info="域名树的根节点，虽然存在，但没有名称。">根 (Root)</span>
+                                    <ul>
+                                        <li><span class="tree-node font-semibold" data-info="通用顶级域名(gTLD)：代表特定的组织类别，如 .com 代表商业公司。">.com</span>
+                                            <ul>
+                                                <li><span class="tree-node" data-info="二级域名：通常是组织或公司的名称，如 cctv (中央电视台)。">cctv</span>
+                                                    <ul>
+                                                         <li><span class="tree-node" data-info="三级域名：由二级域名的所有者自行分配，常用于标识特定的服务或主机，如 mail (邮件服务器)。">mail</span></li>
+                                                         <li><span class="tree-node" data-info="三级域名：www 常用于标识网站服务器。">www</span></li>
+                                                    </ul>
+                                                </li>
+                                                <li><span class="tree-node" data-info="二级域名：如 ibm。">ibm</span></li>
+                                            </ul>
+                                        </li>
+                                        <li><span class="tree-node font-semibold" data-info="国家代码顶级域名(ccTLD)：代表特定的国家或地区，如 .cn 代表中国。">.cn</span>
+                                            <ul>
+                                                <li><span class="tree-node" data-info="二级域名（类别）：如 .edu.cn 代表中国的教育机构。">edu</span>
+                                                     <ul>
+                                                         <li><span class="tree-node" data-info="三级域名：如 tsinghua (清华大学)。">tsinghua</span></li>
+                                                         <li><span class="tree-node" data-info="三级域名：如 pku (北京大学)。">pku</span></li>
+                                                    </ul>
+                                                </li>
+                                                 <li><span class="tree-node" data-info="二级域名（行政区域）：如 .bj.cn 代表北京市。">bj</span></li>
+                                            </ul>
+                                        </li>
+                                        <li><span class="tree-node font-semibold" data-info="通用顶级域名(gTLD)：如 .org 代表非营利组织。">.org</span></li>
+                                        <li><span class="font-mono text-slate-500">...</span></li>
+                                    </ul>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="lg:w-1/2">
+                         <div id="domain-info" class="card p-6 min-h-[200px] sticky top-8">
+                            <h3 class="text-xl font-bold text-blue-700 mb-2">探索域名空间</h3>
+                            <p class="text-slate-600">点击左侧树状图中的任意域名节点，此处将显示其详细信息。</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 解析过程 Section -->
+            <section id="resolution" class="tab-content hidden animate-fade-in">
+                 <div class="card p-6 md:p-8">
+                    <h2 class="text-2xl md:text-3xl font-bold mb-2 text-center text-slate-800">域名解析过程可视化</h2>
+                    <p class="text-center text-slate-500 mb-8">模拟查询域名 `y.abc.com` 的IP地址过程</p>
+                    
+                    <div id="dns-animation-container" class="relative mb-6 p-4 border border-slate-200 rounded-lg bg-slate-50/50 min-h-[400px]">
+                        <div class="grid grid-cols-5 gap-4">
+                            <div class="dns-server" id="client"><span class="text-xl">💻</span><br>主机<div class="ip-address">192.168.1.101</div></div>
+                            <div class="dns-server" id="local"><span class="text-xl">🏢</span><br>本地域名服务器<div class="ip-address">114.114.114.114</div></div>
+                            <div class="dns-server" id="root"><span class="text-xl">🌍</span><br>根域名服务器<div class="ip-address">198.41.0.4</div></div>
+                            <div class="dns-server" id="tld"><span class="text-xl">🔝</span><br>顶级域名服务器<div class="ip-address">192.5.6.30</div></div>
+                            <div class="dns-server" id="auth"><span class="text-xl">🔑</span><br>权限域名服务器<div class="ip-address">204.74.112.1</div></div>
+                        </div>
+                    </div>
+
+                    <div id="explanation-box" class="min-h-[6rem] p-4 bg-blue-50 text-blue-800 border-l-4 border-blue-500 rounded-r-lg">
+                        <p id="explanation-text" class="font-medium">点击下方按钮开始演示。动画将分步展示查询报文的流动路径。</p>
+                    </div>
+
+                    <div class="flex justify-center items-center gap-4 mt-8">
+                        <button id="play-iterative" class="py-2 px-5 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-75">演示迭代查询</button>
+                        <button id="play-recursive" class="py-2 px-5 bg-teal-600 text-white font-semibold rounded-lg shadow-md hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-opacity-75">演示递归查询</button>
+                        <button id="reset-animation" class="py-2 px-5 bg-slate-500 text-white font-semibold rounded-lg shadow-md hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-opacity-75">重置动画</button>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const tabs = document.querySelectorAll('.tab-btn');
+            const contents = document.querySelectorAll('.tab-content');
+
+            function setActiveTab(tabId) {
+                tabs.forEach(tab => {
+                    if (tab.getAttribute('data-tab') === tabId) {
+                        tab.classList.add('active');
+                    } else {
+                        tab.classList.remove('active');
+                    }
+                });
+                contents.forEach(content => {
+                    if (content.id === tabId) {
+                        content.classList.remove('hidden');
+                    } else {
+                        content.classList.add('hidden');
+                    }
+                });
+            }
+
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    setActiveTab(tab.getAttribute('data-tab'));
+                });
+            });
+
+            setActiveTab('overview');
+
+            const treeNodes = document.querySelectorAll('.tree-node');
+            const infoBox = document.getElementById('domain-info');
+            treeNodes.forEach(node => {
+                node.addEventListener('click', () => {
+                    const info = node.getAttribute('data-info');
+                    const nodeText = node.textContent;
+                    infoBox.innerHTML = `
+                        <h3 class="text-xl font-bold text-blue-700 mb-2">${nodeText}</h3>
+                        <p class="text-slate-600">${info}</p>
+                    `;
+                });
+            });
+
+            const animContainer = document.getElementById('dns-animation-container');
+            const explanationText = document.getElementById('explanation-text');
+            const playIterativeBtn = document.getElementById('play-iterative');
+            const playRecursiveBtn = document.getElementById('play-recursive');
+            const resetBtn = document.getElementById('reset-animation');
+            let isAnimating = false;
+            let currentAnimation = null;
+
+            const getServerElement = (id) => document.getElementById(id);
+
+            function resetAnimationState() {
+                isAnimating = false;
+                if (currentAnimation) {
+                    clearTimeout(currentAnimation);
+                    currentAnimation = null;
+                }
+                document.querySelectorAll('.dns-server').forEach(el => el.classList.remove('active'));
+                document.querySelectorAll('.message-packet').forEach(el => el.remove());
+                explanationText.textContent = "点击下方按钮开始演示。动画将分步展示查询报文的流动路径。";
+                playIterativeBtn.disabled = false;
+                playRecursiveBtn.disabled = false;
+            }
+            
+            resetBtn.addEventListener('click', resetAnimationState);
+
+            async function animateQuery(fromId, toId, text, packetText, isResponse = false) {
+                return new Promise(resolve => {
+                    const fromEl = getServerElement(fromId);
+                    const toEl = getServerElement(toId);
+                    fromEl.classList.add('active');
+                    toEl.classList.add('active');
+
+                    const fromRect = fromEl.getBoundingClientRect();
+                    const toRect = toEl.getBoundingClientRect();
+                    const containerRect = animContainer.getBoundingClientRect();
+
+                    const packet = document.createElement('div');
+                    packet.className = 'message-packet';
+                    packet.innerHTML = `✉️ ${packetText}`;
+                    packet.style.backgroundColor = isResponse ? '#10B981' : '#3B82F6';
+                    
+                    let startX = fromRect.left - containerRect.left + fromRect.width / 2;
+                    let startY = fromRect.top - containerRect.top + fromRect.height / 2;
+                    let endX = toRect.left - containerRect.left + toRect.width / 2;
+                    let endY = toRect.top - containerRect.top + toRect.height / 2;
+                    
+                    packet.style.left = `${startX}px`;
+                    packet.style.top = `${startY}px`;
+                    packet.style.transform = `translate(-50%, -50%) scale(0.8)`;
+
+
+                    animContainer.appendChild(packet);
+                    explanationText.innerHTML = text;
+                    
+                    void packet.offsetWidth;
+
+                    packet.style.opacity = '1';
+                    packet.style.transform = `translate(calc(${endX - startX}px - 50%), calc(${endY - startY}px - 50%)) scale(1)`;
+
+                    currentAnimation = setTimeout(() => {
+                        packet.style.opacity = '0';
+                        fromEl.classList.remove('active');
+                        currentAnimation = setTimeout(() => {
+                            toEl.classList.remove('active');
+                            packet.remove();
+                            resolve();
+                        }, 300);
+                    }, 1800);
+                });
+            }
+            
+            async function startIterativeAnimation() {
+                if (isAnimating) return;
+                resetAnimationState();
+                isAnimating = true;
+                playIterativeBtn.disabled = true;
+                playRecursiveBtn.disabled = true;
+
+                await animateQuery('client', 'local', '1. 主机 (192.168.1.101) 向本地域名服务器 (114.114.114.114) 发起递归查询。', '查询 y.abc.com');
+                await animateQuery('local', 'root', '2. 本地域名服务器向根域名服务器 (198.41.0.4) 发起迭代查询。', '查询 y.abc.com');
+                await animateQuery('root', 'local', '3. 根服务器回应：去问 .com 顶级域服务器 (192.5.6.30)。', '转发至 .com TLD', true);
+                await animateQuery('local', 'tld', '4. 本地域名服务器向 .com 顶级域名服务器查询。', '查询 y.abc.com');
+                await animateQuery('tld', 'local', '5. TLD服务器回应：去问 abc.com 权限服务器 (204.74.112.1)。', '转发至 abc.com NS', true);
+                await animateQuery('local', 'auth', '6. 本地域名服务器向 abc.com 权限服务器查询。', '查询 y.abc.com');
+                await animateQuery('auth', 'local', '7. 权限服务器返回 y.abc.com 的IP地址。', 'IP: 216.58.221.110', true);
+                await animateQuery('local', 'client', '8. 本地域名服务器将IP地址返回给主机。', 'IP: 216.58.221.110', true);
+                explanationText.innerHTML = "<span class='font-bold'>迭代查询完成！</span> 主机已获得 y.abc.com 的IP地址: 216.58.221.110。";
+                
+                isAnimating = false;
+                playIterativeBtn.disabled = false;
+                playRecursiveBtn.disabled = false;
+            }
+
+            async function startRecursiveAnimation() {
+                if (isAnimating) return;
+                resetAnimationState();
+                isAnimating = true;
+                playIterativeBtn.disabled = true;
+                playRecursiveBtn.disabled = true;
+
+                await animateQuery('client', 'local', '1. 主机 (192.168.1.101) 向本地域名服务器 (114.114.114.114) 发起递归查询。', '查询 y.abc.com');
+                await animateQuery('local', 'root', '2. 本地域名服务器向根域名服务器 (198.41.0.4) 发起递归查询。', '查询 y.abc.com');
+                await animateQuery('root', 'tld', '3. 根服务器 <span class="font-bold text-teal-700">代为</span>向 .com 顶级域名服务器查询。', '查询 y.abc.com');
+                await animateQuery('tld', 'auth', '4. TLD服务器 <span class="font-bold text-teal-700">代为</span>向 abc.com 权限服务器查询。', '查询 y.abc.com');
+                await animateQuery('auth', 'tld', '5. 权限服务器返回IP地址给TLD服务器。', 'IP: 216.58.221.110', true);
+                await animateQuery('tld', 'root', '6. TLD服务器将IP地址返回给根服务器。', 'IP: 216.58.221.110', true);
+                await animateQuery('root', 'local', '7. 根服务器将IP地址返回给本地域名服务器。', 'IP: 216.58.221.110', true);
+                await animateQuery('local', 'client', '8. 本地域名服务器将最终结果返回给主机。', 'IP: 216.58.221.110', true);
+                explanationText.innerHTML = "<span class='font-bold'>递归查询完成！</span> 主机已获得 y.abc.com 的IP地址: 216.58.221.110。";
+                
+                isAnimating = false;
+                playIterativeBtn.disabled = false;
+                playRecursiveBtn.disabled = false;
+            }
+
+            playIterativeBtn.addEventListener('click', startIterativeAnimation);
+            playRecursiveBtn.addEventListener('click', startRecursiveAnimation);
+        });
+    </script>
+</body>
+</html>

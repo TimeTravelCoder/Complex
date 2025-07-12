@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式学习应用：动态主机配置协议 DHCP</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chosen Palette: Scholarly Blue -->
+    <!-- Application Structure Plan: 该SPA采用引导式单页布局，分为三个核心部分：1) “DHCP是什么？” - 简介其目的和功能；2) “核心角色” - 介绍客户端、服务器和中继代理；3) “交互过程动画” - 这是应用的核心，通过一个可控的、分步动画来可视化DHCP的DORA（发现、提供、请求、确认）过程以及租用期续订。用户通过点击按钮来驱动动画，每一步都有清晰的文字解释，将抽象的协议交换过程具体化，从而达到最佳的学习效果。 -->
+    <!-- Visualization & Content Choices: 1. 简介与角色(Goal: Inform): 使用带有图标的卡片式布局清晰地呈现DHCP的用途、配置项目以及三个核心角色。2. DHCP交互过程(Goal: Change/Organize): 使用HTML/CSS/JS构建一个交互式动画舞台。客户端、服务器等节点用div表示，DHCP报文也用div表示。JS将控制报文的移动、显隐，并同步更新状态面板中的解释文本。通过这种方式，将课本中[图6-20]的静态流程图转化为一个动态、可交互的学习体验。3. 报文类型(Goal: Inform): 使用不同颜色和图标区分广播(Broadcast)和单播(Unicast)报文，增强视觉辨识度。(CONFIRMATION: NO SVG graphics used. NO Mermaid JS used.) -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #f1f5f9; /* slate-100 */
+            color: #334155; /* slate-700 */
+        }
+        .card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            border: 1px solid #e2e8f0;
+            transition: all 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -2px rgb(0 0 0 / 0.1);
+        }
+        .dhcp-node {
+            border: 2px solid #94a3b8; /* slate-400 */
+            background-color: #f8fafc; /* slate-50 */
+            min-height: 100px;
+        }
+        .dhcp-packet {
+            position: absolute;
+            opacity: 0;
+            transition: all 0.8s ease-in-out;
+            transform: scale(0.8);
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            white-space: nowrap;
+        }
+        .discover { background-color: #ef4444; } /* red-500 */
+        .offer { background-color: #3b82f6; } /* blue-500 */
+        .request { background-color: #f97316; } /* orange-500 */
+        .ack { background-color: #16a34a; } /* green-600 */
+        .nack { background-color: #b91c1c; } /* red-700 */
+        .release { background-color: #475569; } /* slate-600 */
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-6xl">
+        <header class="text-center mb-16">
+            <h1 class="text-4xl md:text-5xl font-bold text-slate-800">交互式学习：DHCP 协议</h1>
+            <p class="mt-4 text-lg text-slate-500">理解网络中的“即插即用”是如何实现的</p>
+        </header>
+
+        <!-- Section 1: What is DHCP? -->
+        <section class="mb-16">
+            <h2 class="text-3xl font-bold text-slate-700 text-center mb-8">DHCP 是什么？</h2>
+            <div class="grid md:grid-cols-2 gap-8">
+                <div class="card p-6">
+                    <h3 class="text-xl font-bold mb-3 text-sky-700">🎯 解决的问题</h3>
+                    <p class="text-slate-600">手动为网络中的每一台设备配置IP地址、子网掩码等信息，不仅繁琐且极易出错。DHCP（动态主机配置协议）被设计用来自动化这个过程，实现真正的“即插即用”连网。</p>
+                </div>
+                <div class="card p-6">
+                    <h3 class="text-xl font-bold mb-3 text-sky-700">📋 自动配置的核心项目</h3>
+                    <ul class="list-disc list-inside space-y-2 text-slate-600">
+                        <li>IP 地址</li>
+                        <li>子网掩码</li>
+                        <li>默认路由器的IP地址（网关）</li>
+                        <li>域名服务器（DNS）的IP地址</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 2: Core Roles -->
+        <section class="mb-16">
+            <h2 class="text-3xl font-bold text-slate-700 text-center mb-8">核心角色</h2>
+            <div class="grid md:grid-cols-3 gap-8">
+                <div class="card p-6 text-center">
+                    <div class="text-5xl mb-4">💻</div>
+                    <h3 class="text-xl font-bold mb-2">DHCP 客户端</h3>
+                    <p class="text-slate-600">任何需要接入网络并获取配置信息的主机（如你的电脑、手机）。</p>
+                </div>
+                <div class="card p-6 text-center">
+                     <div class="text-5xl mb-4">🗄️</div>
+                    <h3 class="text-xl font-bold mb-2">DHCP 服务器</h3>
+                    <p class="text-slate-600">管理一个IP地址池，并响应客户端的请求，为其分配IP地址和配置信息。</p>
+                </div>
+                <div class="card p-6 text-center">
+                    <div class="text-5xl mb-4">🔁</div>
+                    <h3 class="text-xl font-bold mb-2">DHCP 中继代理</h3>
+                    <p class="text-slate-600">通常是路由器，负责将一个网络内的DHCP广播请求，转发给另一个网络中的DHCP服务器。</p>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Section 3: Interactive Process -->
+        <section>
+            <h2 class="text-3xl font-bold text-slate-700 text-center mb-2">交互过程动画</h2>
+            <p class="text-center text-slate-500 mb-8">点击下方按钮，一步步观察DHCP是如何为一台新设备分配IP地址的。</p>
+            
+            <div class="card p-6 md:p-8">
+                <!-- Animation Stage -->
+                <div class="relative mb-8 p-4 border border-dashed border-slate-300 rounded-lg" style="height: 350px;">
+                    <div class="absolute top-1/2 left-8 -translate-y-1/2 text-center w-32">
+                        <div class="text-6xl">💻</div>
+                        <div class="font-bold mt-2">客户端</div>
+                        <div id="client-status" class="text-sm text-slate-500 transition-colors">IP: 未分配</div>
+                    </div>
+                    
+                    <div class="absolute top-1/2 right-8 -translate-y-1/2 text-center w-32">
+                        <div class="text-6xl">🗄️</div>
+                        <div class="font-bold mt-2">服务器</div>
+                        <div id="server-status" class="text-sm text-slate-500">空闲</div>
+                    </div>
+
+                    <div id="packet-discover" class="dhcp-packet discover" style="top: 150px; left: 150px;">📡 DHCPDISCOVER</div>
+                    <div id="packet-offer" class="dhcp-packet offer" style="top: 150px; left: calc(100% - 300px);">📡 DHCPOFFER</div>
+                    <div id="packet-request" class="dhcp-packet request" style="top: 150px; left: 150px;">📡 DHCPREQUEST</div>
+                    <div id="packet-ack" class="dhcp-packet ack" style="top: 150px; left: calc(100% - 300px);">📡 DHCPACK</div>
+                    <div id="packet-renew-request" class="dhcp-packet request" style="top: 150px; left: 150px;">➡️ DHCPREQUEST</div>
+                    <div id="packet-renew-ack" class="dhcp-packet ack" style="top: 150px; left: calc(100% - 300px);">➡️ DHCPACK</div>
+                </div>
+
+                <!-- Controls and Explanation -->
+                <div class="text-center mb-6">
+                    <button id="start-dhcp" class="py-2 px-6 bg-sky-600 text-white font-semibold rounded-lg shadow-md hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-opacity-75 transition-all">开始演示</button>
+                    <button id="reset-dhcp" class="ml-4 py-2 px-6 bg-slate-500 text-white font-semibold rounded-lg shadow-md hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-opacity-75 transition-all">重置</button>
+                </div>
+                
+                <div id="explanation-box" class="min-h-[4rem] p-4 bg-sky-50 text-sky-800 border-l-4 border-sky-500 rounded-r-lg transition-all">
+                    <p id="explanation-text" class="font-medium">准备就绪。</p>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const startBtn = document.getElementById('start-dhcp');
+            const resetBtn = document.getElementById('reset-dhcp');
+            const explanationText = document.getElementById('explanation-text');
+            const clientStatus = document.getElementById('client-status');
+            const serverStatus = document.getElementById('server-status');
+            
+            const packets = {
+                discover: document.getElementById('packet-discover'),
+                offer: document.getElementById('packet-offer'),
+                request: document.getElementById('packet-request'),
+                ack: document.getElementById('packet-ack'),
+                renewRequest: document.getElementById('packet-renew-request'),
+                renewAck: document.getElementById('packet-renew-ack'),
+            };
+
+            let animationTimeout;
+            let currentStep = 0;
+
+            const steps = [
+                {
+                    action: () => {
+                        explanationText.textContent = "1. 发现阶段 (Discover): 客户端启动，广播发送DHCPDISCOVER报文，寻找网络中的DHCP服务器。";
+                        clientStatus.textContent = "正在发现...";
+                        animatePacket(packets.discover, 'broadcast');
+                    },
+                    duration: 2000
+                },
+                {
+                    action: () => {
+                        explanationText.textContent = "2. 提供阶段 (Offer): 服务器收到发现报文，从地址池中选择一个IP，通过DHCPOFFER报文广播提供给客户端。";
+                        serverStatus.textContent = "正在提供...";
+                        animatePacket(packets.offer, 'broadcast-back');
+                    },
+                    duration: 2000
+                },
+                {
+                    action: () => {
+                        explanationText.textContent = "3. 请求阶段 (Request): 客户端选择一个Offer，广播DHCPREQUEST报文，正式请求该IP地址。";
+                        clientStatus.textContent = "正在请求...";
+                        animatePacket(packets.request, 'broadcast');
+                    },
+                    duration: 2000
+                },
+                {
+                    action: () => {
+                        explanationText.textContent = "4. 确认阶段 (Acknowledge): 服务器发送DHCPACK报文，确认将IP地址分配给客户端。";
+                        serverStatus.textContent = "正在确认...";
+                        animatePacket(packets.ack, 'broadcast-back');
+                    },
+                    duration: 2000
+                },
+                {
+                    action: () => {
+                        clientStatus.textContent = "IP: 192.168.1.100 (已绑定)";
+                        clientStatus.classList.add('text-green-600', 'font-bold');
+                        serverStatus.textContent = "空闲";
+                        explanationText.textContent = "配置完成！客户端获得IP地址，租用期开始计时。";
+                    },
+                    duration: 2500
+                },
+                {
+                    action: () => {
+                        explanationText.textContent = "5. 租用期续订: 租用期过半，客户端以单播方式向服务器发送DHCPREQUEST请求续订。";
+                        clientStatus.textContent = "正在续订...";
+                        animatePacket(packets.renewRequest, 'unicast');
+                    },
+                    duration: 2000
+                },
+                {
+                    action: () => {
+                        explanationText.textContent = "6. 续订确认: 服务器响应DHCPACK，同意续订，客户端刷新租用期。";
+                        serverStatus.textContent = "正在确认续订...";
+                        animatePacket(packets.renewAck, 'unicast-back');
+                    },
+                    duration: 2000
+                },
+                 {
+                    action: () => {
+                        clientStatus.textContent = "IP: 192.168.1.100 (已续订)";
+                        serverStatus.textContent = "空闲";
+                        explanationText.textContent = "演示结束。点击“重置”可再次观看。";
+                        startBtn.disabled = false;
+                    },
+                    duration: 0
+                }
+            ];
+
+            function animatePacket(packet, type) {
+                if (type === 'broadcast') {
+                    packet.style.opacity = '1';
+                    packet.style.transform = 'translateX(calc(50vw - 250px)) scale(1)';
+                } else if (type === 'broadcast-back') {
+                     packet.style.opacity = '1';
+                    packet.style.transform = 'translateX(calc(-50vw + 250px)) scale(1)';
+                } else if (type === 'unicast') {
+                    packet.style.opacity = '1';
+                    packet.style.transform = `translateX(calc(100% - 150px)) scale(1)`;
+                    packet.style.left = '150px';
+                } else if (type === 'unicast-back') {
+                    packet.style.opacity = '1';
+                    packet.style.transform = `translateX(calc(-100% + 150px)) scale(1)`;
+                    packet.style.left = 'calc(100% - 150px)';
+                }
+
+                setTimeout(() => {
+                    packet.style.opacity = '0';
+                    packet.style.transform = 'scale(0.8)';
+                }, 1500);
+            }
+            
+            function runStep() {
+                if (currentStep < steps.length) {
+                    steps[currentStep].action();
+                    if (steps[currentStep].duration > 0) {
+                        animationTimeout = setTimeout(runStep, steps[currentStep].duration);
+                    }
+                    currentStep++;
+                }
+            }
+
+            function startAnimation() {
+                resetAnimation();
+                startBtn.disabled = true;
+                currentStep = 0;
+                runStep();
+            }
+
+            function resetAnimation() {
+                clearTimeout(animationTimeout);
+                startBtn.disabled = false;
+                currentStep = 0;
+                
+                explanationText.textContent = '准备就绪。';
+                clientStatus.textContent = 'IP: 未分配';
+                serverStatus.textContent = '空闲';
+                clientStatus.classList.remove('text-green-600', 'font-bold');
+
+                Object.values(packets).forEach(p => {
+                    p.style.opacity = '0';
+                    p.style.transform = 'scale(0.8)';
+                    // Reset positions for next run
+                    setTimeout(() => {
+                        p.style.transition = 'none';
+                        p.style.transform = '';
+                        setTimeout(() => { p.style.transition = 'all 0.8s ease-in-out'; }, 50);
+                    }, 800);
+                });
+            }
+
+            startBtn.addEventListener('click', startAnimation);
+            resetBtn.addEventListener('click', resetAnimation);
+        });
+    </script>
+</body>
+</html>

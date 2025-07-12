@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式学习应用：万维网 WWW</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chosen Palette: Calm Harmony -->
+    <!-- Application Structure Plan: 应用设计为单页学习模块，分为“核心基石”、“协议解析”和“文档技术”三个导航部分。核心是“协议解析”中的交互式动画，旨在可视化HTTP/1.0和HTTP/1.1（持续连接与流水线）在请求多个对象时的性能差异。用户可以通过选择不同协议模式并播放动画，直观感受RTT（往返时间）开销的减少和加载效率的提升。此设计将抽象的协议概念转化为可感知的过程，极大地增强了学习效果。 -->
+    <!-- Visualization & Content Choices: 1. 核心基石 (Goal: Inform): 使用图标和简介卡片清晰呈现URL、HTTP、HTML三大核心。2. HTTP协议解析 (Goal: Compare/Change): 使用HTML/CSS/JS构建一个时序动画，可视化TCP连接建立/释放和HTTP请求/响应的过程。通过下拉菜单切换HTTP/1.0、HTTP/1.1持续连接、HTTP/1.1流水线三种模式，动画会动态展示请求3个对象所需的总RTT，并通过Chart.js柱状图总结对比三种模式的性能，将理论上的性能提升具体化。3. 文档技术 (Goal: Compare): 采用并列卡片清晰对比静态、动态、活动三种文档的定义、创建方式和优缺点。 (CONFIRMATION: NO SVG graphics used. NO Mermaid JS used.) -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+            color: #334155; /* slate-700 */
+        }
+        .nav-btn {
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+        }
+        .nav-btn.active {
+            border-bottom-color: #0ea5e9; /* sky-500 */
+            color: #0369a1; /* sky-700 */
+            font-weight: 700;
+        }
+        .card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+            border: 1px solid #e2e8f0;
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.6s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .timeline {
+            position: relative;
+            width: 100%;
+            height: 450px;
+            overflow: hidden;
+        }
+        .timeline-axis {
+            position: absolute;
+            height: 100%;
+            width: 2px;
+            background-color: #cbd5e1;
+        }
+        .client-axis { left: 20%; }
+        .server-axis { right: 20%; }
+        .timeline-label {
+            position: absolute;
+            top: -5px;
+            transform: translateX(-50%);
+            font-weight: bold;
+        }
+        .packet-animation {
+            position: absolute;
+            padding: 2px 6px;
+            border-radius: 5px;
+            font-size: 0.75rem;
+            color: white;
+            opacity: 0;
+            transition: all 1.5s ease-in-out; /* Slower packet transition */
+            white-space: nowrap;
+        }
+        .chart-container {
+            position: relative; 
+            width: 100%; 
+            max-width: 600px; 
+            margin-left: auto; 
+            margin-right: auto; 
+            height: 250px;
+            max-height: 300px;
+        }
+        .speed-btn {
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            border: 1px solid #cbd5e1;
+            background-color: white;
+        }
+        .speed-btn.active {
+            background-color: #0ea5e9;
+            color: white;
+            border-color: #0ea5e9;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold text-slate-800">交互式学习：万维网WWW</h1>
+            <p class="mt-4 text-lg text-slate-500">探索支撑现代互联网的核心技术</p>
+        </header>
+
+        <nav class="flex justify-center border-b border-slate-200 mb-12">
+            <button class="nav-btn text-lg p-4" data-tab="concepts">核心基石</button>
+            <button class="nav-btn text-lg p-4" data-tab="protocol">协议解析</button>
+            <button class="nav-btn text-lg p-4" data-tab="documents">文档技术</button>
+        </nav>
+
+        <main>
+            <!-- Core Concepts Section -->
+            <section id="concepts" class="tab-content animate-fade-in">
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl font-bold text-slate-700">万维网的三大核心基石</h2>
+                    <p class="mt-3 text-slate-500 max-w-2xl mx-auto">万维网的成功构建在三个核心技术之上，它们共同定义了信息的定位、传输和呈现方式。</p>
+                </div>
+                <div class="grid md:grid-cols-3 gap-8">
+                    <div class="card p-6 text-center hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
+                        <div class="text-5xl mb-4">🔗</div>
+                        <h3 class="text-2xl font-bold mb-2 text-sky-700">URL</h3>
+                        <p class="text-slate-600"><b>统一资源定位符</b>，为互联网上每一个资源（文档、图片等）提供唯一的地址，解决了“如何找到信息”的问题。</p>
+                    </div>
+                    <div class="card p-6 text-center hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
+                        <div class="text-5xl mb-4">🌐</div>
+                        <h3 class="text-2xl font-bold mb-2 text-sky-700">HTTP</h3>
+                        <p class="text-slate-600"><b>超文本传送协议</b>，是浏览器和服务器之间通信的规则，定义了如何请求和传输万维网文档。</p>
+                    </div>
+                    <div class="card p-6 text-center hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
+                        <div class="text-5xl mb-4">📄</div>
+                        <h3 class="text-2xl font-bold mb-2 text-sky-700">HTML</h3>
+                        <p class="text-slate-600"><b>超文本标记语言</b>，用于创建网页结构和内容，通过各种“标签”告诉浏览器如何显示信息和链接。</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Protocol Section -->
+            <section id="protocol" class="tab-content hidden animate-fade-in">
+                 <div class="text-center mb-8">
+                    <h2 class="text-3xl font-bold text-slate-700">HTTP 协议性能演进</h2>
+                    <p class="mt-3 text-slate-500 max-w-3xl mx-auto">HTTP协议本身是无状态的，但其连接管理方式的演进，对网页加载速度产生了决定性影响。下面我们将可视化请求3个小图片的过程，来对比不同HTTP版本间的性能差异。</p>
+                </div>
+                <div class="card p-6 md:p-8">
+                    <div class="flex flex-col md:flex-row justify-center items-center gap-6 mb-8">
+                        <div class="flex items-center gap-2">
+                            <label for="http-version-selector" class="font-semibold whitespace-nowrap">选择协议模式:</label>
+                            <select id="http-version-selector" class="p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-sky-500 focus:border-sky-500">
+                                <option value="1.0">HTTP/1.0 (非持续连接)</option>
+                                <option value="1.1-non-pipelined">HTTP/1.1 (持续连接-非流水线)</option>
+                                <option value="1.1-pipelined">HTTP/1.1 (持续连接-流水线)</option>
+                            </select>
+                        </div>
+                        <div class="flex items-center gap-2">
+                             <span class="font-semibold whitespace-nowrap">动画速度:</span>
+                             <div id="speed-controls" class="flex gap-1">
+                                <button class="speed-btn active" data-speed="2000">慢速</button>
+                                <button class="speed-btn" data-speed="1200">中速</button>
+                                <button class="speed-btn" data-speed="800">快速</button>
+                             </div>
+                        </div>
+                    </div>
+                     <div class="flex justify-center items-center gap-4 mb-8">
+                        <button id="play-animation" class="py-2 px-6 bg-sky-600 text-white font-semibold rounded-lg shadow-md hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-opacity-75 transition-all">播放动画</button>
+                        <button id="reset-animation" class="py-2 px-6 bg-slate-500 text-white font-semibold rounded-lg shadow-md hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-opacity-75 transition-all">重置</button>
+                    </div>
+                    
+                    <div class="timeline bg-slate-100 rounded-lg border border-slate-200 p-2">
+                        <div class="timeline-axis client-axis"></div>
+                        <div class="timeline-label client-label" style="left: 20%;">客户端 (浏览器)</div>
+                        <div class="timeline-axis server-axis"></div>
+                        <div class="timeline-label server-label" style="left: 80%;">服务器</div>
+                        <div id="animation-packets" class="relative w-full h-full"></div>
+                    </div>
+                     <div id="explanation-box" class="mt-4 min-h-[3rem] p-3 bg-sky-50 text-sky-800 border-l-4 border-sky-500 rounded-r-lg">
+                        <p id="explanation-text" class="font-medium">选择一个模式并点击“播放动画”，观察请求过程。</p>
+                    </div>
+                </div>
+                <div class="card p-6 md:p-8 mt-8">
+                    <h3 class="text-2xl font-bold text-center mb-4 text-slate-700">性能对比总结</h3>
+                    <p class="text-center text-slate-500 mb-6">下图直观展示了完成全部3个对象请求所需的总时间（以RTT为单位）。</p>
+                    <div class="chart-container">
+                        <canvas id="performanceChart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Documents Section -->
+            <section id="documents" class="tab-content hidden animate-fade-in">
+                 <div class="text-center mb-12">
+                    <h2 class="text-3xl font-bold text-slate-700">万维网的三类文档技术</h2>
+                    <p class="mt-3 text-slate-500 max-w-2xl mx-auto">根据内容的生成方式，万维网文档可以分为静态、动态和活动三种，它们各有特点和适用场景。</p>
+                </div>
+                <div class="grid md:grid-cols-3 gap-8">
+                    <div class="card p-6">
+                        <div class="text-5xl mb-4 text-center">📄</div>
+                        <h3 class="text-2xl font-bold mb-2 text-amber-700">静态文档</h3>
+                        <p class="text-slate-600 mb-4">内容在创作完毕后就固定不变，存放在服务器中。每次浏览得到的结果都完全相同。</p>
+                        <ul class="list-disc list-inside space-y-1 text-sm text-slate-500">
+                            <li><b>创建方式:</b> 直接编写HTML文件。</li>
+                            <li><b>优点:</b> 简单，对服务器无额外负载。</li>
+                            <li><b>缺点:</b> 不灵活，信息更新需要手动修改。</li>
+                        </ul>
+                    </div>
+                    <div class="card p-6">
+                        <div class="text-5xl mb-4 text-center">⚙️</div>
+                        <h3 class="text-2xl font-bold mb-2 text-amber-700">动态文档</h3>
+                        <p class="text-slate-600 mb-4">内容是在浏览器请求时，由服务器上的应用程序动态生成的。每次访问都可能看到不同的内容。</p>
+                        <ul class="list-disc list-inside space-y-1 text-sm text-slate-500">
+                           <li><b>实现机制:</b> 通用网关接口(CGI)。</li>
+                           <li><b>优点:</b> 能报告最新信息（如股价、天气）。</li>
+                           <li><b>缺点:</b> 开发复杂，对服务器性能有要求。</li>
+                        </ul>
+                    </div>
+                    <div class="card p-6">
+                         <div class="text-5xl mb-4 text-center">⚡️</div>
+                        <h3 class="text-2xl font-bold mb-2 text-amber-700">活动文档</h3>
+                        <p class="text-slate-600 mb-4">服务器返回一段程序（如Java Applet），在浏览器端运行，可与用户交互并连续更新显示。</p>
+                         <ul class="list-disc list-inside space-y-1 text-sm text-slate-500">
+                           <li><b>运行位置:</b> 客户端（浏览器）。</li>
+                           <li><b>优点:</b> 交互性强，可实现动画等复杂效果。</li>
+                           <li><b>缺点:</b> 需要浏览器支持，可能存在安全风险。</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const tabs = document.querySelectorAll('.nav-btn');
+            const contents = document.querySelectorAll('.tab-content');
+
+            function setActiveTab(tabId) {
+                tabs.forEach(tab => {
+                    tab.classList.toggle('active', tab.getAttribute('data-tab') === tabId);
+                });
+                contents.forEach(content => {
+                    content.classList.toggle('hidden', content.id !== tabId);
+                });
+            }
+
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    setActiveTab(tab.getAttribute('data-tab'));
+                });
+            });
+
+            setActiveTab('concepts');
+
+            // Animation Logic
+            const playBtn = document.getElementById('play-animation');
+            const resetBtn = document.getElementById('reset-animation');
+            const selector = document.getElementById('http-version-selector');
+            const packetsContainer = document.getElementById('animation-packets');
+            const explanationText = document.getElementById('explanation-text');
+            const speedControls = document.getElementById('speed-controls');
+            const RTT = 60; // Base time unit for one RTT in pixels
+            let animationTimeout;
+            let animationSpeed = 2000; // Default speed (slowest)
+
+            const scenarios = {
+                '1.0': {
+                    name: 'HTTP/1.0 (非持续连接)',
+                    steps: [
+                        { time: 0, from: 'client', to: 'server', text: 'TCP SYN', color: 'bg-orange-500', explanation: '1. 请求对象1: 建立新的TCP连接 (1 RTT)。' },
+                        { time: 0.5, from: 'server', to: 'client', text: 'TCP SYN/ACK', color: 'bg-orange-500' },
+                        { time: 1, from: 'client', to: 'server', text: 'HTTP GET 1', color: 'bg-sky-500', explanation: '2. 发送HTTP请求并接收响应 (1 RTT)。' },
+                        { time: 1.5, from: 'server', to: 'client', text: 'HTTP Resp 1', color: 'bg-green-500' },
+                        { time: 2, from: 'client', to: 'server', text: 'TCP FIN', color: 'bg-slate-400', explanation: '3. 关闭TCP连接。' },
+                        
+                        { time: 2.5, from: 'client', to: 'server', text: 'TCP SYN', color: 'bg-orange-500', explanation: '4. 请求对象2: 建立新的TCP连接 (1 RTT)。' },
+                        { time: 3, from: 'server', to: 'client', text: 'TCP SYN/ACK', color: 'bg-orange-500' },
+                        { time: 3.5, from: 'client', to: 'server', text: 'HTTP GET 2', color: 'bg-sky-500', explanation: '5. 发送HTTP请求并接收响应 (1 RTT)。' },
+                        { time: 4, from: 'server', to: 'client', text: 'HTTP Resp 2', color: 'bg-green-500' },
+                        { time: 4.5, from: 'client', to: 'server', text: 'TCP FIN', color: 'bg-slate-400', explanation: '6. 关闭TCP连接。' },
+
+                        { time: 5, from: 'client', to: 'server', text: 'TCP SYN', color: 'bg-orange-500', explanation: '7. 请求对象3: 建立新的TCP连接 (1 RTT)。' },
+                        { time: 5.5, from: 'server', to: 'client', text: 'TCP SYN/ACK', color: 'bg-orange-500' },
+                        { time: 6, from: 'client', to: 'server', text: 'HTTP GET 3', color: 'bg-sky-500', explanation: '8. 发送HTTP请求并接收响应 (1 RTT)。' },
+                        { time: 6.5, from: 'server', to: 'client', text: 'HTTP Resp 3', color: 'bg-green-500' },
+                        { time: 7, from: 'client', to: 'server', text: 'TCP FIN', color: 'bg-slate-400', explanation: '9. 关闭TCP连接。总耗时约 6 RTT。' },
+                    ],
+                    totalRtt: 6
+                },
+                '1.1-non-pipelined': {
+                    name: 'HTTP/1.1 (持续连接-非流水线)',
+                    steps: [
+                        { time: 0, from: 'client', to: 'server', text: 'TCP SYN', color: 'bg-orange-500', explanation: '1. 建立一个持续TCP连接 (1 RTT)。' },
+                        { time: 0.5, from: 'server', to: 'client', text: 'TCP SYN/ACK', color: 'bg-orange-500' },
+                        { time: 1, from: 'client', to: 'server', text: 'HTTP GET 1', color: 'bg-sky-500', explanation: '2. 请求对象1并等待响应 (1 RTT)。' },
+                        { time: 1.5, from: 'server', to: 'client', text: 'HTTP Resp 1', color: 'bg-green-500' },
+                        
+                        { time: 2, from: 'client', to: 'server', text: 'HTTP GET 2', color: 'bg-sky-500', explanation: '3. 连接保持，请求对象2并等待响应 (1 RTT)。' },
+                        { time: 2.5, from: 'server', to: 'client', text: 'HTTP Resp 2', color: 'bg-green-500' },
+
+                        { time: 3, from: 'client', to: 'server', text: 'HTTP GET 3', color: 'bg-sky-500', explanation: '4. 连接保持，请求对象3并等待响应 (1 RTT)。' },
+                        { time: 3.5, from: 'server', to: 'client', text: 'HTTP Resp 3', color: 'bg-green-500', explanation: '5. 完成所有请求后关闭连接。总耗时约 4 RTT。' },
+                    ],
+                    totalRtt: 4
+                },
+                '1.1-pipelined': {
+                    name: 'HTTP/1.1 (持续连接-流水线)',
+                    steps: [
+                        { time: 0, from: 'client', to: 'server', text: 'TCP SYN', color: 'bg-orange-500', explanation: '1. 建立一个持续TCP连接 (1 RTT)。' },
+                        { time: 0.5, from: 'server', to: 'client', text: 'TCP SYN/ACK', color: 'bg-orange-500' },
+                        { time: 1, from: 'client', to: 'server', text: 'HTTP GET 1', color: 'bg-sky-500', explanation: '2. 客户端连续发送所有请求，无需等待响应。' },
+                        { time: 1.1, from: 'client', to: 'server', text: 'HTTP GET 2', color: 'bg-sky-500' },
+                        { time: 1.2, from: 'client', to: 'server', text: 'HTTP GET 3', color: 'bg-sky-500' },
+                        
+                        { time: 1.5, from: 'server', to: 'client', text: 'HTTP Resp 1', color: 'bg-green-500', explanation: '3. 服务器收到请求后，连续发回所有响应。' },
+                        { time: 1.7, from: 'server', to: 'client', text: 'HTTP Resp 2', color: 'bg-green-500' },
+                        { time: 1.9, from: 'server', to: 'client', text: 'HTTP Resp 3', color: 'bg-green-500', explanation: '4. 完成所有请求后关闭连接。总耗时约 2 RTT。' },
+                    ],
+                    totalRtt: 2
+                }
+            };
+            
+            function resetAnimation() {
+                clearTimeout(animationTimeout);
+                packetsContainer.innerHTML = '';
+                explanationText.textContent = '选择一个模式并点击“播放动画”，观察请求过程。';
+                playBtn.disabled = false;
+            }
+            
+            function playAnimation() {
+                resetAnimation();
+                playBtn.disabled = true;
+
+                const selectedScenario = scenarios[selector.value];
+                explanationText.textContent = '动画开始...';
+                
+                selectedScenario.steps.forEach((step, index) => {
+                    animationTimeout = setTimeout(() => {
+                        if (step.explanation) {
+                           explanationText.textContent = step.explanation;
+                        }
+                        const packet = document.createElement('div');
+                        packet.className = `packet-animation ${step.color}`;
+                        packet.textContent = step.text;
+                        packetsContainer.appendChild(packet);
+
+                        const startPos = (step.from === 'client') ? '20%' : '80%';
+                        const endPos = (step.to === 'client') ? '20%' : '80%';
+                        const topPos = step.time * RTT + 20;
+
+                        packet.style.top = `${topPos}px`;
+                        packet.style.left = startPos;
+                        packet.style.opacity = '1';
+
+                        setTimeout(() => {
+                            packet.style.left = endPos;
+                            if (step.from === 'client') {
+                                packet.style.transform = 'translateX(-100%)';
+                            }
+                        }, 50);
+                        
+                        if (index === selectedScenario.steps.length - 1) {
+                            playBtn.disabled = false;
+                            updateChartData(selectedScenario.name, selectedScenario.totalRtt);
+                        }
+
+                    }, step.time * animationSpeed);
+                });
+            }
+
+            playBtn.addEventListener('click', playAnimation);
+            resetBtn.addEventListener('click', resetAnimation);
+
+            speedControls.addEventListener('click', (e) => {
+                if(e.target.classList.contains('speed-btn')) {
+                    animationSpeed = parseInt(e.target.dataset.speed, 10);
+                    document.querySelectorAll('.speed-btn').forEach(btn => btn.classList.remove('active'));
+                    e.target.classList.add('active');
+                }
+            });
+
+            // Chart.js Logic
+            const ctx = document.getElementById('performanceChart').getContext('2d');
+            const performanceChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: '总耗时 (RTT为单位)',
+                        data: [],
+                        backgroundColor: [
+                            'rgba(239, 68, 68, 0.6)',
+                            'rgba(249, 115, 22, 0.6)',
+                            'rgba(16, 185, 129, 0.6)'
+                        ],
+                        borderColor: [
+                             'rgba(239, 68, 68, 1)',
+                            'rgba(249, 115, 22, 1)',
+                            'rgba(16, 185, 129, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: '往返时间 (RTT)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+
+            function updateChartData(label, value) {
+                const labels = performanceChart.data.labels;
+                const data = performanceChart.data.datasets[0].data;
+                
+                const existingIndex = labels.indexOf(label);
+                if (existingIndex > -1) {
+                    data[existingIndex] = value;
+                } else {
+                    labels.push(label);
+                    data.push(value);
+                }
+                performanceChart.update();
+            }
+        });
+    </script>
+</body>
+</html>

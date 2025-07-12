@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式学习应用：文件传送协议</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chosen Palette: Modern Indigo (Background: #F1F5F9, Text: #1E293B, Primary: #4338CA, Accent: #059669) -->
+    <!-- Application Structure Plan: 本应用设计为单页应用，设有“FTP协议详解”、“TFTP协议简介”和“协议对比”三个主要模块，通过顶部选项卡导航。核心是FTP的可视化演示，用户可点击按钮分步观看FTP建立控制连接和数据连接的全过程，将抽象的双连接模型具象化。TFTP部分则以简洁的卡片突出其轻量级特性。最后的对比表格则清晰地总结了两者的关键区别，帮助用户巩固知识。这个结构从深入讲解到简化对比，符合学习认知规律。 -->
+    <!-- Visualization & Content Choices: 1. FTP工作原理 (Goal: Explain Process): 使用HTML/CSS和JavaScript创建一个动态的分步动画。用div代表客户端和服务器，用两条不同颜色的、可动态出现的线条代表控制连接和数据连接。通过JS控制报文图标在连接上的移动，并同步更新状态说明框，清晰展示FTP的带外控制特性。2. TFTP (Goal: Inform): 使用简洁的卡片布局，列出TFTP的关键特点（UDP、端口69、512字节块等），与FTP的复杂性形成对比。3. 协议对比 (Goal: Compare): 使用一个清晰的HTML表格，对传输协议、连接模型、端口、功能等维度进行并列比较，高效地总结信息。 (CONFIRMATION: NO SVG graphics used. NO Mermaid JS used.) -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #F1F5F9;
+            color: #1E293B;
+        }
+        .tab-btn.active {
+            border-bottom-color: #4338CA; /* Indigo 700 */
+            color: #312E81; /* Indigo 900 */
+            font-weight: 700;
+        }
+        .tab-btn {
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+            padding: 0.75rem 1.5rem;
+        }
+        .card {
+            background-color: white;
+            border-radius: 0.75rem; /* 12px */
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.07);
+            border: 1px solid #E2E8F0;
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.6s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        #ftp-animation-container {
+            position: relative;
+            height: 300px;
+        }
+        .ftp-entity {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 130px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        .ftp-entity.active {
+            box-shadow: 0 0 20px rgba(67, 56, 202, 0.4);
+            transform: translateY(-50%) scale(1.05);
+        }
+        #client { left: 10%; }
+        #server { right: 10%; }
+        .connection-line {
+            position: absolute;
+            left: calc(10% + 130px);
+            width: calc(80% - 130px);
+            height: 5px;
+            background-color: #E2E8F0;
+            transform-origin: left;
+            transform: scaleX(0);
+            transition: transform 0.8s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+            border-radius: 5px;
+        }
+        #control-line { top: 40%; background-color: #6366F1;}
+        #data-line { top: 60%; background-color: #2DD4BF;}
+        .packet {
+            position: absolute;
+            top: 35%;
+            left: calc(10% + 130px);
+            font-size: 2rem;
+            opacity: 0;
+            transition: all 1.5s cubic-bezier(0.45, 0, 0.55, 1);
+        }
+        #data-packet { top: 55%; }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold text-slate-800">交互式学习：文件传送协议</h1>
+            <p class="mt-4 text-lg text-slate-500">深入理解 FTP 和 TFTP 的工作原理</p>
+        </header>
+
+        <nav class="flex justify-center border-b border-slate-200 mb-12">
+            <button class="tab-btn text-lg" data-tab="ftp">FTP协议详解</button>
+            <button class="tab-btn text-lg" data-tab="tftp">TFTP协议简介</button>
+            <button class="tab-btn text-lg" data-tab="comparison">协议对比</button>
+        </nav>
+
+        <main>
+            <!-- FTP Section -->
+            <section id="ftp" class="tab-content animate-fade-in">
+                <div class="card p-6 md:p-8">
+                    <h2 class="text-3xl font-bold mb-4 text-indigo-700">FTP 的基本工作原理</h2>
+                    <p class="text-slate-600 leading-relaxed mb-8 max-w-3xl">
+                        FTP 使用客户服务器方式工作。其最核心的特点是，客户端和服务器之间会建立<span class="font-semibold text-slate-800">两个独立的并行TCP连接</span>：一个用于发送命令和响应（控制连接），另一个用于传输实际的文件（数据连接）。这种“带外控制”机制是理解FTP的关键。
+                    </p>
+                    
+                    <div id="ftp-animation-container" class="bg-slate-100 rounded-lg p-4 border border-slate-200 mb-6">
+                        <div id="client" class="ftp-entity card p-4">
+                            <span class="text-3xl">💻</span>
+                            <div class="font-bold mt-1">FTP 客户端</div>
+                        </div>
+                        <div id="server" class="ftp-entity card p-4">
+                            <span class="text-3xl">🗄️</span>
+                            <div class="font-bold mt-1">FTP 服务器</div>
+                        </div>
+                        <div id="control-line" class="connection-line"></div>
+                        <div id="control-packet" class="packet">📄</div>
+                        <div class="absolute top-[calc(40%-25px)] left-1/2 -translate-x-1/2 bg-slate-100 px-2 text-indigo-600 font-semibold">控制连接 (端口 21)</div>
+                        
+                        <div id="data-line" class="connection-line"></div>
+                        <div id="data-packet" class="packet">📦</div>
+                        <div class="absolute top-[calc(60%-25px)] left-1/2 -translate-x-1/2 bg-slate-100 px-2 text-teal-600 font-semibold">数据连接 (端口 20)</div>
+                    </div>
+
+                    <div id="ftp-explanation-box" class="min-h-[4rem] p-4 bg-indigo-50 text-indigo-800 border-l-4 border-indigo-500 rounded-r-lg">
+                        <p id="ftp-explanation-text" class="font-medium">点击下方按钮，开始分步演示FTP的工作流程。</p>
+                    </div>
+
+                    <div class="flex justify-center items-center gap-4 mt-6">
+                        <button id="play-ftp" class="py-2 px-6 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-opacity-75 transition-all duration-200">开始/下一步</button>
+                        <button id="reset-ftp" class="py-2 px-6 bg-slate-500 text-white font-semibold rounded-lg shadow-md hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-opacity-75 transition-all duration-200">重置动画</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TFTP Section -->
+            <section id="tftp" class="tab-content hidden animate-fade-in">
+                <div class="card p-6 md:p-8">
+                    <h2 class="text-3xl font-bold mb-4 text-indigo-700">简单文件传送协议 (TFTP)</h2>
+                    <p class="text-slate-600 leading-relaxed mb-8 max-w-3xl">
+                        TFTP 是 FTP 的一个简化版本，设计目标是简单、易于实现且占用内存小。它常用于网络设备启动时下载配置文件等场景。
+                    </p>
+                    <div class="grid md:grid-cols-2 gap-8">
+                        <div class="bg-rose-50 border-2 border-dashed border-rose-200 p-6 rounded-lg">
+                            <h3 class="font-bold text-xl text-rose-800 mb-3">与FTP的主要区别</h3>
+                            <ul class="list-disc list-inside text-rose-700 space-y-2">
+                                <li><span class="font-semibold">使用 UDP 协议：</span>与使用可靠的TCP不同，TFTP基于不可靠的UDP，因此协议内部需要自己实现差错改正措施（如超时重传）。</li>
+                                <li><span class="font-semibold">功能极简：</span>不支持交互式操作，没有目录列表、用户认证等复杂功能。</li>
+                            </ul>
+                        </div>
+                        <div class="bg-sky-50 border-2 border-dashed border-sky-200 p-6 rounded-lg">
+                            <h3 class="font-bold text-xl text-sky-800 mb-3">核心工作特点</h3>
+                             <ul class="list-disc list-inside text-sky-700 space-y-2">
+                                <li><span class="font-semibold">熟知端口 69：</span>客户端向服务器的熟知端口 69 发送请求。</li>
+                                <li><span class="font-semibold">新临时端口：</span>服务器收到请求后，会选择一个新的临时端口与客户端通信。</li>
+                                <li><span class="font-semibold">512字节数据块：</span>文件被分割成固定大小（512字节）的数据块进行传输。</li>
+                                <li><span class="font-semibold">停止等待协议：</span>每发送一个数据块，都必须等待对方的确认，超时则重传。</li>
+                             </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Comparison Section -->
+            <section id="comparison" class="tab-content hidden animate-fade-in">
+                <div class="card p-6 md:p-8">
+                     <h2 class="text-3xl font-bold mb-8 text-center text-indigo-700">FTP vs. TFTP 核心区别</h2>
+                     <div class="overflow-x-auto rounded-lg border border-slate-200">
+                        <table class="w-full text-left">
+                            <thead class="bg-slate-100">
+                                <tr>
+                                    <th class="p-4 font-semibold text-slate-700">特性</th>
+                                    <th class="p-4 font-semibold text-slate-700">FTP (文件传送协议)</th>
+                                    <th class="p-4 font-semibold text-slate-700">TFTP (简单文件传送协议)</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200">
+                                <tr class="hover:bg-slate-50">
+                                    <td class="p-4 font-medium">传输协议</td>
+                                    <td class="p-4 text-slate-600">TCP (可靠)</td>
+                                    <td class="p-4 text-slate-600">UDP (不可靠)</td>
+                                </tr>
+                                <tr class="hover:bg-slate-50">
+                                    <td class="p-4 font-medium">连接模型</td>
+                                    <td class="p-4 text-slate-600">两个并行连接（控制和数据）</td>
+                                    <td class="p-4 text-slate-600">单一连接（停止等待）</td>
+                                </tr>
+                                 <tr class="hover:bg-slate-50">
+                                    <td class="p-4 font-medium">端口号</td>
+                                    <td class="p-4 text-slate-600">控制: 21, 数据: 20</td>
+                                    <td class="p-4 text-slate-600">请求: 69, 数据: 临时端口</td>
+                                </tr>
+                                <tr class="hover:bg-slate-50">
+                                    <td class="p-4 font-medium">功能复杂度</td>
+                                    <td class="p-4 text-slate-600">功能丰富，支持交互、用户认证、目录列表</td>
+                                    <td class="p-4 text-slate-600">功能极简，仅支持文件读写</td>
+                                </tr>
+                                 <tr class="hover:bg-slate-50">
+                                    <td class="p-4 font-medium">典型用途</td>
+                                    <td class="p-4 text-slate-600">网站文件管理、软件下载等通用文件传输</td>
+                                    <td class="p-4 text-slate-600">网络设备引导、无盘站启动</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                     </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const tabs = document.querySelectorAll('.tab-btn');
+            const contents = document.querySelectorAll('.tab-content');
+
+            function setActiveTab(tabId) {
+                tabs.forEach(tab => {
+                    tab.classList.toggle('active', tab.getAttribute('data-tab') === tabId);
+                });
+                contents.forEach(content => {
+                    content.classList.toggle('hidden', content.id !== tabId);
+                });
+            }
+
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    setActiveTab(tab.getAttribute('data-tab'));
+                });
+            });
+
+            setActiveTab('ftp');
+
+            // FTP Animation Logic
+            const playFtpBtn = document.getElementById('play-ftp');
+            const resetFtpBtn = document.getElementById('reset-ftp');
+            const controlLine = document.getElementById('control-line');
+            const dataLine = document.getElementById('data-line');
+            const controlPacket = document.getElementById('control-packet');
+            const dataPacket = document.getElementById('data-packet');
+            const ftpExplanationText = document.getElementById('ftp-explanation-text');
+            const clientEntity = document.getElementById('client');
+            const serverEntity = document.getElementById('server');
+
+            let ftpStep = 0;
+            let isFtpAnimating = false;
+
+            const ftpSteps = [
+                () => { // Step 1: Establish Control Connection
+                    ftpExplanationText.textContent = "1. 客户端向服务器的熟知端口21发起请求，建立控制连接。此连接在整个会话期间保持。";
+                    controlLine.style.transform = 'scaleX(1)';
+                    clientEntity.classList.add('active');
+                    serverEntity.classList.add('active');
+                },
+                () => { // Step 2: Send Command
+                    ftpExplanationText.textContent = "2. 客户端通过控制连接发送命令（例如：请求文件列表）。";
+                    controlPacket.style.transition = 'all 1.5s cubic-bezier(0.45, 0, 0.55, 1)';
+                    controlPacket.style.left = 'calc(80% + 20px)';
+                    controlPacket.style.opacity = '1';
+                },
+                () => { // Step 3: Server Responds (packet return)
+                    controlPacket.style.transition = 'none';
+                    controlPacket.style.left = 'calc(80% + 20px)';
+                    controlPacket.style.opacity = '1';
+                    setTimeout(() => {
+                        ftpExplanationText.textContent = "3. 服务器通过控制连接返回响应（例如：文件列表）。";
+                        controlPacket.style.transition = 'all 1.5s cubic-bezier(0.45, 0, 0.55, 1)';
+                        controlPacket.style.left = 'calc(10% + 130px)';
+                    }, 100);
+                },
+                () => { // Step 4: Establish Data Connection
+                    controlPacket.style.opacity = '0';
+                    ftpExplanationText.textContent = "4. 客户端请求下载文件。服务器创建数据传送进程，并建立用于传输文件的数据连接（使用端口20）。";
+                    dataLine.style.transform = 'scaleX(1)';
+                },
+                () => { // Step 5: Transfer Data
+                    dataPacket.style.transition = 'none';
+                    dataPacket.style.left = 'calc(80% + 20px)';
+                     setTimeout(() => {
+                        ftpExplanationText.textContent = "5. 文件内容通过数据连接从服务器传输到客户端。";
+                        dataPacket.style.transition = 'all 1.5s cubic-bezier(0.45, 0, 0.55, 1)';
+                        dataPacket.style.left = 'calc(10% + 130px)';
+                        dataPacket.style.opacity = '1';
+                    }, 100);
+                },
+                () => { // Step 6: Close Data Connection
+                    dataPacket.style.opacity = '0';
+                    ftpExplanationText.textContent = "6. 文件传输完成，临时的数据连接被关闭。";
+                    dataLine.style.transform = 'scaleX(0)';
+                },
+                 () => { // Step 7: Control connection remains
+                    ftpExplanationText.textContent = "7. 控制连接仍然保持打开，可用于发送下一个命令（如QUIT）。";
+                    controlLine.style.animation = 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite';
+                }
+            ];
+
+            function resetFtpAnimation() {
+                isFtpAnimating = false;
+                ftpStep = 0;
+                controlLine.style.transition = 'none';
+                dataLine.style.transition = 'none';
+                controlLine.style.transform = 'scaleX(0)';
+                dataLine.style.transform = 'scaleX(0)';
+                controlPacket.style.opacity = '0';
+                dataPacket.style.opacity = '0';
+                controlPacket.style.left = 'calc(10% + 130px)';
+                dataPacket.style.left = 'calc(10% + 130px)';
+                controlLine.style.animation = '';
+                clientEntity.classList.remove('active');
+                serverEntity.classList.remove('active');
+                ftpExplanationText.textContent = "点击下方按钮，开始分步演示FTP的工作流程。";
+                playFtpBtn.disabled = false;
+                setTimeout(() => {
+                     controlLine.style.transition = 'transform 0.8s cubic-bezier(0.68, -0.55, 0.27, 1.55)';
+                     dataLine.style.transition = 'transform 0.8s cubic-bezier(0.68, -0.55, 0.27, 1.55)';
+                }, 100);
+            }
+
+            function playNextFtpStep() {
+                if (isFtpAnimating || ftpStep >= ftpSteps.length) return;
+                
+                isFtpAnimating = true;
+                clientEntity.classList.remove('active');
+                serverEntity.classList.remove('active');
+                controlLine.style.animation = '';
+
+                ftpSteps[ftpStep]();
+                ftpStep++;
+                
+                if (ftpStep >= ftpSteps.length) {
+                    playFtpBtn.disabled = true;
+                }
+
+                setTimeout(() => {
+                    isFtpAnimating = false;
+                    if(ftpStep < 4) {
+                        clientEntity.classList.remove('active');
+                        serverEntity.classList.remove('active');
+                    }
+                }, 1800); 
+            }
+
+            playFtpBtn.addEventListener('click', playNextFtpStep);
+            resetFtpBtn.addEventListener('click', resetFtpAnimation);
+
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式学习应用：P2P 应用</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chosen Palette: Tech Cyan & Slate -->
+    <!-- Application Structure Plan: 应用设计为单页学习模块，通过顶部标签页在“架构演进”、“性能模拟器”和“核心机制”三个部分间导航。核心是“性能模拟器”和“核心机制”两个交互模块。前者将课本中的数学公式转化为一个允许用户通过滑块调整参数（用户数、文件大小等）并实时观察P2P与C/S性能差异的图表。后者通过一个简化的动画来演示BitTorrent的“最稀有优先”和“一报还一报”策略。这种设计旨在将抽象的理论和算法转化为可触摸、可观察的交互体验，从而加深理解。 -->
+    <!-- Visualization & Content Choices: 1. 架构演进(Goal: Compare): 使用带流程示意图的卡片对比Napster(集中式)、Gnutella(泛洪式)和BitTorrent(追踪式)的查询和下载流程。2. 性能模拟器(Goal: Analyze/Compare): 使用HTML滑块和Chart.js条形图，根据课本公式动态计算并可视化P2P与C/S的文件分发时间。3. 核心机制(Goal: Explain Process): 使用HTML/CSS/JS构建一个简化版BitTorrent动画，通过高亮和状态变化展示“最稀有优先”和“一报还一报”策略的决策过程。4. Chord环(Goal: Inform): 使用一个静态但清晰的图示，解释DHT和Chord环的基本查找思想。(CONFIRMATION: NO SVG graphics used. NO Mermaid JS used.) -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #f1f5f9; /* slate-100 */
+            color: #1e293b; /* slate-800 */
+        }
+        .nav-btn {
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+        }
+        .nav-btn.active {
+            border-bottom-color: #0891b2; /* cyan-600 */
+            color: #0e7490; /* cyan-700 */
+            font-weight: 700;
+        }
+        .card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+            border: 1px solid #e2e8f0;
+            transition: all 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.07), 0 4px 6px -2px rgb(0 0 0 / 0.07);
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.6s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .chart-container {
+            position: relative; 
+            width: 100%; 
+            max-width: 700px; 
+            margin-left: auto; 
+            margin-right: auto; 
+            height: 350px;
+            max-height: 400px;
+        }
+        .peer {
+            transition: all 0.5s ease;
+            border: 2px solid transparent;
+        }
+        .peer.highlight {
+            border-color: #0891b2;
+            transform: scale(1.1);
+        }
+        .chunk {
+            width: 12px;
+            height: 20px;
+            border: 1px solid #cbd5e1;
+        }
+        .chunk.owned { background-color: #0891b2; }
+        .chunk.rare { background-color: #f97316; }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold text-slate-800">交互式学习：P2P 应用</h1>
+            <p class="mt-4 text-lg text-slate-500">理解点对点网络的力量与智慧</p>
+        </header>
+
+        <nav class="flex justify-center border-b border-slate-200 mb-12">
+            <button class="nav-btn text-lg p-4" data-tab="evolution">架构演进</button>
+            <button class="nav-btn text-lg p-4" data-tab="performance">性能模拟器</button>
+            <button class="nav-btn text-lg p-4" data-tab="mechanisms">核心机制</button>
+        </nav>
+
+        <main>
+            <!-- Evolution Section -->
+            <section id="evolution" class="tab-content animate-fade-in">
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl font-bold text-slate-700">P2P 架构的演进</h2>
+                    <p class="mt-3 text-slate-500 max-w-2xl mx-auto">从依赖中央服务器到完全去中心化，P2P技术经历了几个重要的发展阶段。</p>
+                </div>
+                <div class="grid md:grid-cols-3 gap-8">
+                    <div class="card p-6">
+                        <h3 class="text-xl font-bold mb-3 text-cyan-700">第一代: Napster</h3>
+                        <p class="text-sm text-slate-600 mb-4">采用<span class="font-semibold">集中式目录服务器</span>进行文件定位，但文件传输本身是点对点的。</p>
+                        <div class="p-4 bg-slate-50 rounded-lg text-xs">
+                            <p>① 用户 → 目录服务器: "谁有文件X?"</p>
+                            <p>② 目录服务器 → 用户: "A、B、C有。"</p>
+                            <p>③ 用户 → 节点A: "请求文件X。"</p>
+                        </div>
+                        <p class="text-xs mt-2 text-red-600">缺点：目录服务器是单点故障和性能瓶颈。</p>
+                    </div>
+                    <div class="card p-6">
+                        <h3 class="text-xl font-bold mb-3 text-cyan-700">第二代: Gnutella</h3>
+                        <p class="text-sm text-slate-600 mb-4">第一个<span class="font-semibold">完全分布式</span>的P2P网络，没有中央服务器，采用查询洪泛法。</p>
+                        <div class="p-4 bg-slate-50 rounded-lg text-xs">
+                            <p>① 用户 → 相邻节点: "谁有文件X?"</p>
+                            <p>② 节点 → 其他相邻节点: (转发查询)</p>
+                            <p>③ ... (查询在网络中扩散)</p>
+                        </div>
+                        <p class="text-xs mt-2 text-red-600">缺点：查询消息可能产生巨大流量，效率不高。</p>
+                    </div>
+                    <div class="card p-6">
+                        <h3 class="text-xl font-bold mb-3 text-cyan-700">第三代: BitTorrent (BT)</h3>
+                        <p class="text-sm text-slate-600 mb-4">采用<span class="font-semibold">追踪器(Tracker)</span>协调，引入文件分块和智能交换策略。</p>
+                         <div class="p-4 bg-slate-50 rounded-lg text-xs">
+                            <p>① 用户 → 追踪器: "我要加入文件X的洪流。"</p>
+                            <p>② 追踪器 → 用户: (返回部分节点列表)</p>
+                            <p>③ 用户 ↔ 其他节点: (高效交换文件块)</p>
+                        </div>
+                        <p class="text-xs mt-2 text-green-600">优点：高度可扩展，下载效率极高。</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Performance Section -->
+            <section id="performance" class="tab-content hidden animate-fade-in">
+                <div class="text-center mb-8">
+                    <h2 class="text-3xl font-bold text-slate-700">P2P vs C/S 性能模拟器</h2>
+                    <p class="mt-3 text-slate-500 max-w-3xl mx-auto">当下载用户数量急剧增加时，P2P架构展现出远超传统客户-服务器(C/S)架构的卓越性能。拖动下方滑块，直观感受这种差异。</p>
+                </div>
+                <div class="card p-6 md:p-8">
+                    <div class="grid md:grid-cols-2 gap-8 mb-8">
+                        <div>
+                            <label for="peer-slider" class="font-semibold">下载用户数 (N): <span id="peer-count">10</span></label>
+                            <input id="peer-slider" type="range" min="1" max="1000" value="10" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        <div>
+                            <label for="file-size-slider" class="font-semibold">文件大小 (F): <span id="file-size-label">1 GB</span></label>
+                            <input id="file-size-slider" type="range" min="100" max="10000" value="1000" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="performanceChart"></canvas>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Mechanisms Section -->
+            <section id="mechanisms" class="tab-content hidden animate-fade-in">
+                 <div class="text-center mb-12">
+                    <h2 class="text-3xl font-bold text-slate-700">BitTorrent 的核心机制</h2>
+                    <p class="mt-3 text-slate-500 max-w-2xl mx-auto">BitTorrent的效率秘诀在于其智能的交换策略，它激励所有参与者积极分享。</p>
+                </div>
+                 <div class="grid md:grid-cols-2 gap-12">
+                    <div class="card p-6">
+                        <h3 class="text-xl font-bold mb-3 text-cyan-700">1. 最稀有的优先 (Rarest First)</h3>
+                        <p class="text-sm text-slate-600 mb-4">在请求文件块时，优先向拥有自己所缺少的、且在邻居中副本数量最少的块的节点发起请求。这能确保尽快获得稀有资源，避免因持有者离开而导致下载失败。</p>
+                        <div id="rarest-first-demo" class="p-4 bg-slate-50 rounded-lg">
+                           <p class="text-center font-semibold mb-2 text-sm">你的邻居们拥有的文件块</p>
+                           <div class="space-y-2">
+                               <div class="flex items-center gap-2 text-xs"><span class="w-16">邻居 A:</span><div class="flex gap-1"><div class="chunk owned"></div><div class="chunk"></div><div class="chunk"></div><div class="chunk owned"></div><div class="chunk"></div></div></div>
+                               <div class="flex items-center gap-2 text-xs"><span class="w-16">邻居 B:</span><div class="flex gap-1"><div class="chunk owned"></div><div class="chunk"></div><div class="chunk owned"></div><div class="chunk"></div><div class="chunk"></div></div></div>
+                               <div class="flex items-center gap-2 text-xs"><span class="w-16">邻居 C:</span><div class="flex gap-1"><div class="chunk"></div><div class="chunk"></div><div class="chunk"></div><div class="chunk owned"></div><div class="chunk rare"></div></div></div>
+                           </div>
+                           <p id="rarest-first-result" class="text-center mt-4 text-sm font-bold text-orange-600 transition-opacity duration-500 opacity-0">决策: 优先请求第5个块，因为它是最稀有的！</p>
+                        </div>
+                    </div>
+                    <div class="card p-6">
+                        <h3 class="text-xl font-bold mb-3 text-cyan-700">2. 一报还一报 (Tit-for-Tat)</h3>
+                        <p class="text-sm text-slate-600 mb-4">在决定给谁上传文件块时，优先选择那些给自己提供下载速度最快的几个邻居。这是一种激励机制，贡献越多，收获越多。BT每10秒会重新评估并选择Top 4的上传对象。</p>
+                         <div id="tit-for-tat-demo" class="p-4 bg-slate-50 rounded-lg">
+                             <p class="text-center font-semibold mb-2 text-sm">谁在向你请求上传？</p>
+                             <div class="space-y-2 text-xs">
+                                 <div class="peer flex justify-between items-center p-1 rounded"><span>节点 D</span> <span class="font-mono">DL Rate: 120 KB/s</span></div>
+                                 <div class="peer flex justify-between items-center p-1 rounded"><span>节点 E</span> <span class="font-mono">DL Rate: 85 KB/s</span></div>
+                                 <div class="peer flex justify-between items-center p-1 rounded"><span>节点 F</span> <span class="font-mono">DL Rate: 250 KB/s</span></div>
+                                 <div class="peer flex justify-between items-center p-1 rounded"><span>节点 G</span> <span class="font-mono">DL Rate: 150 KB/s</span></div>
+                                 <div class="peer flex justify-between items-center p-1 rounded"><span>节点 H</span> <span class="font-mono">DL Rate: 210 KB/s</span></div>
+                             </div>
+                             <p id="tit-for-tat-result" class="text-center mt-3 text-sm font-bold text-cyan-600 transition-opacity duration-500 opacity-0">决策: 优先为 F, H, G, D 提供上传服务。</p>
+                         </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // Tab functionality
+    const tabs = document.querySelectorAll('.nav-btn');
+    const contents = document.querySelectorAll('.tab-content');
+    
+    function setActiveTab(tabId) {
+        tabs.forEach(tab => tab.classList.toggle('active', tab.getAttribute('data-tab') === tabId));
+        contents.forEach(content => content.classList.toggle('hidden', content.id !== tabId));
+    }
+
+    tabs.forEach(tab => tab.addEventListener('click', () => setActiveTab(tab.getAttribute('data-tab'))));
+    setActiveTab('evolution');
+
+    // Performance Chart Logic
+    const peerSlider = document.getElementById('peer-slider');
+    const peerCountLabel = document.getElementById('peer-count');
+    const fileSizeSlider = document.getElementById('file-size-slider');
+    const fileSizeLabel = document.getElementById('file-size-label');
+    const chartCtx = document.getElementById('performanceChart').getContext('2d');
+    
+    let performanceChart;
+
+    const SERVER_UPLOAD_SPEED = 10; // 10 Mbps
+    const PEER_DOWNLOAD_SPEED = 5;  // 5 Mbps
+    const PEER_UPLOAD_SPEED = 1;    // 1 Mbps
+
+    function calculateTimes(N, F) {
+        // C/S Time
+        const cs_term1 = (N * F) / SERVER_UPLOAD_SPEED;
+        const cs_term2 = F / PEER_DOWNLOAD_SPEED;
+        const csTime = Math.max(cs_term1, cs_term2).toFixed(2);
+
+        // P2P Time
+        const p2p_term1 = F / SERVER_UPLOAD_SPEED;
+        const p2p_term2 = F / PEER_DOWNLOAD_SPEED;
+        const p2p_term3 = (N * F) / (SERVER_UPLOAD_SPEED + N * PEER_UPLOAD_SPEED);
+        const p2pTime = Math.max(p2p_term1, p2p_term2, p2p_term3).toFixed(2);
+        
+        return { csTime, p2pTime };
+    }
+
+    function updateChart() {
+        const N = parseInt(peerSlider.value);
+        const F = parseInt(fileSizeSlider.value);
+        peerCountLabel.textContent = N;
+        fileSizeLabel.textContent = `${(F / 1000).toFixed(2)} GB`;
+        
+        const { csTime, p2pTime } = calculateTimes(N, F * 8); // F in Gb
+        
+        performanceChart.data.datasets[0].data = [csTime, p2pTime];
+        performanceChart.update();
+    }
+
+    function createChart() {
+         performanceChart = new Chart(chartCtx, {
+            type: 'bar',
+            data: {
+                labels: ['客户-服务器 (C/S)', '点对点 (P2P)'],
+                datasets: [{
+                    label: '文件分发总耗时 (秒)',
+                    data: [0, 0],
+                    backgroundColor: [
+                        'rgba(239, 68, 68, 0.6)',
+                        'rgba(8, 145, 178, 0.6)'
+                    ],
+                    borderColor: [
+                        'rgba(239, 68, 68, 1)',
+                        'rgba(8, 145, 178, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y',
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        title: { display: true, text: '完成时间 (秒)' }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.x !== null) {
+                                    label += context.parsed.x + ' 秒';
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        updateChart();
+    }
+    
+    if (document.getElementById('performance')) {
+        createChart();
+        peerSlider.addEventListener('input', updateChart);
+        fileSizeSlider.addEventListener('input', updateChart);
+    }
+    
+    // Mechanism demos
+    const rarestFirstDemo = document.getElementById('rarest-first-demo');
+    const titForTatDemo = document.getElementById('tit-for-tat-demo');
+
+    if (rarestFirstDemo) {
+        rarestFirstDemo.addEventListener('mouseenter', () => {
+            document.getElementById('rarest-first-result').style.opacity = '1';
+        });
+        rarestFirstDemo.addEventListener('mouseleave', () => {
+            document.getElementById('rarest-first-result').style.opacity = '0';
+        });
+    }
+
+    if (titForTatDemo) {
+        titForTatDemo.addEventListener('mouseenter', () => {
+            const peers = Array.from(titForTatDemo.querySelectorAll('.peer'));
+            peers.sort((a, b) => {
+                const rateA = parseFloat(a.children[1].textContent.match(/[\d.]+/)[0]);
+                const rateB = parseFloat(b.children[1].textContent.match(/[\d.]+/)[0]);
+                return rateB - rateA;
+            });
+            peers.slice(0, 4).forEach(p => p.classList.add('highlight'));
+            document.getElementById('tit-for-tat-result').style.opacity = '1';
+        });
+        titForTatDemo.addEventListener('mouseleave', () => {
+             titForTatDemo.querySelectorAll('.peer').forEach(p => p.classList.remove('highlight'));
+             document.getElementById('tit-for-tat-result').style.opacity = '0';
+        });
+    }
+
+});
+</script>
+</body>
+</html>

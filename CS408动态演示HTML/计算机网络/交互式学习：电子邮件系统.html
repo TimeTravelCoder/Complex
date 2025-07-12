@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式学习应用：电子邮件</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chosen Palette: Professional Blue & Green -->
+    <!-- Application Structure Plan: 应用设计为单页学习模块，通过顶部标签页在“核心组件”、“协议工作流”、“协议对比”和“MIME扩展”四个部分间导航。核心是“协议工作流”中的交互式分步动画，用户通过点击按钮来驱动邮件从发件人到收件人的完整流程。这种设计将静态的文字描述转化为动态、可视化的过程，帮助用户清晰地理解不同协议（SMTP/POP3/IMAP）在何时、何地、如何发挥作用，从而达到最佳的学习效果。 -->
+    <!-- Visualization & Content Choices: 1. 核心组件(Goal: Inform): 使用带有图标的卡片清晰定义用户代理、邮件服务器和协议的角色。2. 协议工作流(Goal: Explain Process): 使用HTML/CSS/JS构建分步动画。节点（用户、服务器）用div表示，邮件图标(✉️)通过JS控制其移动轨迹。每一步动画都与状态解释面板中的文本同步更新，并高亮当前活动的协议。用户可以选择最终使用POP3还是IMAP来观察两种拉取协议的差异。3. 协议对比(Goal: Compare): 使用清晰的HTML表格对比SMTP、POP3、IMAP的核心区别。4. MIME扩展(Goal: Explain Concept): 使用“之前/之后”的视觉对比，展示MIME如何将非ASCII内容编码为可传输的文本。(CONFIRMATION: NO SVG graphics used. NO Mermaid JS used.) -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+            color: #334155; /* slate-700 */
+        }
+        .nav-btn {
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+        }
+        .nav-btn.active {
+            border-bottom-color: #0ea5e9; /* sky-500 */
+            color: #0369a1; /* sky-700 */
+            font-weight: 700;
+        }
+        .card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+            border: 1px solid #e2e8f0;
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.6s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .actor {
+            position: absolute;
+            width: 120px;
+            text-align: center;
+            transition: all 0.3s ease;
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            border: 2px solid transparent;
+        }
+        .actor.active {
+            border-color: #3b82f6;
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
+            transform: scale(1.05);
+        }
+        #mail-icon {
+            position: absolute;
+            font-size: 2.5rem;
+            opacity: 0;
+            transform-origin: center center;
+            z-index: 10;
+        }
+        .path-line {
+            position: absolute;
+            background-color: #ccc;
+            height: 3px;
+            transform-origin: 0 50%;
+            z-index: 5;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold text-slate-800">交互式学习：电子邮件系统</h1>
+            <p class="mt-4 text-lg text-slate-500">探索邮件从发送到接收的完整旅程</p>
+        </header>
+
+        <nav class="flex justify-center border-b border-slate-200 mb-12">
+            <button class="nav-btn text-lg p-4" data-tab="components">核心组件</button>
+            <button class="nav-btn text-lg p-4" data-tab="workflow">协议工作流</button>
+            <button class="nav-btn text-lg p-4" data-tab="comparison">协议对比</button>
+            <button class="nav-btn text-lg p-4" data-tab="mime">MIME扩展</button>
+        </nav>
+
+        <main>
+            <!-- Components Section -->
+            <section id="components" class="tab-content animate-fade-in">
+                 <div class="text-center mb-12">
+                    <h2 class="text-3xl font-bold text-slate-700">电子邮件的三大核心组件</h2>
+                    <p class="mt-3 text-slate-500 max-w-2xl mx-auto">一个完整的电子邮件系统协同工作，依赖于用户代理、邮件服务器和标准化的邮件协议。</p>
+                </div>
+                <div class="grid md:grid-cols-3 gap-8">
+                    <div class="card p-6 text-center">
+                        <div class="text-5xl mb-4">🧑‍💻</div>
+                        <h3 class="text-2xl font-bold mb-2 text-sky-700">用户代理 (UA)</h3>
+                        <p class="text-slate-600">用户与邮件系统的接口，即我们日常使用的邮件客户端（如 Outlook, Foxmail）或Webmail界面，负责邮件的撰写、显示和处理。</p>
+                    </div>
+                    <div class="card p-6 text-center">
+                        <div class="text-5xl mb-4">🗄️</div>
+                        <h3 class="text-2xl font-bold mb-2 text-sky-700">邮件服务器</h3>
+                        <p class="text-slate-600">电子邮件系统的核心中枢，24小时在线，负责接收、发送、存储邮件，并管理用户的邮箱。</p>
+                    </div>
+                    <div class="card p-6 text-center">
+                        <div class="text-5xl mb-4">📜</div>
+                        <h3 class="text-2xl font-bold mb-2 text-sky-700">邮件协议</h3>
+                        <p class="text-slate-600">定义了邮件传输规则。<b>SMTP</b>用于“推送”发送邮件，而<b>POP3/IMAP</b>则用于“拉取”接收邮件。</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Workflow Section -->
+            <section id="workflow" class="tab-content hidden animate-fade-in">
+                <div class="text-center mb-8">
+                    <h2 class="text-3xl font-bold text-slate-700">协议工作流：一封邮件的旅程</h2>
+                    <p class="mt-3 text-slate-500 max-w-3xl mx-auto">点击下方按钮，分步观察一封邮件从发件人到收件人所经历的完整协议交互过程。</p>
+                </div>
+                <div class="card p-6 md:p-8">
+                    <div id="workflow-stage" class="relative bg-slate-100 p-4 rounded-lg border border-slate-200 mb-6" style="height: 350px;">
+                        <!-- Actors -->
+                        <div id="actor-sender" class="actor" style="top: 50%; left: 5%; transform: translateY(-50%);">
+                            <div class="text-5xl">👨‍💻</div><span class="font-bold">发件人UA</span>
+                        </div>
+                        <div id="actor-sender-server" class="actor" style="top: 50%; left: 30%; transform: translateY(-50%);">
+                            <div class="text-5xl">📤</div><span class="font-bold">发送方服务器</span>
+                        </div>
+                        <div id="actor-receiver-server" class="actor" style="top: 50%; right: 30%; transform: translateY(-50%);">
+                           <div class="text-5xl">📥</div><span class="font-bold">接收方服务器</span>
+                        </div>
+                        <div id="actor-receiver" class="actor" style="top: 50%; right: 5%; transform: translateY(-50%);">
+                            <div class="text-5xl">👩‍💻</div><span class="font-bold">收件人UA</span>
+                        </div>
+                         <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
+                            <div class="text-5xl">☁️</div>
+                            <span class="font-bold text-slate-500">互联网</span>
+                        </div>
+                        <!-- Mail Icon -->
+                        <div id="mail-icon">✉️</div>
+                    </div>
+
+                    <!-- Controls & Explanation -->
+                    <div class="flex flex-col md:flex-row items-center justify-center gap-4 mb-6">
+                         <div class="flex items-center gap-2">
+                             <label class="font-semibold">收信协议:</label>
+                             <select id="receive-protocol-selector" class="p-2 border border-slate-300 rounded-md">
+                                 <option value="POP3">POP3</option>
+                                 <option value="IMAP">IMAP</option>
+                             </select>
+                         </div>
+                        <button id="next-step-btn" class="py-2 px-6 bg-sky-600 text-white font-semibold rounded-lg shadow-md hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-opacity-75">开始 / 下一步</button>
+                        <button id="reset-btn" class="py-2 px-6 bg-slate-500 text-white font-semibold rounded-lg shadow-md hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-opacity-75">重置</button>
+                    </div>
+
+                    <div id="explanation-box" class="min-h-[4rem] p-4 bg-sky-50 text-sky-800 border-l-4 border-sky-500 rounded-r-lg transition-all">
+                        <p id="explanation-text" class="font-medium">准备就绪。</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Comparison Section -->
+            <section id="comparison" class="tab-content hidden animate-fade-in">
+                <div class="text-center mb-8">
+                    <h2 class="text-3xl font-bold text-slate-700">核心邮件协议对比</h2>
+                    <p class="mt-3 text-slate-500 max-w-2xl mx-auto">SMTP、POP3和IMAP在邮件系统中扮演不同角色，下表总结了它们的核心区别。</p>
+                </div>
+                <div class="card overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead class="bg-slate-50 border-b border-slate-200">
+                            <tr>
+                                <th class="p-4 font-bold text-slate-800">特性</th>
+                                <th class="p-4 font-bold text-slate-800">SMTP</th>
+                                <th class="p-4 font-bold text-slate-800">POP3</th>
+                                <th class="p-4 font-bold text-slate-800">IMAP</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="border-b border-slate-200">
+                                <td class="p-4 font-semibold">主要用途</td>
+                                <td class="p-4">发送邮件</td>
+                                <td class="p-4">读取邮件</td>
+                                <td class="p-4">读取和管理邮件</td>
+                            </tr>
+                            <tr class="bg-slate-50 border-b border-slate-200">
+                                <td class="p-4 font-semibold">工作模式</td>
+                                <td class="p-4 text-red-600">推 (Push)</td>
+                                <td class="p-4 text-green-600">拉 (Pull)</td>
+                                <td class="p-4 text-green-600">拉 (Pull)</td>
+                            </tr>
+                             <tr class="border-b border-slate-200">
+                                <td class="p-4 font-semibold">默认端口</td>
+                                <td class="p-4">25</td>
+                                <td class="p-4">110</td>
+                                <td class="p-4">143</td>
+                            </tr>
+                            <tr class="bg-slate-50">
+                                <td class="p-4 font-semibold">邮件存储</td>
+                                <td class="p-4">不存储，仅中转</td>
+                                <td class="p-4">默认下载后从服务器删除</td>
+                                <td class="p-4">邮件始终保存在服务器</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- MIME Section -->
+            <section id="mime" class="tab-content hidden animate-fade-in">
+                <div class="text-center mb-8">
+                    <h2 class="text-3xl font-bold text-slate-700">MIME: 让邮件丰富多彩</h2>
+                    <p class="mt-3 text-slate-500 max-w-3xl mx-auto">标准SMTP协议只能传输7位ASCII码文本。为了发送图片、视频、非英文文本等内容，MIME（通用互联网邮件扩充）应运而生。它并未取代SMTP，而是在邮件首部增加了额外信息，并定义了编码规则。</p>
+                </div>
+                <div class="grid md:grid-cols-2 gap-8 items-center">
+                    <div class="card p-6">
+                        <h3 class="text-xl font-bold mb-3 text-sky-700">编码过程示意</h3>
+                        <p class="mb-4">MIME通过 Content-Transfer-Encoding 字段（如base64）将二进制内容转换为对SMTP友好的ASCII文本。</p>
+                        <div class="space-y-4">
+                            <div class="text-center">
+                                <span class="font-bold">原始数据:</span>
+                                <div class="flex justify-center items-center gap-4 mt-2">
+                                    <span class="text-3xl">🖼️</span>
+                                    <span class="text-xl font-mono p-2 bg-slate-100 rounded">你好</span>
+                                </div>
+                            </div>
+                            <div class="text-center text-2xl font-bold">↓</div>
+                             <div class="text-center">
+                                <span class="font-bold">Base64编码后 (文本形式):</span>
+                                <div class="text-xs p-2 bg-slate-100 rounded mt-2 font-mono break-all">iVBORw0KGgoAAAANSUhEUgA...5s6wAAAABJRU5ErkJggg==...</div>
+                            </div>
+                        </div>
+                    </div>
+                     <div class="card p-6">
+                        <h3 class="text-xl font-bold mb-3 text-sky-700">【例题】Base64编码开销计算</h3>
+                        <div class="prose prose-sm">
+                            <p><b>题目:</b> 一个3072字节的二进制文件，使用base64编码并通过邮件发送，若每80个字符插入一对CRLF，最终发送的总字节数是多少？</p>
+                            <p><b>解:</b></p>
+                            <ol class="list-decimal list-inside space-y-1">
+                                <li><b>编码数据长度:</b> Base64将每3字节转为4字节。 (3072 / 3) * 4 = <b>4096</b> 字节。</li>
+                                <li><b>CRLF数量:</b> 每80字符加一对CRLF。 floor((4096-1) / 80) = <b>51</b> 对。</li>
+                                <li><b>CRLF总字节:</b> 51 * 2 = <b>102</b> 字节。</li>
+                                <li><b>总发送字节:</b> 4096 (数据) + 102 (CRLF) = <b>4198</b> 字节。</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const tabs = document.querySelectorAll('.nav-btn');
+    const contents = document.querySelectorAll('.tab-content');
+    
+    function setActiveTab(tabId) {
+        tabs.forEach(tab => tab.classList.toggle('active', tab.getAttribute('data-tab') === tabId));
+        contents.forEach(content => content.classList.toggle('hidden', content.id !== tabId));
+    }
+
+    tabs.forEach(tab => tab.addEventListener('click', () => setActiveTab(tab.getAttribute('data-tab'))));
+    setActiveTab('components');
+
+    // Workflow animation
+    const nextBtn = document.getElementById('next-step-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const explanationText = document.getElementById('explanation-text');
+    const mailIcon = document.getElementById('mail-icon');
+    const receiveProtocolSelector = document.getElementById('receive-protocol-selector');
+    const stage = document.getElementById('workflow-stage');
+    
+    const actors = {
+        sender: document.getElementById('actor-sender'),
+        senderServer: document.getElementById('actor-sender-server'),
+        receiverServer: document.getElementById('actor-receiver-server'),
+        receiver: document.getElementById('actor-receiver')
+    };
+
+    let currentStep = -1;
+    let animationTimeout;
+
+    const getSteps = () => [
+        { 
+            from: 'sender', to: 'senderServer', protocol: 'SMTP', color: '#ef4444',
+            text: '1. 发件人的用户代理(UA)使用SMTP协议，将撰写好的邮件“推送”到发送方邮件服务器。'
+        },
+        { 
+            from: 'senderServer', to: 'receiverServer', protocol: 'SMTP', color: '#ef4444',
+            text: '2. 发送方邮件服务器作为SMTP客户端，与接收方邮件服务器建立TCP连接，并使用SMTP协议将邮件“推送”过去。'
+        },
+        { 
+            from: 'receiverServer', to: 'receiver', protocol: receiveProtocolSelector.value, color: '#16a34a',
+            text: `3. 收件人的用户代理使用${receiveProtocolSelector.value}协议，从接收方邮件服务器“拉取”新邮件。`
+        },
+        {
+            text: '邮件投递完成！点击“重置”可以重新演示。'
+        }
+    ];
+
+    function updateWorkflowUI() {
+        const steps = getSteps();
+        
+        Object.values(actors).forEach(actor => actor.classList.remove('active'));
+        document.querySelectorAll('.path-line').forEach(line => line.remove());
+
+        if (currentStep < 0 || currentStep >= steps.length) {
+            mailIcon.style.opacity = '0';
+            explanationText.textContent = '准备就绪。';
+            if (nextBtn.textContent !== '开始 / 下一步') nextBtn.textContent = '开始 / 下一步';
+            return;
+        }
+
+        const step = steps[currentStep];
+        explanationText.textContent = step.text;
+
+        if (step.from && step.to) {
+            const fromActor = actors[step.from];
+            const toActor = actors[step.to];
+            
+            fromActor.classList.add('active');
+            toActor.classList.add('active');
+
+            const fromRect = fromActor.getBoundingClientRect();
+            const toRect = toActor.getBoundingClientRect();
+            const stageRect = stage.getBoundingClientRect();
+
+            const startX = fromRect.left - stageRect.left + fromRect.width / 2;
+            const startY = fromRect.top - stageRect.top + fromRect.height / 2;
+            const endX = toRect.left - stageRect.left + toRect.width / 2;
+            const endY = toRect.top - stageRect.top + toRect.height / 2;
+
+            // Draw path line
+            const angle = Math.atan2(endY - startY, endX - startX) * 180 / Math.PI;
+            const distance = Math.sqrt((endX - startX)**2 + (endY - startY)**2);
+            
+            const line = document.createElement('div');
+            line.className = 'path-line';
+            line.style.backgroundColor = step.color;
+            line.style.width = `${distance}px`;
+            line.style.left = `${startX}px`;
+            line.style.top = `${startY}px`;
+            line.style.transform = `rotate(${angle}deg)`;
+            stage.appendChild(line);
+
+            // Animate mail icon
+            mailIcon.style.transition = 'none';
+            mailIcon.style.left = `${startX - mailIcon.offsetWidth / 2}px`;
+            mailIcon.style.top = `${startY - mailIcon.offsetHeight / 2}px`;
+            mailIcon.style.opacity = '1';
+            
+            setTimeout(() => {
+                mailIcon.style.transition = 'all 1.2s ease-in-out';
+                mailIcon.style.left = `${endX - mailIcon.offsetWidth / 2}px`;
+                mailIcon.style.top = `${endY - mailIcon.offsetHeight / 2}px`;
+            }, 50);
+        } else {
+            mailIcon.style.opacity = '0';
+            nextBtn.disabled = true;
+        }
+    }
+
+    nextBtn.addEventListener('click', () => {
+        if (currentStep < getSteps().length - 1) {
+            currentStep++;
+            updateWorkflowUI();
+            if (nextBtn.textContent === '开始 / 下一步') {
+                nextBtn.textContent = '下一步';
+            }
+        }
+    });
+
+    resetBtn.addEventListener('click', () => {
+        currentStep = -1;
+        nextBtn.disabled = false;
+        updateWorkflowUI();
+    });
+    
+    receiveProtocolSelector.addEventListener('change', () => {
+        if(currentStep === 2 || currentStep === 3) { 
+            updateWorkflowUI();
+        }
+    });
+
+    updateWorkflowUI();
+});
+</script>
+
+</body>
+</html>
