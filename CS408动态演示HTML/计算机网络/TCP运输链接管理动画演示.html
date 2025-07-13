@@ -3,28 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TCP 运输连接管理 - 交互式解读</title>
+    <title>TCP 运输连接管理 - 交互式解读 (UI优化版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
-    <!-- Chosen Palette: Professional Blue & Neutral Gray -->
-    <!-- Application Structure Plan: 应用采用以交互式图解为核心的单页布局。顶部是导航，主体分为两大交互模块：“连接建立（三报文握手）”和“连接释放（四报文握手）”，用户可通过选项卡切换。每个模块都包含一个双栏（客户端/服务器）的动态图示区、一个分步控制面板和一个实时更新的详细解说区。这种“图示+控制+解说”三位一体的结构，引导用户按部就班地探索协议流程，将静态的文字知识转化为动态的、可操作的视觉体验，极大地降低了理解门槛。最后附上关键概念的问答卡片，巩固核心知识。 -->
-    <!-- Visualization & Content Choices: 1. 握手流程图: [Goal: Organize/Change] [Viz: HTML/CSS Flexbox Diagram] [Interaction: Buttons to trigger next step, revealing messages sequentially] [Justification: 核心交互，将复杂的时序过程分解为可控步骤，直观展示双方状态变迁和报文交换，学习效果远超静态图片或文字。] 2. 状态机图: [Goal: Organize] [Viz: HTML/CSS Grid Diagram] [Interaction: Hover on states to see description] [Justification: 将所有状态及其关系整合在一张图中，提供全局视角，通过悬停交互提供即时信息，比纯文本列表更易于理解和记忆。] 3. 关键概念卡片: [Goal: Inform] [Viz: Styled HTML Divs] [Interaction: None] [Justification: 针对“为什么是三次/四次”这类核心问题，提供精炼、独立的解答，方便快速回顾。] 所有视觉元素均由HTML/CSS实现，确认无SVG/Mermaid。 -->
-    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
     <style>
         body {
             font-family: 'Noto Sans SC', sans-serif;
             background-color: #f4f7f6;
             color: #333;
         }
-        .smooth-scroll {
-            scroll-behavior: smooth;
-        }
+        .smooth-scroll { scroll-behavior: smooth; }
         .card {
             background-color: white;
             border-radius: 0.75rem;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.07);
             border: 1px solid #e5e7eb;
         }
         .tab-btn {
@@ -36,59 +30,85 @@
             color: #2563eb;
             font-weight: 600;
         }
-        .actor-box {
-            border: 2px solid #d1d5db;
+        /* -- Animation Diagram Styles -- */
+        .flow-diagram {
+            position: relative;
+            height: 250px;
+            background-color: #f8fafc;
             border-radius: 0.5rem;
-            min-height: 400px;
+            border: 1px solid #e2e8f0;
+            overflow: hidden;
         }
-        .message-arrow {
-            opacity: 0;
-            transition: opacity 0.5s ease-in-out;
-            position: relative;
-        }
-        .message-arrow.visible {
-            opacity: 1;
-        }
-        .arrow-line {
-            width: 100%;
-            height: 2px;
-            background-color: currentColor;
-            position: absolute;
-            top: 50%;
-            left: 0;
-            transform: translateY(-50%);
-        }
-        .arrow-head {
-            width: 0;
-            height: 0;
-            border-top: 6px solid transparent;
-            border-bottom: 6px solid transparent;
+        .flow-node {
             position: absolute;
             top: 50%;
             transform: translateY(-50%);
+            width: 120px;
+            height: 120px;
+            background-color: white;
+            border: 2px solid #94a3b8;
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            transition: all 0.4s ease;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
-        .message-arrow.to-server .arrow-head {
-            right: -1px;
-            border-left: 10px solid currentColor;
+        .node-title {
+            font-weight: 700;
+            font-size: 1rem;
+            color: #1e293b;
         }
-        .message-arrow.to-client .arrow-head {
-            left: -1px;
-            border-right: 10px solid currentColor;
+        .node-state {
+            font-size: 0.8rem;
+            font-family: monospace;
+            color: #475569;
+            background-color: #f1f5f9;
+            padding: 2px 6px;
+            border-radius: 0.25rem;
+            margin-top: 8px;
+            transition: background-color 0.4s ease;
         }
-        .state-box {
-            transition: all 0.2s ease-in-out;
-            position: relative;
-        }
-        .state-box:hover .state-desc {
-            opacity: 1;
-            visibility: visible;
-            transform: translateY(0);
-        }
-        .state-desc {
+        .flow-node.client { left: 15%; }
+        .flow-node.server { right: 15%; }
+        .flow-node.active { border-color: #2563eb; }
+        .flow-node.active .node-state { background-color: #dbeafe; color: #1d4ed8; }
+
+        .packet {
+            position: absolute;
+            top: 50%;
+            left: calc(15% + 120px); /* Start next to client node */
+            width: 40px;
+            height: 28px;
+            background-color: #facc15;
+            border: 2px solid #ca8a04;
+            border-radius: 6px;
             opacity: 0;
-            visibility: hidden;
+            transform: translateY(-50%);
+            transition: all 1.5s cubic-bezier(0.5, 0, 0.5, 1);
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: #422006;
+            box-shadow: 0 4px 10px rgba(250, 204, 21, 0.5);
+        }
+        .packet.fin { background-color: #f87171; border-color: #b91c1c; box-shadow-color: rgba(248, 113, 113, 0.5); color: #450a0a; }
+        .packet.syn { background-color: #60a5fa; border-color: #2563eb; box-shadow-color: rgba(96, 165, 250, 0.5); color: #1e3a8a; }
+
+        .step-explanation {
             transition: all 0.3s ease;
-            transform: translateY(10px);
+            opacity: 0.6;
+            transform: scale(0.98);
+        }
+        .step-explanation.active {
+            opacity: 1;
+            transform: scale(1);
+            background-color: #eff6ff;
         }
     </style>
 </head>
@@ -98,41 +118,13 @@
         <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
             <h1 class="text-2xl font-bold text-blue-700">TCP 运输连接管理</h1>
             <div class="hidden md:flex items-center space-x-8 text-base">
-                <a href="#customization" class="text-gray-600 hover:text-blue-700 transition duration-300">参数自定义</a>
                 <a href="#interactive-flow" class="text-gray-600 hover:text-blue-700 transition duration-300">交互流程</a>
                 <a href="#key-concepts" class="text-gray-600 hover:text-blue-700 transition duration-300">核心问答</a>
-                <a href="#state-machine" class="text-gray-600 hover:text-blue-700 transition duration-300">有限状态机</a>
             </div>
         </nav>
     </header>
 
     <main class="container mx-auto px-6 py-12 md:py-20">
-
-        <section id="customization" class="mb-20">
-            <h2 class="text-3xl md:text-4xl font-bold mb-4 text-center">参数自定义</h2>
-            <p class="max-w-3xl mx-auto text-lg text-gray-600 mb-12 text-center">您可以修改以下的初始序号值，下方的交互流程将根据您的设置动态更新。可以使用数字或符号（如x, y）。</p>
-            <div class="card p-8 max-w-4xl mx-auto">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-                    <div>
-                        <label for="seq-x" class="block text-sm font-medium text-gray-700">客户端初始序号 (seq=x)</label>
-                        <input type="text" id="seq-x" value="x" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                    </div>
-                    <div>
-                        <label for="seq-y" class="block text-sm font-medium text-gray-700">服务器初始序号 (seq=y)</label>
-                        <input type="text" id="seq-y" value="y" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                    </div>
-                    <div>
-                        <label for="seq-u" class="block text-sm font-medium text-gray-700">客户端关闭序号 (seq=u)</label>
-                        <input type="text" id="seq-u" value="u" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                    </div>
-                    <div>
-                        <label for="seq-w" class="block text-sm font-medium text-gray-700">服务器关闭序号 (seq=w)</label>
-                        <input type="text" id="seq-w" value="w" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                    </div>
-                </div>
-                 <p class="text-xs text-gray-500 mt-4 text-center">提示：修改参数后，请点击下方的“重置”按钮以应用新设置。</p>
-            </div>
-        </section>
 
         <section id="interactive-flow" class="mb-20">
             <h2 class="text-3xl md:text-4xl font-bold mb-4 text-center">交互式握手流程</h2>
@@ -146,35 +138,28 @@
                 </div>
 
                 <!-- Flow Diagram -->
-                <div class="flex flex-col md:flex-row justify-between items-stretch gap-6">
-                    <!-- Client -->
-                    <div class="flex-1 actor-box p-4 bg-gray-50/50">
-                        <h3 class="text-xl font-bold text-center mb-4">客户端 (主动方)</h3>
-                        <div id="client-states" class="text-center space-y-2"></div>
+                <div class="flow-diagram mb-8">
+                    <div id="client-node" class="flow-node client">
+                        <span class="node-title">客户端</span>
+                        <span id="client-state" class="node-state">CLOSED</span>
                     </div>
-
-                    <!-- Messages -->
-                    <div id="message-container" class="w-full md:w-1/3 flex flex-col justify-around px-4">
-                        <!-- Arrows will be injected here by JS -->
+                    <div id="server-node" class="flow-node server">
+                        <span class="node-title">服务器</span>
+                        <span id="server-state" class="node-state">LISTEN</span>
                     </div>
-
-                    <!-- Server -->
-                    <div class="flex-1 actor-box p-4 bg-gray-50/50">
-                        <h3 class="text-xl font-bold text-center mb-4">服务器 (被动方)</h3>
-                        <div id="server-states" class="text-center space-y-2"></div>
-                    </div>
+                    <div id="packet"></div>
                 </div>
 
                 <!-- Controls and Explanation -->
-                <div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
                     <div class="md:col-span-1 space-y-4">
                         <h4 class="text-lg font-semibold text-center mb-2">控制面板</h4>
-                        <button id="next-step-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">下一步</button>
+                        <button id="next-step-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed">下一步</button>
                         <button id="reset-btn" class="w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">重置</button>
                     </div>
-                    <div class="md:col-span-2 bg-blue-50 p-6 rounded-lg border border-blue-200">
-                        <h4 class="text-lg font-semibold text-blue-800 mb-2">步骤详解</h4>
-                        <div id="explanation-text" class="text-gray-700 space-y-1">请点击“下一步”开始。</div>
+                    <div class="md:col-span-2 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <h4 class="text-lg font-semibold text-blue-800 mb-3">步骤详解</h4>
+                        <div id="explanation-container" class="text-gray-700 space-y-3"></div>
                     </div>
                 </div>
             </div>
@@ -194,129 +179,28 @@
             </div>
         </section>
 
-        <section id="state-machine">
-            <h2 class="text-3xl md:text-4xl font-bold mb-12 text-center">TCP 有限状态机</h2>
-             <p class="max-w-3xl mx-auto text-lg text-gray-600 mb-12 text-center">TCP的所有状态及其转换关系构成一个严谨的有限状态机。将鼠标悬停在状态上可以查看简要说明。粗线代表正常流程。</p>
-            <div class="card p-6 md:p-8 text-center text-xs md:text-sm font-semibold">
-                <!-- A simplified representation of the state machine using Grid layout -->
-                <div class="grid grid-cols-3 gap-x-4 gap-y-16 items-center">
-                    <div></div>
-                    <div class="state-box border-2 border-black p-2 rounded-md bg-gray-100">CLOSED
-                        <div class="state-desc absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-black text-white text-xs rounded py-1 px-2">初始状态，表示连接不存在。</div>
-                    </div>
-                    <div></div>
-                    
-                    <div class="state-box border-2 border-dashed border-black p-2 rounded-md bg-purple-100">LISTEN
-                         <div class="state-desc absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-black text-white text-xs rounded py-1 px-2">服务器等待连接请求。</div>
-                    </div>
-                    <div class="state-box border-2 border-solid border-black p-2 rounded-md bg-sky-100">SYN-SENT
-                        <div class="state-desc absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-black text-white text-xs rounded py-1 px-2">客户端已发送SYN，等待确认。</div>
-                    </div>
-                    <div class="state-box border-2 border-dashed border-black p-2 rounded-md bg-purple-100">SYN-RCVD
-                        <div class="state-desc absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-black text-white text-xs rounded py-1 px-2">服务器已收到SYN并发送SYN+ACK。</div>
-                    </div>
-
-                    <div></div>
-                    <div class="state-box border-2 border-black p-2 rounded-md bg-green-200 col-span-1">ESTABLISHED
-                        <div class="state-desc absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-black text-white text-xs rounded py-1 px-2">连接已建立，可以传输数据。</div>
-                    </div>
-                    <div></div>
-
-                    <div class="state-box border-2 border-solid border-black p-2 rounded-md bg-sky-100">FIN-WAIT-1
-                        <div class="state-desc absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-black text-white text-xs rounded py-1 px-2">主动关闭方已发送FIN，等待ACK。</div>
-                    </div>
-                    <div></div>
-                    <div class="state-box border-2 border-dashed border-black p-2 rounded-md bg-purple-100">CLOSE-WAIT
-                        <div class="state-desc absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-black text-white text-xs rounded py-1 px-2">被动关闭方收到FIN，准备关闭。</div>
-                    </div>
-
-                    <div class="state-box border-2 border-solid border-black p-2 rounded-md bg-sky-100">FIN-WAIT-2
-                         <div class="state-desc absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-black text-white text-xs rounded py-1 px-2">主动关闭方收到ACK，等待对方的FIN。</div>
-                    </div>
-                    <div class="state-box border-2 border-gray-400 p-2 rounded-md bg-orange-100">CLOSING
-                        <div class="state-desc absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-black text-white text-xs rounded py-1 px-2">双方同时关闭连接的罕见状态。</div>
-                    </div>
-                    <div class="state-box border-2 border-dashed border-black p-2 rounded-md bg-purple-100">LAST-ACK
-                        <div class="state-desc absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-black text-white text-xs rounded py-1 px-2">被动关闭方发送FIN后，等待最后的ACK。</div>
-                    </div>
-                    
-                    <div></div>
-                     <div class="state-box border-2 border-solid border-black p-2 rounded-md bg-yellow-100">TIME-WAIT
-                        <div class="state-desc absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-black text-white text-xs rounded py-1 px-2">主动关闭方等待2MSL以确保连接完全终结。</div>
-                    </div>
-                    <div></div>
-                </div>
-            </div>
-        </section>
     </main>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
 
-    const getParams = () => ({
-        x: document.getElementById('seq-x').value || 'x',
-        y: document.getElementById('seq-y').value || 'y',
-        u: document.getElementById('seq-u').value || 'u',
-        w: document.getElementById('seq-w').value || 'w',
-    });
-
-    const formatAck = (seq) => {
-        const num = parseInt(seq, 10);
-        return isNaN(num) ? `${seq}+1` : num + 1;
-    };
-
     const flows = {
         establish: {
             title: "连接建立 (三报文握手)",
             steps: [
-                {
-                    from: 'client', to: 'server',
-                    text: p => `SYN=1, seq=${p.x}`,
-                    explanation: p => `<strong>动作:</strong> 客户端发送连接请求。<br><strong>内容:</strong> SYN位置1，选择一个初始序号 ${p.x}。<br><strong>状态:</strong> 客户端进入 <strong>SYN-SENT</strong> 状态。`,
-                    clientState: 'SYN-SENT', serverState: 'LISTEN'
-                },
-                {
-                    from: 'server', to: 'client',
-                    text: p => `SYN=1, ACK=1, seq=${p.y}, ack=${formatAck(p.x)}`,
-                    explanation: p => `<strong>动作:</strong> 服务器确认并同意连接。<br><strong>内容:</strong> SYN和ACK都置1，确认号为${formatAck(p.x)}，并选择自己的初始序号 ${p.y}。<br><strong>状态:</strong> 服务器进入 <strong>SYN-RCVD</strong> 状态。`,
-                    clientState: 'SYN-SENT', serverState: 'SYN-RCVD'
-                },
-                {
-                    from: 'client', to: 'server',
-                    text: p => `ACK=1, seq=${formatAck(p.x)}, ack=${formatAck(p.y)}`,
-                    explanation: p => `<strong>动作:</strong> 客户端发送最终确认。<br><strong>内容:</strong> ACK置1，确认号为${formatAck(p.y)}。<br><strong>状态:</strong> 连接建立！双方都进入 <strong>ESTABLISHED</strong> 状态。`,
-                    clientState: 'ESTABLISHED', serverState: 'ESTABLISHED'
-                }
+                { from: 'client', to: 'server', type: 'SYN', explanation: `<strong>第1步:</strong> 客户端请求建立连接。<br>发送一个SYN报文，并进入 <strong>SYN-SENT</strong> 状态。`, clientState: 'SYN-SENT', serverState: 'LISTEN' },
+                { from: 'server', to: 'client', type: 'SYN,ACK', explanation: `<strong>第2步:</strong> 服务器响应请求。<br>发送SYN和ACK报文，进入 <strong>SYN-RCVD</strong> 状态。`, clientState: 'SYN-SENT', serverState: 'SYN-RCVD' },
+                { from: 'client', to: 'server', type: 'ACK', explanation: `<strong>第3步:</strong> 客户端确认。<br>发送ACK报文，双方都进入 <strong>ESTABLISHED</strong> 状态，连接成功。`, clientState: 'ESTABLISHED', serverState: 'ESTABLISHED' }
             ],
             initialClientState: 'CLOSED', initialServerState: 'LISTEN'
         },
         release: {
             title: "连接释放 (四报文握手)",
             steps: [
-                {
-                    from: 'client', to: 'server',
-                    text: p => `FIN=1, seq=${p.u}`,
-                    explanation: p => `<strong>动作:</strong> 客户端请求关闭连接。<br><strong>内容:</strong> FIN位置1，序号为 ${p.u}。<br><strong>状态:</strong> 客户端进入 <strong>FIN-WAIT-1</strong>。`,
-                    clientState: 'FIN-WAIT-1', serverState: 'ESTABLISHED'
-                },
-                {
-                    from: 'server', to: 'client',
-                    text: p => `ACK=1, ack=${formatAck(p.u)}`,
-                    explanation: p => `<strong>动作:</strong> 服务器确认收到关闭请求。<br><strong>内容:</strong> 发送ACK报文，确认号为 ${formatAck(p.u)}。<br><strong>状态:</strong> 服务器进入 <strong>CLOSE-WAIT</strong>，客户端进入 <strong>FIN-WAIT-2</strong>。连接处于半关闭状态。`,
-                    clientState: 'FIN-WAIT-2', serverState: 'CLOSE-WAIT'
-                },
-                {
-                    from: 'server', to: 'client',
-                    text: p => `FIN=1, ACK=1, seq=${p.w}, ack=${formatAck(p.u)}`,
-                    explanation: p => `<strong>动作:</strong> 服务器准备就绪，也请求关闭连接。<br><strong>内容:</strong> 发送FIN和ACK，序号为 ${p.w}。<br><strong>状态:</strong> 服务器进入 <strong>LAST-ACK</strong>。`,
-                    clientState: 'FIN-WAIT-2', serverState: 'LAST-ACK'
-                },
-                {
-                    from: 'client', to: 'server',
-                    text: p => `ACK=1, ack=${formatAck(p.w)}`,
-                    explanation: p => `<strong>动作:</strong> 客户端发送最终确认。<br><strong>内容:</strong> 发送最后的ACK，确认号为 ${formatAck(p.w)}。<br><strong>状态:</strong> 客户端进入 <strong>TIME-WAIT</strong> (等待2MSL)，服务器收到后进入 <strong>CLOSED</strong>。`,
-                    clientState: 'TIME-WAIT', serverState: 'CLOSED'
-                }
+                { from: 'client', to: 'server', type: 'FIN', explanation: `<strong>第1步:</strong> 客户端请求关闭。<br>发送FIN报文，进入 <strong>FIN-WAIT-1</strong> 状态。`, clientState: 'FIN-WAIT-1', serverState: 'ESTABLISHED' },
+                { from: 'server', to: 'client', type: 'ACK', explanation: `<strong>第2步:</strong> 服务器确认。<br>发送ACK，进入 <strong>CLOSE-WAIT</strong>。客户端收到后进入 <strong>FIN-WAIT-2</strong>。`, clientState: 'FIN-WAIT-2', serverState: 'CLOSE-WAIT' },
+                { from: 'server', to: 'client', type: 'FIN', explanation: `<strong>第3步:</strong> 服务器请求关闭。<br>数据发送完毕，发送FIN，进入 <strong>LAST-ACK</strong> 状态。`, clientState: 'FIN-WAIT-2', serverState: 'LAST-ACK' },
+                { from: 'client', to: 'server', type: 'ACK', explanation: `<strong>第4步:</strong> 客户端最终确认。<br>发送ACK，客户端进入 <strong>TIME-WAIT</strong>。服务器收到后进入 <strong>CLOSED</strong>。`, clientState: 'TIME-WAIT', serverState: 'CLOSED' }
             ],
             initialClientState: 'ESTABLISHED', initialServerState: 'ESTABLISHED'
         }
@@ -324,91 +208,132 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let currentFlow = 'establish';
     let currentStep = -1;
-    let currentParams = getParams();
 
-    const tabEstablish = document.getElementById('tab-establish');
-    const tabRelease = document.getElementById('tab-release');
-    const nextStepBtn = document.getElementById('next-step-btn');
-    const resetBtn = document.getElementById('reset-btn');
-    
-    const clientStatesEl = document.getElementById('client-states');
-    const serverStatesEl = document.getElementById('server-states');
-    const messageContainerEl = document.getElementById('message-container');
-    const explanationTextEl = document.getElementById('explanation-text');
+    // DOM Elements
+    const elements = {
+        tabEstablish: document.getElementById('tab-establish'),
+        tabRelease: document.getElementById('tab-release'),
+        nextStepBtn: document.getElementById('next-step-btn'),
+        resetBtn: document.getElementById('reset-btn'),
+        clientNode: document.getElementById('client-node'),
+        serverNode: document.getElementById('server-node'),
+        clientState: document.getElementById('client-state'),
+        serverState: document.getElementById('server-state'),
+        packet: document.getElementById('packet'),
+        explanationContainer: document.getElementById('explanation-container'),
+    };
+
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
     function switchFlow(flowName) {
         currentFlow = flowName;
-        tabEstablish.classList.toggle('active', flowName === 'establish');
-        tabRelease.classList.toggle('active', flowName === 'release');
+        elements.tabEstablish.classList.toggle('active', flowName === 'establish');
+        elements.tabRelease.classList.toggle('active', flowName === 'release');
         resetFlow();
+    }
+
+    function renderExplanation() {
+        const flowData = flows[currentFlow];
+        elements.explanationContainer.innerHTML = '';
+        flowData.steps.forEach((step, index) => {
+            const el = document.createElement('div');
+            el.id = `explanation-step-${index}`;
+            el.className = 'step-explanation p-3 rounded-md border border-gray-200';
+            el.innerHTML = step.explanation;
+            elements.explanationContainer.appendChild(el);
+        });
     }
 
     function resetFlow() {
         currentStep = -1;
-        currentParams = getParams();
         const flowData = flows[currentFlow];
         
-        clientStatesEl.innerHTML = `<div class="p-2 bg-gray-200 rounded-md">${flowData.initialClientState}</div>`;
-        serverStatesEl.innerHTML = `<div class="p-2 bg-gray-200 rounded-md">${flowData.initialServerState}</div>`;
-        messageContainerEl.innerHTML = '';
-        explanationTextEl.innerHTML = '参数已更新。请点击“下一步”开始。';
-        nextStepBtn.disabled = false;
-        nextStepBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        elements.clientState.textContent = flowData.initialClientState;
+        elements.serverState.textContent = flowData.initialServerState;
+        
+        elements.clientNode.classList.remove('active');
+        elements.serverNode.classList.remove('active');
+        
+        elements.packet.style.opacity = 0;
+        
+        elements.nextStepBtn.disabled = false;
+        
+        renderExplanation();
     }
 
-    function executeNextStep() {
+    async function executeNextStep() {
         currentStep++;
         const flowData = flows[currentFlow];
         
         if (currentStep >= flowData.steps.length) {
-            explanationTextEl.innerHTML = '流程结束。';
-            nextStepBtn.disabled = true;
-            nextStepBtn.classList.add('opacity-50', 'cursor-not-allowed');
             return;
         }
 
+        elements.nextStepBtn.disabled = true;
         const stepData = flowData.steps[currentStep];
 
-        clientStatesEl.innerHTML = `<div class="p-2 bg-sky-100 rounded-md">${stepData.clientState}</div>`;
-        serverStatesEl.innerHTML = `<div class="p-2 bg-purple-100 rounded-md">${stepData.serverState}</div>`;
+        // Highlight active explanation
+        document.querySelectorAll('.step-explanation').forEach(el => el.classList.remove('active'));
+        document.getElementById(`explanation-step-${currentStep}`).classList.add('active');
 
-        const arrowDiv = document.createElement('div');
-        const directionClass = stepData.from === 'client' ? 'to-server' : 'to-client';
-        const textContent = stepData.text(currentParams);
-        const colorClass = textContent.includes('SYN') ? 'text-blue-500' : (textContent.includes('FIN') ? 'text-red-500' : 'text-gray-600');
-        
-        arrowDiv.className = `message-arrow h-16 flex items-center justify-center font-mono text-sm px-2 ${directionClass} ${colorClass}`;
-        arrowDiv.innerHTML = `
-            <div class="arrow-line"></div>
-            <span class="z-10 bg-white px-2">${textContent}</span>
-            <div class="arrow-head"></div>
-        `;
-        messageContainerEl.appendChild(arrowDiv);
-        
-        setTimeout(() => {
-            arrowDiv.classList.add('visible');
-        }, 50);
+        // Configure packet
+        elements.packet.className = 'packet'; // Reset classes
+        if (stepData.type.includes('FIN')) elements.packet.classList.add('fin');
+        if (stepData.type.includes('SYN')) elements.packet.classList.add('syn');
+        elements.packet.textContent = stepData.type;
 
-        explanationTextEl.innerHTML = stepData.explanation(currentParams);
+        // Animate packet
+        const isClientToServer = stepData.from === 'client';
+        elements.packet.style.transition = 'none';
+        elements.packet.style.left = isClientToServer ? 'calc(15% + 120px)' : 'calc(85% - 120px - 40px)';
+        
+        await sleep(50);
+        elements.packet.style.transition = 'all 1.5s cubic-bezier(0.5, 0, 0.5, 1)';
+        elements.packet.style.opacity = 1;
+
+        elements.packet.style.left = isClientToServer ? 'calc(85% - 40px)' : '15%';
+
+        // Highlight sender node
+        if (isClientToServer) {
+            elements.clientNode.classList.add('active');
+            elements.serverNode.classList.remove('active');
+        } else {
+            elements.serverNode.classList.add('active');
+            elements.clientNode.classList.remove('active');
+        }
+
+        await sleep(1500); // Wait for packet to arrive
+
+        // Update states and highlight receiver
+        elements.clientState.textContent = stepData.clientState;
+        elements.serverState.textContent = stepData.serverState;
+        
+        if (isClientToServer) {
+            elements.serverNode.classList.add('active');
+        } else {
+            elements.clientNode.classList.add('active');
+        }
+        
+        elements.packet.style.opacity = 0;
+        
+        await sleep(500);
+
+        if (currentStep < flowData.steps.length - 1) {
+            elements.nextStepBtn.disabled = false;
+        } else {
+             // End of flow
+             await sleep(500);
+             elements.clientNode.classList.remove('active');
+             elements.serverNode.classList.remove('active');
+        }
     }
 
-    tabEstablish.addEventListener('click', () => switchFlow('establish'));
-    tabRelease.addEventListener('click', () => switchFlow('release'));
-    nextStepBtn.addEventListener('click', executeNextStep);
-    resetBtn.addEventListener('click', resetFlow);
+    elements.tabEstablish.addEventListener('click', () => switchFlow('establish'));
+    elements.tabRelease.addEventListener('click', () => switchFlow('release'));
+    elements.nextStepBtn.addEventListener('click', executeNextStep);
+    elements.resetBtn.addEventListener('click', resetFlow);
 
-    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-        anchor.addEventListener('click', function (e) {
-            e.preventDefault();
-            const targetElement = document.querySelector(this.getAttribute('href'));
-            if(targetElement) {
-                targetElement.scrollIntoView({
-                    behavior: 'smooth'
-                });
-            }
-        });
-    });
-
+    // Initial setup
     switchFlow('establish');
 });
 </script>
