@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>无线局域网(WLAN)交互式探索指南</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Slate & Sky -->
+    <!-- 
+        Application Structure Plan: 本应用设计为单页垂直滚动式布局。此结构根据学习的逻辑递进关系进行组织：从宏观的“网络架构”入手，接着探讨无线信道的“核心挑战”（隐蔽站/暴露站问题），然后深入剖析为解决这些挑战而设计的“CSMA/CA协议”和“RTS/CTS机制”，再解构具体的“MAC帧格式”，最后以“物理层标准”对比收尾。每个部分都是一个独立的卡片式模块，包含简介、交互式演示和关键点总结，引导用户由浅入深地构建知识体系。这种结构比传统的文档或标签页式布局更符合学习和探索的自然流程。
+    -->
+    <!-- 
+        Visualization & Content Choices: 
+        1. Report Info: WLAN架构 (BSS/ESS/Ad-hoc)。Goal: 组织与告知。Viz/Method: 使用HTML/CSS构建的动态图解，用户点击不同架构按钮可切换视图。Justification: 直观展示不同架构的组成和连接关系，比静态图片更清晰。Interaction: 点击切换。Library: Vanilla JS。
+        2. Report Info: 隐蔽站/暴露站问题。Goal: 解释原因。Viz/Method: 简约的CSS动画演示。Justification: 动态展示信号范围和碰撞/等待的发生过程，让抽象问题具体化。Interaction: 自动播放动画。Library: CSS Animations。
+        3. Report Info: CSMA/CA协议。Goal: 演示过程。Viz/Method: 交互式时间轴模拟器。Justification: 这是全篇核心，通过模拟多站点争用信道、退避、冻结计时器的过程，将复杂的协议规则转化为可观察的事件序列。Interaction: 用户启动模拟，观察日志。Library: Vanilla JS。
+        4. Report Info: RTS/CTS握手。Goal: 演示过程。Viz/Method: 分步式动画。Justification: 清晰展示RTS/CTS如何通过设置NAV来“预约”信道并解决隐蔽站问题。Interaction: 用户点击按钮控制步骤。Library: Vanilla JS。
+        5. Report Info: 802.11 MAC帧地址。Goal: 解释与比较。Viz/Method: 交互式帧结构分解图。Justification: 这是理解WLAN数据流的关键难点。通过让用户选择不同场景（如站到AP），动态更新帧内地址字段的含义，将复杂的地址逻辑清晰呈现。Interaction: 下拉菜单选择场景。Library: Vanilla JS。
+        6. Report Info: 802.11物理层标准。Goal: 比较与告知。Viz/Method: 响应式条形图。Justification: 直观对比各标准在速率上的差异。Interaction: 悬停显示详细信息。Library: Chart.js。
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #f1f5f9; scroll-behavior: smooth; }
+        .content-card { background-color: white; border-radius: 0.75rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .interactive-area { position: relative; width: 100%; min-height: 350px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem; overflow: hidden; }
+        .station-node {
+            position: absolute;
+            display: flex; flex-direction: column; align-items: center;
+            transition: all 0.5s ease-in-out;
+            z-index: 10;
+        }
+        .station-icon { font-size: 2.5rem; line-height: 1; }
+        .station-label { font-size: 0.75rem; font-weight: 500; background: rgba(255,255,255,0.8); backdrop-filter: blur(2px); padding: 2px 6px; border-radius: 4px; margin-top: 4px; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        .packet {
+            position: absolute;
+            width: 24px; height: 24px;
+            border-radius: 50%;
+            opacity: 0;
+            transition: all 1.2s cubic-bezier(0.45, 0.05, 0.55, 0.95);
+            font-weight: bold;
+            color: white;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size: 10px;
+            z-index: 20;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .timeline { position: relative; width: 100%; height: 24px; background-color: #e2e8f0; border-radius: 12px; margin-top: 10px; }
+        .time-block { position: absolute; height: 100%; border-radius: 12px; transition: width 0.3s ease-out; display: flex; align-items: center; justify-content: center; color: white; font-size: 10px; font-weight: bold; }
+        .chart-container { position: relative; height: 400px; width: 100%; max-w-4xl; margin: auto; }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+
+        <header class="text-center mb-16">
+            <h1 class="text-4xl md:text-5xl font-extrabold text-slate-900 tracking-tight">无线局域网(WLAN)交互式探索指南</h1>
+            <p class="mt-4 text-lg text-slate-600 max-w-3xl mx-auto">从网络架构到复杂的MAC层协议，通过可视化与交互，深入理解Wi-Fi背后的核心技术。</p>
+        </header>
+
+        <!-- WLAN Architectures Section -->
+        <section id="architectures" class="content-card mb-12 p-6 md:p-8">
+            <h2 class="text-2xl md:text-3xl font-bold text-slate-800 mb-4">🏢 1. WLAN 体系结构</h2>
+            <p class="text-slate-600 mb-6 leading-relaxed">
+                无线局域网有两种主要的部署模式：最常见的是依赖<strong>接入点(AP)</strong>的<strong>基础设施模式</strong>，它可以构建从单个<strong>基本服务集(BSS)</strong>到跨楼宇的<strong>扩展服务集(ESS)</strong>；另一种是无需AP，由设备之间直接连接形成的<strong>自组(Ad hoc)网络</strong>。点击下方按钮切换并查看不同的网络结构。
+            </p>
+            <div class="flex justify-center space-x-4 mb-6">
+                <button onclick="drawArchitecture('bss')" class="arch-btn bg-sky-600 text-white font-bold py-2 px-5 rounded-lg shadow-sm transition-all hover:scale-105 hover:bg-sky-700">BSS</button>
+                <button onclick="drawArchitecture('ess')" class="arch-btn bg-slate-500 text-white font-bold py-2 px-5 rounded-lg shadow-sm transition-all hover:scale-105 hover:bg-slate-600">ESS</button>
+                <button onclick="drawArchitecture('adhoc')" class="arch-btn bg-slate-500 text-white font-bold py-2 px-5 rounded-lg shadow-sm transition-all hover:scale-105 hover:bg-slate-600">Ad hoc</button>
+            </div>
+            <div id="arch-diagram" class="interactive-area flex items-center justify-center p-4 transition-all duration-500"></div>
+        </section>
+        
+        <!-- CSMA/CA Simulator Section -->
+        <section id="csmaca" class="content-card mb-12 p-6 md:p-8">
+            <h2 class="text-2xl md:text-3xl font-bold text-slate-800 mb-4">🚦 2. CSMA/CA 碰撞避免机制模拟器</h2>
+            <p class="text-slate-600 mb-6 leading-relaxed">
+               为了避免碰撞，802.11采用CSMA/CA协议。核心思想是“先听再说，随机退避”。当信道由忙变闲时，所有想发送的站点都必须等待一个随机时间。此模拟器将展示多个站点如何通过此机制争用信道。
+            </p>
+            <div id="csmaca-sim-area" class="p-4 bg-slate-50 rounded-lg">
+                <div class="flex items-center justify-between mb-4">
+                     <div class="flex flex-wrap gap-x-4 gap-y-1 items-center text-xs">
+                        <span class="flex items-center"><span class="w-3 h-3 rounded-sm bg-blue-500 mr-1.5"></span>DIFS</span>
+                        <span class="flex items-center"><span class="w-3 h-3 rounded-sm bg-yellow-400 mr-1.5"></span>退避</span>
+                        <span class="flex items-center"><span class="w-3 h-3 rounded-sm bg-green-500 mr-1.5"></span>发送</span>
+                         <span class="flex items-center"><span class="w-3 h-3 rounded-sm bg-indigo-400 mr-1.5"></span>SIFS</span>
+                        <span class="flex items-center"><span class="w-3 h-3 rounded-sm bg-pink-500 mr-1.5"></span>ACK</span>
+                    </div>
+                    <button id="csmaca-start-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg shadow-sm transition-transform hover:scale-105">启动模拟</button>
+                </div>
+                <div id="csmaca-timelines" class="space-y-3"></div>
+                <div id="csmaca-log" class="mt-4 p-3 h-32 bg-gray-800 text-white font-mono text-xs rounded-md overflow-y-auto"></div>
+            </div>
+        </section>
+        
+        <!-- RTS/CTS Section -->
+        <section id="rtscts" class="content-card mb-12 p-6 md:p-8">
+            <h2 class="text-2xl md:text-3xl font-bold text-slate-800 mb-4">🤝 3. 预约信道: RTS/CTS 握手</h2>
+             <p class="text-slate-600 mb-6 leading-relaxed">
+               为了彻底解决隐蔽站问题，WLAN引入了可选的RTS/CTS机制。发送长数据前，源站先用一个短的<strong>请求发送(RTS)</strong>帧来“预约”信道。目的站回复一个<strong>允许发送(CTS)</strong>帧。网络中所有听到任一帧的站点，都会在指定时间内保持静默，从而为数据传输清空信道。
+            </p>
+            <div class="interactive-area" id="rts-cts-diagram"></div>
+            <div class="mt-6 flex flex-col md:flex-row items-center justify-between bg-slate-50 p-4 rounded-lg">
+                 <p id="rts-cts-desc" class="flex-grow text-slate-700 font-medium text-center md:text-left mb-4 md:mb-0">点击“开始”演示RTS/CTS握手过程。</p>
+                <div class="flex space-x-3">
+                    <button id="rts-cts-start-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg shadow-sm transition-transform hover:scale-105">开始 / 重置</button>
+                    <button id="rts-cts-next-btn" disabled class="bg-slate-400 text-white font-bold py-2 px-4 rounded-lg cursor-not-allowed">下一步</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- MAC Frame Section -->
+        <section id="mac-frame" class="content-card mb-12 p-6 md:p-8">
+            <h2 class="text-2xl md:text-3xl font-bold text-slate-800 mb-4">📦 4. 深入 802.11 MAC 帧</h2>
+            <p class="text-slate-600 mb-6 leading-relaxed">
+               802.11数据帧的结构比以太网复杂得多，其核心是4个地址字段。地址的含义并非固定，而是由“To DS”和“From DS”两个标志位决定。选择一个通信场景，观察地址字段如何动态变化。
+            </p>
+            <div class="p-4 bg-slate-50 rounded-lg">
+                <div class="mb-4">
+                    <label for="scenario-select" class="block text-sm font-medium text-gray-700 mb-1">选择通信场景:</label>
+                    <select id="scenario-select" class="w-full md:w-1/2 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="sta-to-ap">移动站 -> AP -> 有线网络</option>
+                        <option value="ap-to-sta">有线网络 -> AP -> 移动站</option>
+                        <option value="sta-to-sta">移动站A -> AP -> 移动站B</option>
+                    </select>
+                </div>
+                <div id="frame-container" class="bg-white p-4 rounded shadow-inner overflow-x-auto"></div>
+            </div>
+        </section>
+        
+        <!-- Standards Chart Section -->
+        <section id="standards" class="content-card p-6 md:p-8">
+            <h2 class="text-2xl md:text-3xl font-bold text-slate-800 mb-4">📊 5. 802.11 物理层标准演进</h2>
+            <p class="text-slate-600 mb-6 leading-relaxed">
+                从最初的802.11b到现在的Wi-Fi 6(802.11ax)，WLAN的速度和效率实现了巨大飞跃。这主要得益于物理层技术的不断革新，如OFDM和MIMO。下图展示了部分主流标准的最大理论速率。
+            </p>
+            <div class="chart-container">
+                <canvas id="standards-chart"></canvas>
+            </div>
+        </section>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        
+        // Helper functions moved to a shared scope
+        function createStationNode(container, label, icon, top, left) {
+            const node = document.createElement('div');
+            node.className = 'station-node';
+            node.style.top = top;
+            node.style.left = left;
+            node.style.transform = 'translate(-50%, -50%)';
+            node.innerHTML = `<span class="station-icon">${icon}</span><span class="station-label">${label}</span>`;
+            container.appendChild(node);
+            return node;
+        }
+
+        function createPacket(container, bgColor, text) {
+             const packet = document.createElement('div');
+             packet.className = `packet ${bgColor}`;
+             packet.textContent = text;
+             container.appendChild(packet);
+             return packet;
+        }
+
+        function moveElementTo(el, target) {
+            const targetRect = target.getBoundingClientRect();
+            const containerRect = el.parentElement.getBoundingClientRect();
+            el.style.top = `${targetRect.top - containerRect.top + (target.offsetHeight - el.offsetHeight)/2}px`;
+            el.style.left = `${targetRect.left - containerRect.left + (target.offsetWidth - el.offsetWidth)/2}px`;
+        }
+
+        function animatePacket(packet, from, to) {
+            moveElementTo(packet, from);
+            packet.style.opacity = '1';
+            setTimeout(() => {
+                moveElementTo(packet, to);
+            }, 100);
+        }
+
+        // Section 1: Architectures
+        const archDiagram = document.getElementById('arch-diagram');
+        const archBtns = document.querySelectorAll('.arch-btn');
+        window.drawArchitecture = function(type) {
+            archBtns.forEach(btn => {
+                btn.classList.remove('bg-sky-600');
+                btn.classList.add('bg-slate-500');
+            });
+            document.querySelector(`button[onclick="drawArchitecture('${type}')"]`).classList.add('bg-sky-600');
+            
+            archDiagram.style.opacity = 0;
+            setTimeout(() => {
+                let html = '';
+                if (type === 'bss') {
+                    html = `<div class="text-center">
+                        <div class="station-icon text-5xl mb-4">📡</div>
+                        <p class="font-bold">AP (接入点)</p>
+                        <div class="flex justify-center space-x-12 mt-8">
+                            <div><div class="station-icon">💻</div><p class="text-sm">站A</p></div>
+                            <div><div class="station-icon">📱</div><p class="text-sm">站B</p></div>
+                            <div><div class="station-icon">💻</div><p class="text-sm">站C</p></div>
+                        </div>
+                        <p class="mt-6 text-sm text-slate-600">所有站点都通过唯一的AP进行通信。</p>
+                    </div>`;
+                } else if (type === 'ess') {
+                    html = `<div class="text-center w-full">
+                        <div class="w-full h-1.5 bg-slate-700 my-4 rounded-full"><p class="text-sm font-bold -mt-6 text-slate-700">分配系统 (DS)</p></div>
+                        <div class="flex justify-around mt-8">
+                            <div>
+                               <div class="station-icon text-5xl mb-2">📡</div><p class="font-bold">AP 1</p>
+                               <div class="flex space-x-4 mt-4"><div><div class="station-icon">💻</div></div> <div><div class="station-icon">📱</div></div></div>
+                            </div>
+                            <div>
+                               <div class="station-icon text-5xl mb-2">📡</div><p class="font-bold">AP 2</p>
+                               <div class="flex space-x-4 mt-4"><div><div class="station-icon">💻</div></div> <div><div class="station-icon">📱</div></div></div>
+                            </div>
+                        </div>
+                        <p class="mt-6 text-sm text-slate-600">多个BSS通过一个骨干分配系统连接，扩大覆盖范围。</p>
+                    </div>`;
+                } else { // adhoc
+                     html = `<div class="text-center">
+                        <div class="flex justify-center space-x-12 items-center">
+                            <div><div class="station-icon">💻</div><p class="text-sm">站A</p></div>
+                            <p class="font-bold text-3xl text-slate-400">↔</p>
+                            <div><div class="station-icon">📱</div><p class="text-sm">站B</p></div>
+                             <p class="font-bold text-3xl text-slate-400">↔</p>
+                            <div><div class="station-icon">💻</div><p class="text-sm">站C</p></div>
+                        </div>
+                        <p class="mt-6 text-sm text-slate-600">站点之间直接通信，无需AP。</p>
+                    </div>`;
+                }
+                archDiagram.innerHTML = html;
+                archDiagram.style.opacity = 1;
+            }, 300);
+        };
+        drawArchitecture('bss');
+
+        // CSMA/CA Simulator Section
+        const csmacaStartBtn = document.getElementById('csmaca-start-btn');
+        const csmacaTimelinesDiv = document.getElementById('csmaca-timelines');
+        const csmacaLogDiv = document.getElementById('csmaca-log');
+        let simInterval;
+        
+        const STATIONS_CSMA = ['A', 'B', 'C', 'D'];
+        
+        function csmacaReset() {
+             if (simInterval) clearInterval(simInterval);
+             csmacaTimelinesDiv.innerHTML = '';
+             csmacaLogDiv.innerHTML = '';
+             STATIONS_CSMA.forEach(s => {
+                const timelineContainer = document.createElement('div');
+                timelineContainer.className = 'flex items-center space-x-2';
+                timelineContainer.innerHTML = `<span class="w-10 font-bold text-sm">站 ${s}:</span><div id="timeline-${s}" class="timeline"></div>`;
+                csmacaTimelinesDiv.appendChild(timelineContainer);
+             });
+             csmacaStartBtn.disabled = false;
+             csmacaStartBtn.textContent = '启动模拟';
+        }
+
+        function csmacaStart() {
+            csmacaReset();
+            csmacaStartBtn.disabled = true;
+            csmacaStartBtn.textContent = '模拟中...';
+
+            let time = 0;
+            let channelBusyUntil = 0;
+            let stationStates = {};
+            const DURATION = 100;
+            const SLOT_TIME = 1;
+            const DIFS = 5 * SLOT_TIME;
+            const SIFS = 2 * SLOT_TIME;
+            const ACK = 3 * SLOT_TIME;
+            const DATA = 20 * SLOT_TIME;
+
+            STATIONS_CSMA.forEach(s => {
+                stationStates[s] = { state: 'IDLE', backoff: 0, cw: 8 };
+            });
+
+            const log = (msg) => {
+                const p = document.createElement('p');
+                p.textContent = `[T=${time.toString().padStart(2, '0')}] ${msg}`;
+                csmacaLogDiv.prepend(p);
+            };
+
+            const addBlock = (s, duration, color) => {
+                const timeline = document.getElementById(`timeline-${s}`);
+                const block = document.createElement('div');
+                block.className = `time-block ${color}`;
+                block.style.left = `${time / DURATION * 100}%`;
+                block.style.width = '0%';
+                timeline.appendChild(block);
+                setTimeout(() => {
+                    block.style.width = `${duration / DURATION * 100}%`;
+                }, 50);
+            };
+
+            log('模拟开始，所有站点空闲。');
+            stationStates['A'].state = 'SENSING';
+            stationStates['C'].state = 'SENSING';
+            log('站 A 和 C 有数据要发送，进入感知状态。');
+
+            simInterval = setInterval(() => {
+                if (time >= DURATION) {
+                    clearInterval(simInterval);
+                    csmacaStartBtn.disabled = false;
+                    csmacaStartBtn.textContent = '再次启动';
+                    return;
+                }
+
+                const isChannelBusy = time < channelBusyUntil;
+
+                STATIONS_CSMA.forEach(s => {
+                    const state = stationStates[s];
+                    switch (state.state) {
+                        case 'SENSING':
+                            if (!isChannelBusy) {
+                                log(`站 ${s} 感知到信道空闲，等待DIFS。`);
+                                addBlock(s, DIFS, 'bg-blue-500');
+                                state.state = 'DIFS';
+                                state.waitUntil = time + DIFS;
+                            }
+                            break;
+                        case 'DIFS':
+                            if (time >= state.waitUntil) {
+                                if (time < channelBusyUntil) {
+                                    log(`站 ${s} 在DIFS期间发现信道变忙，返回感知。`);
+                                    state.state = 'SENSING';
+                                } else {
+                                    state.backoff = Math.floor(Math.random() * state.cw);
+                                    log(`站 ${s} DIFS结束，退避 ${state.backoff} 个时隙。`);
+                                    state.state = 'BACKOFF';
+                                    addBlock(s, state.backoff, 'bg-yellow-400');
+                                }
+                            }
+                            break;
+                        case 'BACKOFF':
+                            if (!isChannelBusy) {
+                                state.backoff--;
+                                if (state.backoff <= 0) {
+                                    log(`站 ${s} 退避结束，开始发送数据。`);
+                                    addBlock(s, DATA, 'bg-green-500');
+                                    state.state = 'TX';
+                                    channelBusyUntil = time + DATA;
+                                }
+                            } else {
+                                log(`站 ${s} 在退避中，信道忙，冻结计时器。`);
+                            }
+                            break;
+                        case 'TX':
+                            if (time >= channelBusyUntil) {
+                                log(`站 ${s} 发送完毕，等待SIFS+ACK。`);
+                                addBlock(s, SIFS, 'bg-indigo-400');
+                                addBlock(s, ACK, 'bg-pink-500');
+                                state.state = 'WAIT_ACK';
+                                channelBusyUntil = time + SIFS + ACK;
+                            }
+                            break;
+                        case 'WAIT_ACK':
+                            if (time >= channelBusyUntil) {
+                                log(`站 ${s} 收到ACK，成功！`);
+                                state.state = 'IDLE';
+                            }
+                            break;
+                    }
+                });
+                time++;
+            }, 300);
+        }
+        csmacaStartBtn.addEventListener('click', csmacaStart);
+        csmacaReset();
+        
+        // RTS/CTS Section
+        const rtsCtsDiagram = document.getElementById('rts-cts-diagram');
+        const rtsCtsStartBtn = document.getElementById('rts-cts-start-btn');
+        const rtsCtsNextBtn = document.getElementById('rts-cts-next-btn');
+        const rtsCtsDesc = document.getElementById('rts-cts-desc');
+        let rtsCtsStep = 0;
+        
+        let rtsCtsNodes = {};
+
+        function rtsCtsReset() {
+            rtsCtsDiagram.innerHTML = '';
+            rtsCtsNodes = {
+                a: createStationNode(rtsCtsDiagram, '源站A', '💻', '50%', '15%'),
+                b: createStationNode(rtsCtsDiagram, '目的站B', '💻', '50%', '85%'),
+                c: createStationNode(rtsCtsDiagram, '隐蔽站C', '💻', '15%', '85%'),
+            };
+            const labelC = rtsCtsNodes.c.querySelector('.station-label');
+            labelC.textContent = '站C (听不到A)';
+            labelC.classList.remove('bg-red-500', 'text-white');
+
+
+            rtsCtsStep = 0;
+            rtsCtsDesc.textContent = '点击“开始”演示RTS/CTS握手过程。';
+            rtsCtsNextBtn.disabled = true;
+            rtsCtsNextBtn.classList.add('bg-slate-400', 'cursor-not-allowed');
+            rtsCtsNextBtn.classList.remove('bg-sky-600', 'hover:bg-sky-700');
+        }
+
+        const rtsCtsSteps = [
+            { desc: '点击“开始”演示RTS/CTS握手过程。' },
+            { desc: '1. 源站A向目的站B发送RTS (请求发送) 帧。', action: () => {
+                const packet = createPacket(rtsCtsDiagram, 'bg-cyan-500', 'RTS');
+                animatePacket(packet, rtsCtsNodes.a, rtsCtsNodes.b);
+            }},
+            { desc: '2. B收到后，回复CTS (允许发送) 帧。站C听不到A的RTS，但能听到B的CTS。', action: () => {
+                const packet = createPacket(rtsCtsDiagram, 'bg-teal-500', 'CTS');
+                animatePacket(packet, rtsCtsNodes.b, rtsCtsNodes.a);
+                const packet2 = createPacket(rtsCtsDiagram, 'bg-teal-500', 'CTS');
+                animatePacket(packet2, rtsCtsNodes.b, rtsCtsNodes.c);
+            }},
+            { desc: '3. 站C收到CTS后，得知信道将被占用，于是设置NAV(网络分配向量)，在指定时间内不发送数据。', action: () => {
+                const label = rtsCtsNodes.c.querySelector('.station-label');
+                label.textContent = '站C: NAV Set!';
+                label.classList.add('bg-red-500', 'text-white');
+            }},
+            { desc: '4. 信道清空，站A可以安全地发送长数据帧给B，不会与C发生碰撞。', action: () => {
+                const packet = createPacket(rtsCtsDiagram, 'bg-green-500', 'DATA');
+                packet.style.width = '80px';
+                animatePacket(packet, rtsCtsNodes.a, rtsCtsNodes.b);
+            }},
+            { desc: '演示结束。' }
+        ];
+        
+        rtsCtsStartBtn.addEventListener('click', () => {
+            rtsCtsReset();
+            rtsCtsStep = 1;
+            rtsCtsDesc.textContent = rtsCtsSteps[rtsCtsStep].desc;
+            rtsCtsNextBtn.disabled = false;
+            rtsCtsNextBtn.classList.remove('bg-slate-400', 'cursor-not-allowed');
+            rtsCtsNextBtn.classList.add('bg-sky-600', 'hover:bg-sky-700');
+        });
+
+        rtsCtsNextBtn.addEventListener('click', () => {
+            if (rtsCtsStep > 0 && rtsCtsStep < rtsCtsSteps.length) {
+                if(rtsCtsSteps[rtsCtsStep].action) {
+                    rtsCtsSteps[rtsCtsStep].action();
+                }
+                rtsCtsStep++;
+                if (rtsCtsStep < rtsCtsSteps.length) {
+                    rtsCtsDesc.textContent = rtsCtsSteps[rtsCtsStep].desc;
+                }
+                if (rtsCtsStep >= rtsCtsSteps.length - 1) {
+                    rtsCtsNextBtn.disabled = true;
+                    rtsCtsNextBtn.classList.add('bg-slate-400', 'cursor-not-allowed');
+                    rtsCtsNextBtn.classList.remove('bg-sky-600', 'hover:bg-sky-700');
+                }
+            }
+        });
+
+        rtsCtsReset();
+
+        // Section 5: MAC Frame
+        const scenarioSelect = document.getElementById('scenario-select');
+        const frameContainer = document.getElementById('frame-container');
+        
+        function renderFrame() {
+            const scenario = scenarioSelect.value;
+            let toDS, fromDS, addr1, addr2, addr3, addr4;
+            let addr1Desc, addr2Desc, addr3Desc, addr4Desc;
+
+            if (scenario === 'sta-to-ap') {
+                toDS = 1; fromDS = 0;
+                addr1 = 'AP_MAC'; addr1Desc = '接收方 (AP)';
+                addr2 = 'STA_MAC'; addr2Desc = '发送方 (移动站)';
+                addr3 = 'Final_Dest_MAC'; addr3Desc = '最终目的';
+                addr4 = 'N/A'; addr4Desc = '不使用';
+            } else if (scenario === 'ap-to-sta') {
+                toDS = 0; fromDS = 1;
+                addr1 = 'STA_MAC'; addr1Desc = '接收方 (移动站)';
+                addr2 = 'AP_MAC'; addr2Desc = '发送方 (AP)';
+                addr3 = 'Original_Src_MAC'; addr3Desc = '原始源';
+                addr4 = 'N/A'; addr4Desc = '不使用';
+            } else { // sta-to-sta
+                toDS = 1; fromDS = 1; // This case is more complex, showing a common one
+                addr1 = 'AP_MAC'; addr1Desc = '接收方 (AP)';
+                addr2 = 'STA_A_MAC'; addr2Desc = '发送方 (源站A)';
+                addr3 = 'STA_B_MAC'; addr3Desc = '最终目的 (目的站B)';
+                addr4 = 'N/A'; addr4Desc = '不使用 (实际WDS会用)';
+            }
+            
+            const frameHTML = `
+                <div class="flex flex-nowrap text-center text-xs font-mono border border-gray-300 rounded">
+                    <div class="p-2 border-r bg-gray-100 flex-shrink-0">
+                        <div class="font-bold">帧控制</div><div>2</div>
+                    </div>
+                    <div class="p-2 border-r bg-gray-100 flex-shrink-0">
+                        <div class="font-bold">持续期</div><div>2</div>
+                    </div>
+                    <div class="p-2 border-r bg-sky-100 flex-shrink-0">
+                        <div class="font-bold">地址1</div><div>${addr1}</div><div class="text-sky-700">${addr1Desc}</div>
+                    </div>
+                    <div class="p-2 border-r bg-emerald-100 flex-shrink-0">
+                        <div class="font-bold">地址2</div><div>${addr2}</div><div class="text-emerald-700">${addr2Desc}</div>
+                    </div>
+                    <div class="p-2 border-r bg-amber-100 flex-shrink-0">
+                        <div class="font-bold">地址3</div><div>${addr3}</div><div class="text-amber-700">${addr3Desc}</div>
+                    </div>
+                    <div class="p-2 border-r bg-gray-100 flex-shrink-0">
+                        <div class="font-bold">序号</div><div>2</div>
+                    </div>
+                     <div class="p-2 border-r bg-violet-100 flex-shrink-0">
+                        <div class="font-bold">地址4</div><div>${addr4}</div><div class="text-violet-700">${addr4Desc}</div>
+                    </div>
+                    <div class="p-2 border-r bg-gray-200 flex-grow min-w-[200px]">
+                        <div class="font-bold">帧主体 (数据)</div><div>0-2312</div>
+                    </div>
+                    <div class="p-2 bg-gray-100 flex-shrink-0">
+                        <div class="font-bold">FCS</div><div>4</div>
+                    </div>
+                </div>
+                <div class="mt-4 flex space-x-4 text-sm">
+                    <div class="p-2 rounded ${toDS ? 'bg-green-200' : 'bg-red-200'}">To DS: ${toDS}</div>
+                    <div class="p-2 rounded ${fromDS ? 'bg-green-200' : 'bg-red-200'}">From DS: ${fromDS}</div>
+                </div>
+            `;
+            frameContainer.innerHTML = frameHTML;
+        }
+        
+        scenarioSelect.addEventListener('change', renderFrame);
+        renderFrame();
+
+        // Section 6: Standards Chart
+        const ctx = document.getElementById('standards-chart').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['802.11b', '802.11a/g', '802.11n', '802.11ac', '802.11ad'],
+                datasets: [{
+                    label: '最大理论速率 (Mbit/s)',
+                    data: [11, 54, 600, 1300, 7000], // Using 1.3 Gbit/s for ac for clarity
+                    backgroundColor: [
+                        'rgba(59, 130, 246, 0.6)',
+                        'rgba(16, 185, 129, 0.6)',
+                        'rgba(245, 158, 11, 0.6)',
+                        'rgba(239, 68, 68, 0.6)',
+                        'rgba(139, 92, 246, 0.6)'
+                    ],
+                    borderColor: [
+                        'rgba(59, 130, 246, 1)',
+                        'rgba(16, 185, 129, 1)',
+                        'rgba(245, 158, 11, 1)',
+                        'rgba(239, 68, 68, 1)',
+                        'rgba(139, 92, 246, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        type: 'logarithmic',
+                        ticks: {
+                            callback: function(value, index, values) {
+                                if (value === 10 || value === 100 || value === 1000 || value === 10000) {
+                                    return value.toString() + ' Mbit/s';
+                                }
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    title: { display: true, text: '802.11 标准速率对比 (对数坐标)'},
+                    tooltip: {
+                         callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.y !== null) {
+                                    label += context.parsed.y + ' Mbit/s';
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+    });
+    </script>
+</body>
+</html>

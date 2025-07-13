@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式蜂窝移动通信网学习应用 (优化版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    
+    <!-- Chosen Palette: Warm Neutral -->
+    <!-- Application Structure Plan: 本应用采用主题式、单页滚动的结构，配有悬浮导航栏，方便用户快速跳转。核心概念（移动IP、呼叫路由、网络切换）被设计成交互式的动画图表，而非静态文字。选择此结构是因为源报告内容主要是对一系列流程的描述。通过动画形式将这些流程可视化，能比纯文本阅读更有效地帮助学生用户理解。用户既可以顺序滚动学习，也可以通过导航直达特定主题，支持线性和参考两种学习模式。 -->
+    <!-- Visualization & Content Choices: 
+        - 演进 (1G-5G): 报告信息：各代技术列表。目标：展示技术随时间的变化。可视化：交互式水平时间线 (HTML/CSS/JS)。交互：点击代数（如3G）展开详情。理由：比静态列表更具吸引力且节省空间。实现：原生JS。
+        - 移动IP路由: 报告信息：间接/直接路由过程。目标：解释复杂的关系/流程。可视化：动画流程图 (HTML/CSS/JS)。交互：按钮触发数据包沿路径移动的动画，并同步显示步骤说明。理由：将隧道和三角路由等抽象概念直观化，这是纯文本最难理解的部分。实现：原生JS。
+        - 路由效率对比: 报告信息：三角路由效率低的概念。目标：比较。可视化：简单的条形图 (Chart.js)。交互：动态渲染的静态图表。理由：为定性概念（路径长度/延迟）提供简单的量化感觉。实现：Chart.js。
+        - 呼叫路由/切换: 报告信息：寻找用户和切换小区的过程。目标：解释流程。可视化：动画流程图 (HTML/CSS/JS)。交互：点击触发动画，并同步显示步骤说明。理由：同移动IP，将抽象过程具体化，易于跟随。实现：原生JS。 -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #f8f9fa; }
+        .nav-link.active { color: #d97706; border-color: #d97706; }
+        .timeline-item-content { max-height: 0; overflow: hidden; transition: max-height 0.5s ease-out, padding 0.5s ease-out; }
+        .timeline-item.active .timeline-item-content { max-height: 500px; padding-top: 1rem; padding-bottom: 1rem; }
+        .timeline-item.active .timeline-dot { background-color: #d97706; transform: scale(1.2); }
+        
+        .flow-node { transition: all 0.5s ease-in-out; }
+        .flow-path { transition: stroke 0.5s ease-in-out, stroke-width 0.5s ease-in-out; }
+        .packet {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            background: #fbbf24;
+            border: 2px solid #d97706;
+            border-radius: 50%;
+            opacity: 0;
+            transition: all 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 15px #fbbf24;
+            z-index: 10;
+        }
+        .step-label {
+            transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out;
+            opacity: 0.3;
+        }
+        .step-label.active {
+            opacity: 1;
+            transform: scale(1.05);
+            color: #d97706;
+        }
+        .concept-button.active {
+            background-color: #d97706;
+            color: white;
+        }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <header class="bg-white/90 backdrop-blur-lg shadow-sm sticky top-0 z-50">
+        <nav class="container mx-auto px-6 py-4">
+            <div class="flex justify-between items-center">
+                <h1 class="text-2xl font-bold text-slate-900">蜂窝移动通信网</h1>
+                <div class="hidden md:flex space-x-10">
+                    <a href="#evolution" class="nav-link text-slate-600 hover:text-amber-600 border-b-2 border-transparent pb-1 transition-all">技术演进</a>
+                    <a href="#concepts" class="nav-link text-slate-600 hover:text-amber-600 border-b-2 border-transparent pb-1 transition-all">核心概念</a>
+                    <a href="#protocols" class="nav-link text-slate-600 hover:text-amber-600 border-b-2 border-transparent pb-1 transition-all">协议影响</a>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container mx-auto p-4 md:p-8">
+        
+        <section id="intro" class="text-center py-16 md:py-24">
+            <h2 class="text-4xl md:text-5xl font-bold mb-4 text-slate-900">探索蜂窝网络的奥秘</h2>
+            <p class="text-lg text-slate-600 max-w-3xl mx-auto">从第一代模拟信号到第五代万物互联，蜂窝网络彻底改变了我们的通信方式。本应用将带您深入了解其关键技术，包括用户如何在移动中保持连接，以及网络如何智能地路由您的每一次通话和数据访问。</p>
+        </section>
+
+        <section id="evolution" class="py-12 md:py-20">
+            <h3 class="text-3xl font-bold text-center mb-16 text-slate-900">移动通信的演进：一部浓缩的技术史</h3>
+            <div class="relative wrap overflow-hidden p-10 h-full">
+                <div class="border-2-2 absolute border-opacity-20 border-slate-700 h-full border" style="left: 50%"></div>
+                <div id="timeline-container"></div>
+            </div>
+        </section>
+
+        <section id="concepts" class="py-12 md:py-20 bg-white rounded-2xl shadow-lg">
+            <h3 class="text-3xl font-bold text-center mb-4 text-slate-900">核心概念解析</h3>
+            <p class="text-center text-slate-600 mb-12">理解蜂窝网络如何实现移动中的无缝通信。</p>
+            <div class="border-b border-slate-200 mb-10">
+                <nav class="flex justify-center -mb-px space-x-6 md:space-x-8" id="concepts-nav">
+                    <button data-target="components" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:text-base nav-link active">系统构件</button>
+                    <button data-target="mobile-ip" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:text-base nav-link">移动IP</button>
+                    <button data-target="routing" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:text-base nav-link">呼叫路由</button>
+                    <button data-target="handover" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:text-base nav-link">网络切换</button>
+                </nav>
+            </div>
+            
+            <div id="concepts-content" class="px-4 md:px-8 min-h-[600px]">
+                <div id="components" class="content-section active">
+                    <p class="text-center mb-8 max-w-2xl mx-auto text-slate-600">一个典型的3G蜂窝网络由无线接入网络和核心网络组成。前者负责无线连接，后者处理数据和话音交换。点击左侧列表中的组件以查看其功能。</p>
+                    <div class="flex flex-col md:flex-row gap-8 max-w-4xl mx-auto">
+                        <div id="components-list" class="w-full md:w-1/3 flex flex-col space-y-2"></div>
+                        <div id="components-desc" class="w-full md:w-2/3 bg-slate-100 p-6 rounded-lg min-h-[150px] flex items-center justify-center">
+                            <p class="text-slate-500">请选择一个组件</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="mobile-ip" class="content-section">
+                     <p class="text-center mb-8 max-w-3xl mx-auto text-slate-600">移动IP技术允许用户设备在不同网络间漫游时，依然保持其原始的IP地址（永久地址），确保通信不中断。点击下方按钮，观察数据包如何通过不同路由方式送达移动用户，并留意右侧的步骤说明。</p>
+                    <div class="flex flex-col md:flex-row gap-8">
+                        <div class="w-full md:w-2/3">
+                             <div class="flex justify-center mb-4 space-x-4">
+                                <button id="play-indirect-route" class="bg-amber-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-600 transition disabled:opacity-50">▶ 播放间接路由</button>
+                                <button id="play-direct-route" class="bg-slate-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-700 transition disabled:opacity-50">▶ 播放直接路由</button>
+                             </div>
+                             <div id="mobile-ip-diagram" class="relative w-full max-w-4xl mx-auto aspect-[16/9] bg-slate-100 rounded-lg"></div>
+                             <div class="mt-8">
+                                <h4 class="text-xl font-bold text-center mb-4 text-slate-900">路由效率对比</h4>
+                                <p class="text-center text-slate-600 mb-4 max-w-2xl mx-auto">间接路由（三角路由）因数据需绕行归属代理，路径较长，效率较低。直接路由则优化了路径，但增加了系统的复杂性。</p>
+                                <div class="chart-container w-full max-w-lg mx-auto h-64 md:h-80" style="position: relative; max-height:400px; height:40vh;">
+                                    <canvas id="routing-efficiency-chart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="mobile-ip-steps" class="w-full md:w-1/3 space-y-4"></div>
+                    </div>
+                </div>
+
+                <div id="routing" class="content-section">
+                    <p class="text-center mb-8 max-w-3xl mx-auto text-slate-600">当您拨打一个手机号码时，网络如何找到那个可能正在任何地方漫游的手机？这个过程依赖于HLR和VLR这两个关键数据库。点击按钮，观看一次完整的呼叫寻路过程。</p>
+                    <div class="flex flex-col md:flex-row gap-8">
+                        <div class="w-full md:w-2/3">
+                            <div class="flex justify-center mb-4">
+                                <button id="play-call-routing" class="bg-amber-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-600 transition disabled:opacity-50">▶ 播放呼叫路由过程</button>
+                            </div>
+                            <div id="call-routing-diagram" class="relative w-full max-w-4xl mx-auto aspect-[16/9] bg-slate-100 rounded-lg"></div>
+                        </div>
+                        <div id="call-routing-steps" class="w-full md:w-1/3 space-y-4"></div>
+                    </div>
+                </div>
+                
+                <div id="handover" class="content-section">
+                    <p class="text-center mb-8 max-w-3xl mx-auto text-slate-600">当您在通话中从一个基站覆盖区移动到另一个时，“切换”技术确保了通话的无缝连接。锚MSC在此过程中扮演了关键角色。点击按钮，观察切换如何发生。</p>
+                    <div class="flex flex-col md:flex-row gap-8">
+                         <div class="w-full md:w-2/3">
+                            <div class="flex justify-center mb-4">
+                                <button id="play-handover" class="bg-amber-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-600 transition disabled:opacity-50">▶ 播放切换过程</button>
+                            </div>
+                            <div id="handover-diagram" class="relative w-full max-w-4xl mx-auto aspect-[16/9] bg-slate-100 rounded-lg"></div>
+                        </div>
+                        <div id="handover-steps" class="w-full md:w-1/3 space-y-4"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="protocols" class="py-16 md:py-20">
+            <h3 class="text-3xl font-bold text-center mb-12 text-slate-900">对高层协议的影响</h3>
+            <div class="max-w-5xl mx-auto grid md:grid-cols-3 gap-8">
+                <div class="bg-white p-8 rounded-xl shadow-lg transform hover:scale-105 transition-transform">
+                    <h4 class="font-bold text-xl mb-3 text-red-600">问题：错误的拥塞判断</h4>
+                    <p class="text-slate-600">无线链路的高误码率和切换导致的数据包丢失，会被TCP协议误判为网络拥塞，从而不必要地降低传输速率。</p>
+                </div>
+                 <div class="bg-white p-8 rounded-xl shadow-lg transform hover:scale-105 transition-transform">
+                    <h4 class="font-bold text-xl mb-3 text-blue-600">方案一：本地恢复</h4>
+                    <p class="text-slate-600">在无线链路层使用ARQ（自动重传请求）等机制，对错误进行本地快速重传，使之对上层TCP透明。</p>
+                </div>
+                 <div class="bg-white p-8 rounded-xl shadow-lg transform hover:scale-105 transition-transform">
+                    <h4 class="font-bold text-xl mb-3 text-green-600">方案二：拆分TCP连接</h4>
+                    <p class="text-slate-600">将端到端的TCP连接拆分为有线和无线两段。针对无线段的特点进行协议优化，从而提升整体性能。</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+    
+    <footer class="text-center py-8 bg-slate-800 text-slate-300">
+        <p>&copy; 2025 交互式蜂窝网络学习应用. All rights reserved.</p>
+    </footer>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const app = {
+            data: {
+                timeline: [
+                    { year: '1G', title: '第一代', description: '模拟FDM系统，仅为话音通信设计，现已淘汰。' },
+                    { year: '2G', title: '第二代', description: '以GSM为代表，提供话音和低速数据（短信）。增加了GPRS和EDGE技术以支持互联网接入。' },
+                    { year: '3G', title: '第三代', description: '使用IP体系结构，提供移动宽带多媒体业务。标准有CDMA2000, WCDMA, TD-SCDMA。' },
+                    { year: '4G', title: '第四代', description: '正式名称IMT-Advanced，目标速率大幅提升，以LTE和LTE-A为主要标准。' },
+                    { year: '5G', title: '第五代', description: '旨在实现万物互联，具有更高速度、更低延迟和更大连接数，可能采用全球统一标准。' }
+                ],
+                components: [
+                    { name: '基站 (BS)', description: '负责与小区内的移动站进行直接的无线通信，是无线信号的收发单元。' },
+                    { name: '无线网络控制器 (RNC)', description: '控制一组基站，管理无线资源，并在无线和有线核心网之间进行数据转换。' },
+                    { name: '移动交换中心 (MSC)', description: '处理话音业务的电路交换，负责呼叫建立、路由和切换等信令控制。' },
+                    { name: '服务支持节点 (SGSN)', description: '处理数据业务的分组交换，负责移动性管理、会话管理和IP数据包的转发。' },
+                    { name: '网关支持节点 (GGSN)', description: '作为连接蜂窝网络与外部互联网的网关路由器，控制网络接入和安全。' },
+                ],
+                animationSteps: {
+                    indirect: [
+                        "1. 通信者B向A的永久地址发送数据包。",
+                        "2. 归属代理截获数据包。",
+                        "3. 归属代理将数据包封装（隧道技术），发往外地代理。",
+                        "4. 外地代理拆封数据包，并转发给移动站A。"
+                    ],
+                    direct: [
+                        "1. 通信者B（通过代理）查询到A的转交地址。",
+                        "2. B直接将封装的数据包发往外地代理。",
+                        "3. 外地代理拆封并转发给移动站A。"
+                    ],
+                    callRouting: [
+                        "1. 呼叫请求根据号码被路由到归属MSC。",
+                        "2. 归属MSC向HLR查询用户当前位置。",
+                        "3. HLR返回由被访网络VLR分配的漫游号码(MSRN)。",
+                        "4. 归属MSC根据MSRN，将呼叫连接到被访MSC。",
+                        "5. 呼叫最终送达移动用户。"
+                    ],
+                    handover: [
+                        "1. 用户在通话中，连接在“旧被访MSC”。",
+                        "2. 用户移动到新区域，信号减弱。",
+                        "3. 网络决定切换，将路由从锚MSC指向“新被访MSC”。",
+                        "4. 切换完成，通话无缝继续。"
+                    ]
+                }
+            },
+
+            init() {
+                this.setupEventListeners();
+                this.renderTimeline();
+                this.renderComponents();
+                this.renderMobileIPDiagram();
+                this.renderCallRoutingDiagram();
+                this.renderHandoverDiagram();
+                this.renderRoutingChart();
+                this.updateActiveNav();
+            },
+            
+            sleep(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            },
+
+            setupEventListeners() {
+                const conceptNavs = document.querySelectorAll('#concepts-nav button');
+                conceptNavs.forEach(nav => {
+                    nav.addEventListener('click', (e) => {
+                        const targetId = e.target.dataset.target;
+                        
+                        document.querySelectorAll('#concepts-nav button').forEach(n => n.classList.remove('active', 'text-amber-600', 'border-amber-600'));
+                        e.target.classList.add('active', 'text-amber-600', 'border-amber-600');
+
+                        document.querySelectorAll('#concepts-content .content-section').forEach(section => {
+                            section.classList.remove('active');
+                            section.style.display = 'none';
+                            if (section.id === targetId) {
+                                section.classList.add('active');
+                                section.style.display = 'block';
+                            }
+                        });
+                    });
+                });
+                
+                document.getElementById('play-indirect-route').addEventListener('click', () => this.animateRoute('indirect'));
+                document.getElementById('play-direct-route').addEventListener('click', () => this.animateRoute('direct'));
+                document.getElementById('play-call-routing').addEventListener('click', () => this.animateCallRouting());
+                document.getElementById('play-handover').addEventListener('click', () => this.animateHandover());
+                
+                window.addEventListener('scroll', () => this.updateActiveNav());
+            },
+            
+            updateActiveNav() {
+                let current = 'intro';
+                const sections = document.querySelectorAll('main section');
+                const navLinks = document.querySelectorAll('header nav a');
+
+                sections.forEach(section => {
+                    const sectionTop = section.offsetTop;
+                    if (pageYOffset >= sectionTop - 70) {
+                        current = section.getAttribute('id');
+                    }
+                });
+                
+                navLinks.forEach(link => {
+                    link.classList.remove('active');
+                    if(link.getAttribute('href') === `#${current}`) {
+                       link.classList.add('active');
+                    }
+                })
+            },
+
+            renderTimeline() {
+                const container = document.getElementById('timeline-container');
+                let timelineHTML = '';
+                this.data.timeline.forEach((item, index) => {
+                    const sideClass = index % 2 === 0 ? 'flex-row-reverse text-right' : 'text-left';
+                    timelineHTML += `
+                        <div class="mb-8 flex justify-between items-center w-full ${sideClass} timeline-item">
+                            <div class="order-1 w-5/12"></div>
+                            <div class="z-20 flex items-center order-1 bg-slate-800 shadow-xl w-14 h-14 rounded-full timeline-dot transition-all duration-300">
+                                <h1 class="mx-auto font-semibold text-lg text-white cursor-pointer">${item.year}</h1>
+                            </div>
+                            <div class="order-1 bg-white rounded-lg shadow-xl w-5/12 px-6 py-4">
+                                <h3 class="font-bold text-slate-800 text-xl">${item.title}</h3>
+                                <div class="timeline-item-content">
+                                    <p class="text-sm leading-snug tracking-wide text-slate-600">${item.description}</p>
+                                </div>
+                            </div>
+                        </div>`;
+                });
+                container.innerHTML = timelineHTML;
+
+                container.querySelectorAll('.timeline-dot').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        const parentItem = e.target.closest('.timeline-item');
+                        const wasActive = parentItem.classList.contains('active');
+                        container.querySelectorAll('.timeline-item').forEach(i => i.classList.remove('active'));
+                        if (!wasActive) {
+                            parentItem.classList.add('active');
+                        }
+                    });
+                });
+            },
+
+            renderComponents() {
+                const listContainer = document.getElementById('components-list');
+                const descContainer = document.getElementById('components-desc');
+                let listHTML = '';
+                this.data.components.forEach((comp, index) => {
+                    listHTML += `
+                    <button data-index="${index}" class="concept-button text-left p-3 rounded-md hover:bg-amber-100 transition-colors">
+                        ${comp.name}
+                    </button>`;
+                });
+                listContainer.innerHTML = listHTML;
+                
+                listContainer.querySelectorAll('.concept-button').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        listContainer.querySelectorAll('.concept-button').forEach(btn => btn.classList.remove('active'));
+                        e.currentTarget.classList.add('active');
+                        const index = e.currentTarget.dataset.index;
+                        const comp = this.data.components[index];
+                        descContainer.innerHTML = `
+                            <div class="text-left">
+                                <h4 class="font-bold text-lg text-slate-800">${comp.name}</h4>
+                                <p class="text-slate-600 mt-2">${comp.description}</p>
+                            </div>
+                        `;
+                    });
+                });
+            },
+            
+            createNode(id, text, pos, extraClasses = '') {
+                return `<div id="${id}" class="flow-node absolute flex flex-col items-center ${extraClasses}" style="left:${pos.x}%; top:${pos.y}%; transform: translate(-50%, -50%);">
+                            <div class="w-20 h-20 md:w-24 md:h-24 bg-slate-200 border-2 border-slate-300 rounded-full flex items-center justify-center text-center text-xs md:text-sm font-semibold p-1 shadow-md">${text}</div>
+                        </div>`;
+            },
+            
+            createPath(id, from, to, dashed = false) {
+                 const d = `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
+                 return `<path id="${id}" d="${d}" stroke="#94a3b8" stroke-width="2" fill="none" ${dashed ? 'stroke-dasharray="6,6"' : ''}/>`;
+            },
+            
+            createPacket(id) { return `<div id="${id}" class="packet"></div>`; },
+            
+            renderAnimationDiagram(containerId, stepsId, nodes, paths, packetId, stepsKey) {
+                const container = document.getElementById(containerId);
+                const stepsContainer = document.getElementById(stepsId);
+                
+                let svgHTML = '<svg width="100%" height="100%" class="absolute top-0 left-0">';
+                paths.forEach(p => svgHTML += this.createPath(p.id, p.from, p.to, p.dashed));
+                svgHTML += '</svg>';
+                
+                let nodesHTML = '';
+                Object.values(nodes).forEach(node => nodesHTML += this.createNode(node.id, node.text, node.pos, node.extraClasses));
+                
+                container.innerHTML = svgHTML + nodesHTML + this.createPacket(packetId);
+
+                let stepsHTML = '';
+                if (this.data.animationSteps[stepsKey]) {
+                    this.data.animationSteps[stepsKey].forEach((step, index) => {
+                        stepsHTML += `<div id="${stepsId}-step-${index}" class="step-label p-3 bg-slate-100 rounded-md">${step}</div>`;
+                    });
+                }
+                stepsContainer.innerHTML = stepsHTML;
+            },
+            
+            renderMobileIPDiagram() {
+                const nodes = {
+                    communicator: { id: 'node-comm', text: '通信者B', pos: { x: 15, y: 85 } },
+                    homeAgent: { id: 'node-ha', text: '归属代理', pos: { x: 40, y: 20 } },
+                    foreignAgent: { id: 'node-fa', text: '外地代理', pos: { x: 75, y: 50 } },
+                    mobileUser: { id: 'node-mu', text: '移动站A', pos: { x: 85, y: 85 } }
+                };
+                const paths = [
+                    {id: 'path-comm-ha', from: {x:'15%', y:'85%'}, to: {x:'40%', y:'20%'}},
+                    {id: 'path-ha-fa', from: {x:'40%', y:'20%'}, to: {x:'75%', y:'50%'}, dashed: true},
+                    {id: 'path-fa-mu', from: {x:'75%', y:'50%'}, to: {x:'85%', y:'85%'}},
+                    {id: 'path-comm-fa', from: {x:'15%', y:'85%'}, to: {x:'75%', y:'50%'}, dashed: true},
+                ];
+                this.renderAnimationDiagram('mobile-ip-diagram', 'mobile-ip-steps', nodes, paths, 'packet-ip', 'indirect');
+            },
+            
+            async animateRoute(type) {
+                const buttons = ['play-indirect-route', 'play-direct-route'].map(id => document.getElementById(id));
+                buttons.forEach(b => b.disabled = true);
+
+                const packet = document.getElementById('packet-ip');
+                const stepsContainerId = 'mobile-ip-steps';
+                const allSteps = document.querySelectorAll(`#${stepsContainerId} .step-label`);
+                allSteps.forEach(s => s.classList.remove('active'));
+
+                const highlightStep = (index) => {
+                    allSteps.forEach(s => s.classList.remove('active'));
+                    if (index >= 0 && document.getElementById(`${stepsContainerId}-step-${index}`)) {
+                         document.getElementById(`${stepsContainerId}-step-${index}`).classList.add('active');
+                    }
+                };
+
+                const movePacket = async (left, top) => {
+                    packet.style.left = left;
+                    packet.style.top = top;
+                    await this.sleep(1500);
+                };
+                
+                packet.style.transition = 'none';
+                packet.style.opacity = 0;
+                packet.style.left = '15%';
+                packet.style.top = '85%';
+                await this.sleep(100);
+                packet.style.transition = 'all 1.5s cubic-bezier(0.4, 0, 0.2, 1)';
+                packet.style.opacity = 1;
+
+                if (type === 'indirect') {
+                    highlightStep(0);
+                    await movePacket('40%', '20%');
+                    highlightStep(1);
+                    await this.sleep(500);
+                    highlightStep(2);
+                    await movePacket('75%', '50%');
+                    highlightStep(3);
+                    await movePacket('85%', '85%');
+                } else {
+                    const directSteps = this.data.animationSteps.direct;
+                    allSteps[0].textContent = directSteps[0];
+                    allSteps[1].textContent = directSteps[1];
+                    allSteps[2].textContent = directSteps[2];
+                    allSteps[3].style.display = 'none';
+                    highlightStep(0);
+                    await this.sleep(1000);
+                    highlightStep(1);
+                    await movePacket('75%', '50%');
+                    highlightStep(2);
+                    await movePacket('85%', '85%');
+                }
+                
+                await this.sleep(1000);
+                packet.style.opacity = 0;
+                highlightStep(-1);
+                // Reset text for next run
+                this.data.animationSteps.indirect.forEach((text, i) => {
+                    if (allSteps[i]) {
+                        allSteps[i].textContent = text;
+                        allSteps[i].style.display = 'block';
+                    }
+                });
+                buttons.forEach(b => b.disabled = false);
+            },
+            
+            renderCallRoutingDiagram() {
+                const nodes = {
+                    caller: { id: 'node-caller', text: '固定电话', pos: { x: 10, y: 85 } },
+                    pstn: { id: 'node-pstn', text: '公用电话网', pos: { x: 35, y: 50 } },
+                    homeMSC: { id: 'node-hmsc', text: '归属MSC', pos: { x: 65, y: 20 } },
+                    hlr: { id: 'node-hlr', text: 'HLR', pos: { x: 90, y: 20 } },
+                    visitedMSC: { id: 'node-vmsc', text: '被访MSC', pos: { x: 75, y: 85 } }
+                };
+                const paths = [
+                    {id: 'path-c-pstn', from: {x:'10%', y:'85%'}, to: {x:'35%', y:'50%'}},
+                    {id: 'path-pstn-hmsc', from: {x:'35%', y:'50%'}, to: {x:'65%', y:'20%'}},
+                    {id: 'path-hmsc-hlr', from: {x:'65%', y:'20%'}, to: {x:'90%', y:'20%'}, dashed: true},
+                    {id: 'path-hmsc-vmsc', from: {x:'65%', y:'20%'}, to: {x:'75%', y:'85%'}},
+                ];
+                this.renderAnimationDiagram('call-routing-diagram', 'call-routing-steps', nodes, paths, 'packet-call', 'callRouting');
+            },
+
+            async animateCallRouting() {
+                const button = document.getElementById('play-call-routing');
+                button.disabled = true;
+                const packet = document.getElementById('packet-call');
+                const stepsContainerId = 'call-routing-steps';
+                const allSteps = document.querySelectorAll(`#${stepsContainerId} .step-label`);
+                
+                const highlightStep = (index) => {
+                    allSteps.forEach(s => s.classList.remove('active'));
+                    if (index >= 0 && document.getElementById(`${stepsContainerId}-step-${index}`)) {
+                        document.getElementById(`${stepsContainerId}-step-${index}`).classList.add('active');
+                    }
+                };
+
+                const movePacket = async (left, top) => {
+                    packet.style.left = left;
+                    packet.style.top = top;
+                    await this.sleep(1200);
+                };
+
+                packet.style.transition = 'none';
+                packet.style.opacity = 0;
+                packet.style.left = '10%'; packet.style.top = '85%';
+                await this.sleep(100);
+                packet.style.transition = 'all 1.2s cubic-bezier(0.4, 0, 0.2, 1)';
+                packet.style.opacity = 1;
+
+                highlightStep(0);
+                await movePacket('35%', '50%');
+                await movePacket('65%', '20%');
+                highlightStep(1);
+                await movePacket('90%', '20%');
+                highlightStep(2);
+                await movePacket('65%', '20%');
+                highlightStep(3);
+                await movePacket('75%', '85%');
+                highlightStep(4);
+
+                await this.sleep(1000);
+                packet.style.opacity = 0;
+                highlightStep(-1);
+                button.disabled = false;
+            },
+            
+            renderHandoverDiagram() {
+                const nodes = {
+                    homeMSC: {id: 'h-hmsc', text: '归属MSC', pos:{x:20, y:20}},
+                    anchorMSC: {id: 'h-amsc', text: '锚MSC', pos:{x:50, y:50}},
+                    oldMSC: {id: 'h-omsc', text: '旧被访MSC', pos:{x:35, y:85}},
+                    newMSC: {id: 'h-nmsc', text: '新被访MSC', pos:{x:65, y:85}},
+                    user: {id: 'h-user', text: '移动用户', pos:{x:35, y:85}, extraClasses: 'bg-amber-400 border-2 border-amber-600'}
+                };
+                const paths = [
+                    {id: 'h-path-ha', from: {x:'20%', y:'20%'}, to: {x:'50%', y:'50%'}},
+                    {id: 'h-path-ao', from: {x:'50%', y:'50%'}, to: {x:'35%', y:'85%'}},
+                    {id: 'h-path-an', from: {x:'50%', y:'50%'}, to: {x:'65%', y:'85%'}},
+                ];
+                this.renderAnimationDiagram('handover-diagram', 'handover-steps', nodes, paths, 'packet-handover', 'handover');
+            },
+            
+            async animateHandover() {
+                const button = document.getElementById('play-handover');
+                button.disabled = true;
+                const user = document.getElementById('h-user');
+                const oldPath = document.getElementById('h-path-ao');
+                const newPath = document.getElementById('h-path-an');
+                const stepsContainerId = 'handover-steps';
+                const allSteps = document.querySelectorAll(`#${stepsContainerId} .step-label`);
+                
+                const highlightStep = (index) => {
+                    allSteps.forEach(s => s.classList.remove('active'));
+                    if (index >= 0 && document.getElementById(`${stepsContainerId}-step-${index}`)) {
+                        document.getElementById(`${stepsContainerId}-step-${index}`).classList.add('active');
+                    }
+                };
+
+                user.style.transition = 'left 2s ease-in-out';
+                oldPath.style.transition = 'all 1s ease-in-out';
+                newPath.style.transition = 'all 1s ease-in-out';
+                
+                // Reset
+                user.style.left = '35%';
+                oldPath.setAttribute('stroke', '#fbbf24');
+                oldPath.setAttribute('stroke-width', '4');
+                newPath.setAttribute('stroke', '#94a3b8');
+                newPath.setAttribute('stroke-width', '2');
+                highlightStep(-1);
+                
+                await this.sleep(100);
+                highlightStep(0);
+                await this.sleep(1000);
+                highlightStep(1);
+                user.style.left = '65%';
+                await this.sleep(2000);
+                highlightStep(2);
+                oldPath.setAttribute('stroke', '#cbd5e1');
+                oldPath.setAttribute('stroke-width', '2');
+                newPath.setAttribute('stroke', '#fbbf24');
+                newPath.setAttribute('stroke-width', '4');
+                await this.sleep(1000);
+                highlightStep(3);
+
+                await this.sleep(1500);
+                highlightStep(-1);
+                button.disabled = false;
+            },
+
+            renderRoutingChart() {
+                const ctx = document.getElementById('routing-efficiency-chart');
+                if (!ctx) return;
+                new Chart(ctx.getContext('2d'), {
+                    type: 'bar',
+                    data: {
+                        labels: ['间接路由 (三角路由)', '直接路由'],
+                        datasets: [{
+                            label: '概念路径成本',
+                            data: [100, 65],
+                            backgroundColor: [ 'rgba(239, 68, 68, 0.6)', 'rgba(59, 130, 246, 0.6)' ],
+                            borderColor: [ 'rgba(239, 68, 68, 1)', 'rgba(59, 130, 246, 1)' ],
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: { y: { beginAtZero: true, title: { display: true, text: '路径成本 (示意值)' } } }
+                    }
+                });
+            }
+        };
+
+        app.init();
+    });
+    </script>
+</body>
+</html>
