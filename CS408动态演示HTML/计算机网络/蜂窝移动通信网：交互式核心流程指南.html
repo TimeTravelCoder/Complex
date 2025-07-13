@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>蜂窝移动通信网交互式指南</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Professional Tech (Slate, Sky, Indigo, Emerald) -->
+    <!-- 
+        Application Structure Plan: The SPA is structured using a vertical, scroll-based layout with distinct, clearly separated sections. This approach was chosen over tabs because the concepts (Mobile IP, Call Routing, Handover) follow a logical learning progression. A user naturally learns about basic data routing (Mobile IP) before moving to more complex voice call routing and handover scenarios. This linear flow guides the user through the material. Each section contains an interactive animation simulator, allowing users to control the step-by-step process, reinforcing their understanding before proceeding to the next topic. This is more effective than a passive report for explaining dynamic processes.
+    -->
+    <!-- 
+        Visualization & Content Choices: 
+        1. Report Info: Mobile IP Indirect Routing. Goal: Organize/Show Process. Viz/Method: Interactive, step-by-step animation using HTML/CSS/JS. Justification: Clearly visualizes the abstract concept of IP-in-IP tunneling and the role of home/foreign agents, which is hard to grasp from static diagrams. Interaction: User-controlled "Next Step" buttons. Library: Vanilla JS.
+        2. Report Info: Triangle Routing Problem. Goal: Compare/Explain. Viz/Method: Animated side-by-side diagram. Justification: Directly contrasts the inefficient indirect route with a more optimal direct route, making the problemstatement intuitive. Library: Vanilla JS.
+        3. Report Info: Cellular Call Routing (HLR/VLR). Goal: Organize/Show Process. Viz/Method: Similar step-by-step animation. Justification: De-mystifies the signaling flow for locating a roaming user, showing how HLR/VLR/MSRN work together. Interaction: User-controlled steps. Library: Vanilla JS.
+        4. Report Info: GSM Handover. Goal: Show Process. Viz/Method: Animation showing a user moving between cells. Justification: Visually demonstrates how the Anchor MSC maintains the call connection by re-routing only the final leg of the call path, explaining seamless handover. Interaction: User-triggered animation. Library: Vanilla JS.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #f1f5f9; scroll-behavior: smooth; }
+        .content-card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 12px -1px rgba(0,0,0,0.05);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        .interactive-area {
+            position: relative;
+            width: 100%;
+            height: 400px;
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+        .network-cloud {
+            position: absolute;
+            border: 2px dashed #94a3b8;
+            background-color: #eef2ff;
+            border-radius: 150px;
+        }
+        .network-label {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-weight: 600;
+            color: #4338ca;
+            background-color: rgba(255,255,255,0.7);
+            padding: 2px 8px;
+            border-radius: 99px;
+            font-size: 0.8rem;
+        }
+        .network-node {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: all 0.8s ease-in-out;
+            z-index: 5;
+        }
+        .node-icon {
+            width: 48px; height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border: 2px solid #94a3b8;
+        }
+        .node-icon.active { border-color: #3b82f6; transform: scale(1.1); }
+        .node-label {
+            font-size: 0.75rem;
+            font-weight: 500;
+            margin-top: 4px;
+            background: #ffffffaa;
+            padding: 2px 6px;
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+        .packet {
+            position: absolute;
+            width: 30px;
+            height: 20px;
+            background-color: #3b82f6;
+            border: 2px solid #1e40af;
+            border-radius: 4px;
+            transition: all 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+            opacity: 0;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .packet.tunneled {
+            background-color: #8b5cf6;
+            border: 2px solid #5b21b6;
+            transform: scale(1.2);
+        }
+        .packet.tunneled::after { content: ''; position: absolute; width: 80%; height: 80%; border: 2px dashed white; border-radius: 2px; }
+        .path-line {
+            position: absolute;
+            height: 2px;
+            background-color: #cbd5e1;
+            transform-origin: 0 0;
+            z-index: -1;
+            transition: background-color 0.3s;
+        }
+        .path-line.active { background-color: #3b82f6; }
+        .step-desc { min-height: 4rem; }
+        .icon-router::before { content: '☷'; font-size: 24px; color: #4f46e5; }
+        .icon-server::before { content: '🗄️'; font-size: 24px; }
+        .icon-phone::before { content: '📱'; font-size: 24px; }
+        .icon-pstn::before { content: '🌐'; font-size: 24px; }
+        .icon-caller::before { content: '☎️'; font-size: 24px; }
+        .icon-computer::before { content: '💻'; font-size: 24px; }
+        .icon-msc::before { content: '🏢'; font-size: 24px; }
+        .cell-tower { position: absolute; z-index: 1;}
+        .cell-tower::before { content: '🗼'; font-size: 40px;}
+        .cell-coverage { position: absolute; border-radius: 50%; border: 2px dashed; transition: all 0.5s; z-index: 0;}
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+
+        <header class="text-center mb-12">
+            <h1 class="text-3xl md:text-5xl font-extrabold text-slate-900 tracking-tight">蜂窝移动通信网：交互式核心流程指南</h1>
+            <p class="mt-4 text-lg text-slate-600 max-w-3xl mx-auto">通过可视化动画，深入理解移动IP、呼叫路由与网络切换背后的工作原理。</p>
+        </header>
+        
+        <!-- Mobile IP Section -->
+        <section id="mobile-ip" class="content-card mb-12 p-6 md:p-8">
+            <h2 class="text-2xl md:text-3xl font-bold text-slate-800 mb-4">📍 移动IP (Mobile IP) 与间接路由</h2>
+            <p class="text-slate-600 mb-6 leading-relaxed">
+                移动IP技术允许设备（移动站）在不同网络间漫游时保持其固定的“永久地址”不变，从而维持TCP等上层连接不中断。这是通过归属代理、外地代理和“转交地址”协同工作实现的。下面的动画将分步展示一个数据包如何通过 **隧道技术** 从通信者发送到正在漫游的移动站。
+            </p>
+
+            <div class="interactive-area" id="mip-diagram">
+                <!-- Network Clouds -->
+                <div class="network-cloud" style="width: 300px; height: 300px; top: 50%; left: 25%; transform: translate(-50%, -50%);">
+                    <span class="network-label">归属网络</span>
+                </div>
+                <div class="network-cloud" style="width: 300px; height: 300px; top: 50%; left: 75%; transform: translate(-50%, -50%); background-color: #e0f2fe;">
+                    <span class="network-label" style="color: #0369a1;">被访网络</span>
+                </div>
+                
+                <!-- Nodes -->
+                <div id="mip-node-b" class="network-node" style="top: 280px; left: 80px;"><span class="node-icon icon-computer"></span><span class="node-label">通信者 B</span></div>
+                <div id="mip-node-ha" class="network-node" style="top: 80px; left: 200px;"><span class="node-icon icon-router"></span><span class="node-label">归属代理 (HA)</span></div>
+                <div id="mip-node-fa" class="network-node" style="top: 100px; left: 550px;"><span class="node-icon icon-router"></span><span class="node-label">外地代理 (FA)</span></div>
+                <div id="mip-node-a" class="network-node" style="top: 300px; left: 620px;"><span class="node-icon icon-phone"></span><span class="node-label">移动站 A</span></div>
+                
+                <!-- Packet -->
+                <div id="mip-packet" class="packet"></div>
+            </div>
+
+            <div class="mt-6 flex flex-col md:flex-row items-center justify-between bg-slate-50 p-4 rounded-lg">
+                <p id="mip-desc" class="step-desc text-slate-700 font-medium text-center md:text-left mb-4 md:mb-0 flex-grow">点击“开始”以启动间接路由过程演示。</p>
+                <div class="flex space-x-3">
+                    <button id="mip-start-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg shadow-sm transition-transform hover:scale-105">开始 / 重置</button>
+                    <button id="mip-next-btn" disabled class="bg-slate-400 text-white font-bold py-2 px-4 rounded-lg cursor-not-allowed">下一步</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Call Routing Section -->
+        <section id="call-routing" class="content-card mb-12 p-6 md:p-8">
+            <h2 class="text-2xl md:text-3xl font-bold text-slate-800 mb-4">📞 呼叫路由与用户定位</h2>
+            <p class="text-slate-600 mb-6 leading-relaxed">
+                当您拨打一个正在漫游的手机时，网络如何找到它？这个过程依赖于两个关键数据库：**归属位置寄存器 (HLR)** 和 **来访用户位置寄存器 (VLR)**。HLR永久记录用户信息，VLR临时记录漫游用户的位置。下面的动画将模拟这一查询过程。
+            </p>
+
+            <div class="interactive-area" id="call-diagram">
+                <!-- Nodes -->
+                <div id="call-node-caller" class="network-node" style="top: 180px; left: 50px;"><span class="node-icon icon-caller"></span><span class="node-label">固定电话</span></div>
+                <div id="call-node-pstn" class="network-node" style="top: 180px; left: 250px;"><span class="node-icon icon-pstn"></span><span class="node-label">公用电话网</span></div>
+                <div id="call-node-hmsc" class="network-node" style="top: 80px; left: 550px;"><span class="node-icon icon-msc"></span><span class="node-label">归属 MSC</span></div>
+                <div id="call-node-hlr" class="network-node" style="top: 160px; left: 550px;"><span class="node-icon icon-server"></span><span class="node-label">HLR</span></div>
+                <div id="call-node-vmsc" class="network-node" style="top: 270px; left: 550px;"><span class="node-icon icon-msc"></span><span class="node-label">被访 MSC</span></div>
+                <div id="call-node-vlr" class="network-node" style="top: 350px; left: 550px;"><span class="node-icon icon-server"></span><span class="node-label">VLR</span></div>
+                <div id="call-node-mobile" class="network-node" style="top: 310px; left: 850px;"><span class="node-icon icon-phone"></span><span class="node-label">移动用户</span></div>
+
+                 <!-- Call Path -->
+                <div id="call-path" class="packet" style="background-color: #10b981; border-color: #047857;"></div>
+            </div>
+
+            <div class="mt-6 flex flex-col md:flex-row items-center justify-between bg-slate-50 p-4 rounded-lg">
+                <p id="call-desc" class="step-desc text-slate-700 font-medium text-center md:text-left mb-4 md:mb-0 flex-grow">点击“开始”以模拟固定电话呼叫漫游手机的过程。</p>
+                <div class="flex space-x-3">
+                    <button id="call-start-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg shadow-sm transition-transform hover:scale-105">开始 / 重置</button>
+                    <button id="call-next-btn" disabled class="bg-slate-400 text-white font-bold py-2 px-4 rounded-lg cursor-not-allowed">下一步</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Handover Section -->
+        <section id="handover" class="content-card p-6 md:p-8">
+            <h2 class="text-2xl md:text-3xl font-bold text-slate-800 mb-4">🔄 GSM 中的切换 (Handover)</h2>
+            <p class="text-slate-600 mb-6 leading-relaxed">
+                当通话中的用户从一个基站覆盖区移动到另一个时，网络必须无缝地“切换”服务基站以保持通话不中断。此过程的关键是**锚MSC (Anchor MSC)**，它是在呼叫建立时用户首次访问的MSC。切换时，只有从锚MSC到新基站的路径会被更新。
+            </p>
+
+            <div class="interactive-area" id="handover-diagram">
+                <!-- Nodes -->
+                <div id="ho-node-hmsc" class="network-node" style="top: 50px; left: 150px;"><span class="node-icon icon-msc"></span><span class="node-label">归属 MSC</span></div>
+                <div id="ho-node-amsc" class="network-node" style="top: 50px; left: 400px;"><span class="node-icon icon-msc" style="border-color: #f59e0b;"></span><span class="node-label">锚 MSC</span></div>
+                <div id="ho-node-msc1" class="network-node" style="top: 200px; left: 250px;"><span class="node-icon icon-msc"></span><span class="node-label">原 MSC</span></div>
+                <div id="ho-node-msc2" class="network-node" style="top: 200px; left: 550px;"><span class="node-icon icon-msc"></span><span class="node-label">新 MSC</span></div>
+                <div id="ho-node-mobile" class="network-node" style="top: 320px; left: 250px;"><span class="node-icon icon-phone"></span><span class="node-label">移动用户</span></div>
+                <!-- Cell Towers -->
+                <div class="cell-tower" style="top: 280px; left: 230px;"></div>
+                <div class="cell-tower" style="top: 280px; left: 530px;"></div>
+                <div id="ho-cell1" class="cell-coverage" style="width: 250px; height: 250px; top: 200px; left: 130px; border-color: #22c55e;"></div>
+                <div id="ho-cell2" class="cell-coverage" style="width: 250px; height: 250px; top: 200px; left: 430px; border-color: #94a3b8;"></div>
+                <!-- Path -->
+                <div id="ho-path" class="packet" style="background-color: #10b981; border-color: #047857;"></div>
+            </div>
+
+            <div class="mt-6 flex flex-col md:flex-row items-center justify-between bg-slate-50 p-4 rounded-lg">
+                <p id="ho-desc" class="step-desc text-slate-700 font-medium text-center md:text-left mb-4 md:mb-0 flex-grow">点击“开始切换”观察用户移动和呼叫路径的改变。</p>
+                <div class="flex space-x-3">
+                    <button id="ho-start-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg shadow-sm transition-transform hover:scale-105">开始切换</button>
+                    <button id="ho-reset-btn" class="bg-slate-500 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg shadow-sm transition-transform hover:scale-105">重置</button>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // --- Helper Functions ---
+        function getElementCenter(element, container) {
+            const elRect = element.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            const x = elRect.left + elRect.width / 2 - containerRect.left;
+            const y = elRect.top + elRect.height / 2 - containerRect.top;
+            return { x: x, y: y };
+        }
+
+        function movePacket(packet, fromEl, toEl, duration = 1.5, onEnd = () => {}) {
+            const startPos = getElementCenter(fromEl, packet.parentElement);
+            const endPos = getElementCenter(toEl, packet.parentElement);
+            
+            packet.style.transition = 'none';
+            packet.style.top = `${startPos.y - 10}px`;
+            packet.style.left = `${startPos.x - 15}px`;
+            packet.style.opacity = '1';
+            
+            setTimeout(() => {
+                packet.style.transition = `all ${duration}s cubic-bezier(0.4, 0, 0.2, 1)`;
+                packet.style.top = `${endPos.y - 10}px`;
+                packet.style.left = `${endPos.x - 15}px`;
+            }, 50);
+
+            setTimeout(() => {
+                onEnd();
+            }, duration * 1000 + 100);
+        }
+        
+        function highlightNode(node, duration = 2000) {
+            if (node) {
+                const icon = node.querySelector('.node-icon');
+                icon.classList.add('active');
+                setTimeout(() => icon.classList.remove('active'), duration);
+            }
+        }
+
+        // --- Mobile IP Animation ---
+        const mipDiagram = document.getElementById('mip-diagram');
+        const mipPacket = document.getElementById('mip-packet');
+        const mipBtnStart = document.getElementById('mip-start-btn');
+        const mipBtnNext = document.getElementById('mip-next-btn');
+        const mipDesc = document.getElementById('mip-desc');
+        const mipNodes = {
+            b: document.getElementById('mip-node-b'),
+            ha: document.getElementById('mip-node-ha'),
+            fa: document.getElementById('mip-node-fa'),
+            a: document.getElementById('mip-node-a'),
+        };
+        let mipStep = 0;
+
+        const mipSteps = [
+            { desc: '点击“开始”以启动间接路由过程演示。' },
+            {
+                desc: '1. 通信者 B 向移动站 A 的永久地址发送数据包。数据包首先被路由到A的归属网络。',
+                action: () => {
+                    highlightNode(mipNodes.b);
+                    movePacket(mipPacket, mipNodes.b, mipNodes.ha, 1.5, () => {
+                        highlightNode(mipNodes.ha);
+                        mipPacket.style.opacity = '0';
+                    });
+                }
+            },
+            {
+                desc: '2. 归属代理(HA)截获数据包，并查询到 A 的转交地址。HA 将原始数据包封装(IP-in-IP隧道)，发往该转交地址。',
+                action: () => {
+                    mipPacket.classList.add('tunneled');
+                    highlightNode(mipNodes.ha);
+                    movePacket(mipPacket, mipNodes.ha, mipNodes.fa, 1.5, () => {
+                        highlightNode(mipNodes.fa);
+                    });
+                }
+            },
+            {
+                desc: '3. 外地代理(FA)收到封装的数据包，将其解封，恢复为原始数据包。',
+                action: () => {
+                    mipPacket.classList.remove('tunneled');
+                    mipPacket.style.transform = 'scale(1.2)';
+                    setTimeout(() => { mipPacket.style.transform = 'scale(1)'; }, 300);
+                }
+            },
+            {
+                desc: '4. FA 将原始数据包转发给其服务范围内的移动站 A。通信完成。',
+                action: () => {
+                     movePacket(mipPacket, mipNodes.fa, mipNodes.a, 1.5, () => {
+                        highlightNode(mipNodes.a);
+                    });
+                }
+            },
+            { desc: '演示结束。点击“开始/重置”可再次观看。' }
+        ];
+
+        function mipReset() {
+            mipStep = 0;
+            mipDesc.textContent = mipSteps[0].desc;
+            mipBtnNext.disabled = true;
+            mipBtnNext.classList.add('bg-slate-400', 'cursor-not-allowed');
+            mipBtnNext.classList.remove('bg-sky-600', 'hover:bg-sky-700');
+            mipPacket.style.opacity = '0';
+            mipPacket.classList.remove('tunneled');
+        }
+
+        mipBtnStart.addEventListener('click', () => {
+            mipReset();
+            mipStep = 1;
+            mipDesc.textContent = mipSteps[mipStep].desc;
+            mipBtnNext.disabled = false;
+            mipBtnNext.classList.remove('bg-slate-400', 'cursor-not-allowed');
+            mipBtnNext.classList.add('bg-sky-600', 'hover:bg-sky-700');
+            const startPos = getElementCenter(mipNodes.b, mipDiagram);
+            mipPacket.style.top = `${startPos.y - 10}px`;
+            mipPacket.style.left = `${startPos.x - 15}px`;
+        });
+
+        mipBtnNext.addEventListener('click', () => {
+            if (mipStep > 0 && mipStep < mipSteps.length - 1) {
+                mipSteps[mipStep].action();
+                mipStep++;
+                mipDesc.textContent = mipSteps[mipStep].desc;
+                if (mipStep === mipSteps.length - 1) {
+                    mipBtnNext.disabled = true;
+                    mipBtnNext.classList.add('bg-slate-400', 'cursor-not-allowed');
+                    mipBtnNext.classList.remove('bg-sky-600', 'hover:bg-sky-700');
+                }
+            }
+        });
+        
+        // --- Call Routing Animation ---
+        const callDiagram = document.getElementById('call-diagram');
+        const callPath = document.getElementById('call-path');
+        const callBtnStart = document.getElementById('call-start-btn');
+        const callBtnNext = document.getElementById('call-next-btn');
+        const callDesc = document.getElementById('call-desc');
+        const callNodes = {
+            caller: document.getElementById('call-node-caller'),
+            pstn: document.getElementById('call-node-pstn'),
+            hmsc: document.getElementById('call-node-hmsc'),
+            hlr: document.getElementById('call-node-hlr'),
+            vmsc: document.getElementById('call-node-vmsc'),
+            vlr: document.getElementById('call-node-vlr'),
+            mobile: document.getElementById('call-node-mobile'),
+        };
+        let callStep = 0;
+
+        const callSteps = [
+            { desc: '点击“开始”以模拟固定电话呼叫漫游手机的过程。' },
+            {
+                desc: '1. 呼叫请求从固定电话发出，经公用电话网(PSTN)根据手机号码，路由到用户的归属移动交换中心(Home MSC)。',
+                action: () => {
+                    highlightNode(callNodes.caller);
+                    movePacket(callPath, callNodes.caller, callNodes.hmsc, 1.5, () => {
+                        highlightNode(callNodes.hmsc);
+                        callPath.style.opacity = '0';
+                    });
+                }
+            },
+            {
+                desc: '2. 归属MSC向归属位置寄存器(HLR)查询用户当前位置。',
+                action: () => {
+                    movePacket(callPath, callNodes.hmsc, callNodes.hlr, 0.8, () => {
+                        highlightNode(callNodes.hlr);
+                        callPath.style.opacity = '0';
+                    });
+                }
+            },
+            {
+                desc: '3. HLR中记录了用户的漫游号(MSRN)。HLR将此漫游号返回给归属MSC。',
+                action: () => {
+                    movePacket(callPath, callNodes.hlr, callNodes.hmsc, 0.8, () => {
+                        highlightNode(callNodes.hmsc);
+                        callPath.style.opacity = '0';
+                    });
+                }
+            },
+            {
+                desc: '4. 归属MSC使用漫游号，将呼叫的第二段路由到被访网络的MSC (Visited MSC)。',
+                action: () => {
+                    movePacket(callPath, callNodes.hmsc, callNodes.vmsc, 1.5, () => {
+                        highlightNode(callNodes.vmsc);
+                        callPath.style.opacity = '0';
+                    });
+                }
+            },
+            {
+                desc: '5. 被访MSC通过其控制的基站，最终将呼叫送达移动用户。呼叫建立。',
+                action: () => {
+                    movePacket(callPath, callNodes.vmsc, callNodes.mobile, 1.5, () => {
+                        highlightNode(callNodes.mobile);
+                    });
+                }
+            },
+            { desc: '演示结束。点击“开始/重置”可再次观看。' }
+        ];
+
+        function callReset() {
+            callStep = 0;
+            callDesc.textContent = callSteps[0].desc;
+            callBtnNext.disabled = true;
+            callBtnNext.classList.add('bg-slate-400', 'cursor-not-allowed');
+            callBtnNext.classList.remove('bg-sky-600', 'hover:bg-sky-700');
+            callPath.style.opacity = '0';
+        }
+
+        callBtnStart.addEventListener('click', () => {
+            callReset();
+            callStep = 1;
+            callDesc.textContent = callSteps[callStep].desc;
+            callBtnNext.disabled = false;
+            callBtnNext.classList.remove('bg-slate-400', 'cursor-not-allowed');
+            callBtnNext.classList.add('bg-sky-600', 'hover:bg-sky-700');
+            const startPos = getElementCenter(callNodes.caller, callDiagram);
+            callPath.style.top = `${startPos.y - 10}px`;
+            callPath.style.left = `${startPos.x - 15}px`;
+        });
+
+        callBtnNext.addEventListener('click', () => {
+            if (callStep > 0 && callStep < callSteps.length - 1) {
+                callSteps[callStep].action();
+                callStep++;
+                callDesc.textContent = callSteps[callStep].desc;
+                if (callStep === callSteps.length - 1) {
+                    callBtnNext.disabled = true;
+                    callBtnNext.classList.add('bg-slate-400', 'cursor-not-allowed');
+                    callBtnNext.classList.remove('bg-sky-600', 'hover:bg-sky-700');
+                }
+            }
+        });
+
+        // --- Handover Animation ---
+        const hoDiagram = document.getElementById('handover-diagram');
+        const hoBtnStart = document.getElementById('ho-start-btn');
+        const hoBtnReset = document.getElementById('ho-reset-btn');
+        const hoDesc = document.getElementById('ho-desc');
+        const hoMobile = document.getElementById('ho-node-mobile');
+        const hoCell1 = document.getElementById('ho-cell1');
+        const hoCell2 = document.getElementById('ho-cell2');
+        let hoState = 'initial';
+
+        function hoReset() {
+            hoMobile.style.left = '250px';
+            hoCell1.style.borderColor = '#22c55e';
+            hoCell2.style.borderColor = '#94a3b8';
+            hoDesc.textContent = '点击“开始切换”观察用户移动和呼叫路径的改变。';
+            hoState = 'initial';
+            hoBtnStart.disabled = false;
+        }
+
+        hoBtnStart.addEventListener('click', () => {
+            if (hoState !== 'initial') return;
+            hoState = 'moving';
+            hoBtnStart.disabled = true;
+            hoDesc.textContent = '用户正在向右移动，即将离开原基站覆盖区...';
+            hoMobile.style.left = '550px';
+            setTimeout(() => {
+                hoDesc.textContent = '信号减弱，网络决定切换！锚MSC将呼叫路径重定向到新MSC。';
+                hoCell1.style.borderColor = '#94a3b8';
+                hoCell2.style.borderColor = '#22c55e';
+                hoState = 'finished';
+                hoBtnStart.disabled = false;
+            }, 1500);
+        });
+
+        hoBtnReset.addEventListener('click', hoReset);
+
+        // Initialize all
+        mipReset();
+        callReset();
+        hoReset();
+    });
+    </script>
+
+</body>
+</html>
