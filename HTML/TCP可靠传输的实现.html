@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式TCP可靠传输学习应用</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chosen Palette: Warm Neutrals with Blue Accent -->
+    <!-- Application Structure Plan: 本应用采用单页主题式结构，分为三个核心交互模块：1. 滑动窗口模拟器，2. RTO计算器，3. SACK可视化工具。顶部设置导航栏，方便用户在不同主题间快速跳转。这种结构将复杂的TCP可靠性机制分解为独立的、可动手操作的部分，旨在通过互动实践加深对抽象概念的理解，而非简单复述报告内容。用户可以通过模拟数据发送、观察窗口变化、输入参数计算、点击接收数据等操作，主动探索协议的工作原理。 -->
+    <!-- Visualization & Content Choices: 1. **滑动窗口**: Goal: 展示窗口动态过程。Method: 使用HTML/CSS构建的可视化发送方/接收方缓存，通过JS控制状态变化。Interaction: 用户点击按钮模拟发送、确认、丢包等事件，观察窗口指针和状态的实时变化。Justification: 将静态的图5-15至5-19转化为动态模拟，直观易懂。 2. **RTO计算**: Goal: 揭示RTO的自适应计算逻辑。Method: Chart.js绘制折线图，展示RTT样本与RTO的变化关系。Interaction: 用户输入RTT样本值，应用实时计算并更新图表和分步公式。Justification: 将抽象的数学公式（5-4, 5-5, 5-6）变为交互式计算器，增强参与感。 3. **SACK机制**: Goal: 阐明SACK如何处理乱序分组。Method: 使用可点击的HTML网格模拟接收缓存。Interaction: 用户点击模拟接收乱序分组，应用动态生成并显示对应的ack号和SACK块信息。Justification: 将静态的图5-21转化为一个可交互实验，帮助用户理解SACK块的生成规则。 -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', 'Helvetica Neue', 'Helvetica', 'Arial', sans-serif; }
+        .packet { transition: all 0.3s ease-in-out; }
+        .packet-id { font-size: 0.7rem; }
+        .chart-container { position: relative; width: 100%; max-width: 800px; margin: auto; height: 350px; max-height: 50vh; }
+        .nav-link { transition: color 0.2s, border-bottom-color 0.2s; }
+        .nav-link.active { color: #3b82f6; border-bottom-color: #3b82f6; }
+        html { scroll-behavior: smooth; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <header class="bg-white/80 backdrop-blur-lg sticky top-0 z-50 shadow-sm">
+        <nav class="container mx-auto px-6 py-3 flex justify-between items-center">
+            <h1 class="text-xl font-bold text-slate-700">TCP 可靠传输核心机制</h1>
+            <div class="flex space-x-6 text-sm font-semibold">
+                <a href="#sliding-window" class="nav-link text-slate-600 hover:text-blue-500 border-b-2 border-transparent pb-1">滑动窗口</a>
+                <a href="#rto-calculator" class="nav-link text-slate-600 hover:text-blue-500 border-b-2 border-transparent pb-1">超时重传 (RTO)</a>
+                <a href="#sack-visualizer" class="nav-link text-slate-600 hover:text-blue-500 border-b-2 border-transparent pb-1">选择确认 (SACK)</a>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container mx-auto p-4 md:p-8">
+
+        <!-- Section 1: Sliding Window -->
+        <section id="sliding-window" class="mb-16 scroll-mt-24">
+            <h2 class="text-3xl font-bold mb-4 text-slate-800">5.6.1 以字节为单位的滑动窗口</h2>
+            <p class="mb-6 text-slate-600 max-w-4xl">
+                滑动窗口是TCP实现可靠传输与流量控制的核心。发送方维护一个“发送窗口”，代表其在无需等待确认的情况下可以连续发送的数据量。接收方则通过“接收窗口”来告知发送方自己还能接收多少数据。下面的模拟器将直观展示这一动态过程。您可以点击按钮来模拟数据包的发送、确认与丢失，观察发送窗口和接收窗口如何相应地滑动。
+            </p>
+            
+            <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                <!-- Controls -->
+                <div class="flex flex-wrap items-center justify-center gap-3 mb-6 border-b pb-4">
+                    <button id="send-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">发送1个包</button>
+                    <button id="ack-btn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">确认1个包</button>
+                    <button id="lose-packet-btn" class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">模拟丢包</button>
+                    <button id="timeout-btn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">模拟超时重传</button>
+                    <button id="reset-window-btn" class="bg-slate-500 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">重置</button>
+                </div>
+
+                <div id="window-simulation" class="space-y-8">
+                    <!-- Sender -->
+                    <div>
+                        <h3 class="font-bold text-lg mb-2 flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+                            发送方 (A)
+                        </h3>
+                        <div class="mb-2">
+                            <div class="flex justify-between text-sm font-medium text-slate-600">
+                                <span>发送窗口大小: <span id="sender-window-size" class="font-bold text-blue-600"></span> 字节</span>
+                                <span>可用窗口: <span id="usable-window-size" class="font-bold text-green-600"></span> 字节</span>
+                            </div>
+                        </div>
+                        <div id="sender-buffer" class="bg-slate-100 p-2 rounded-lg relative h-24 flex items-center">
+                            <!-- Packets will be injected here -->
+                        </div>
+                        <div class="flex justify-between mt-2 text-xs text-slate-500">
+                            <span id="p1-marker">↑ P1 (后沿)</span>
+                            <span id="p2-marker">↑ P2</span>
+                            <span id="p3-marker">↑ P3 (前沿)</span>
+                        </div>
+                        <div class="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                            <div class="flex items-center"><div class="w-4 h-4 rounded-full bg-slate-300 mr-2"></div>已确认</div>
+                            <div class="flex items-center"><div class="w-4 h-4 rounded-full bg-yellow-400 mr-2"></div>已发送, 未确认</div>
+                            <div class="flex items-center"><div class="w-4 h-4 rounded-full bg-sky-300 mr-2"></div>可用窗口 (未发送)</div>
+                            <div class="flex items-center"><div class="w-4 h-4 rounded-full bg-white border-2 border-slate-300 mr-2"></div>不允许发送</div>
+                        </div>
+                    </div>
+                    <!-- Receiver -->
+                    <div>
+                        <h3 class="font-bold text-lg mb-2 flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-500"><path d="M19 12H6m6-7l-7 7 7 7"/></svg>
+                            接收方 (B)
+                        </h3>
+                         <div class="mb-2">
+                            <div class="flex justify-between text-sm font-medium text-slate-600">
+                                <span>接收窗口大小: <span id="receiver-window-size" class="font-bold text-green-600"></span> 字节</span>
+                                <span>期望收到序号: <span id="expected-seq" class="font-bold text-red-600"></span></span>
+                            </div>
+                        </div>
+                        <div id="receiver-buffer" class="bg-slate-100 p-2 rounded-lg h-24 flex items-center">
+                            <!-- Packets will be injected here -->
+                        </div>
+                         <div class="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                            <div class="flex items-center"><div class="w-4 h-4 rounded-full bg-green-300 mr-2"></div>已接收, 已确认</div>
+                            <div class="flex items-center"><div class="w-4 h-4 rounded-full bg-white border-2 border-green-300 mr-2"></div>允许接收</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <hr class="my-12 border-slate-200">
+
+        <!-- Section 2: RTO Calculator -->
+        <section id="rto-calculator" class="mb-16 scroll-mt-24">
+            <h2 class="text-3xl font-bold mb-4 text-slate-800">5.6.2 超时重传时间 (RTO) 的选择</h2>
+            <p class="mb-6 text-slate-600 max-w-4xl">
+                TCP通过自适应算法动态计算超时重传时间（RTO）。这个过程涉及到对往返时间（RTT）的平滑计算。如果RTO太短，会造成不必要的重传；太长则会降低网络效率。下方是一个RTO计算器，您可以输入一系列RTT样本值，观察RTO如何根据RFC 6298推荐的算法进行调整。
+            </p>
+
+            <div class="grid md:grid-cols-2 gap-8">
+                <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                    <h3 class="font-bold text-lg mb-4">RTO 计算器</h3>
+                    <div class="flex gap-2 mb-4">
+                        <input type="number" id="rtt-input" placeholder="输入RTT样本值 (ms)" class="flex-grow p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                        <button id="add-rtt-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">计算</button>
+                    </div>
+                     <div class="flex gap-2 mb-4">
+                        <button id="reset-rto-btn" class="w-full bg-slate-500 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">重置计算</button>
+                     </div>
+                    <div id="rto-calculation-steps" class="space-y-2 text-sm bg-slate-100 p-4 rounded-lg">
+                        <p class="font-semibold text-slate-700">计算步骤:</p>
+                        <!-- Steps will be displayed here -->
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                     <div class="chart-container">
+                        <canvas id="rtoChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <hr class="my-12 border-slate-200">
+
+        <!-- Section 3: SACK Visualizer -->
+        <section id="sack-visualizer" class="scroll-mt-24">
+            <h2 class="text-3xl font-bold mb-4 text-slate-800">5.6.3 选择确认 (SACK)</h2>
+            <p class="mb-6 text-slate-600 max-w-4xl">
+                当网络中出现乱序或丢包时，如果仅使用累积确认，发送方可能会重传一些接收方已经收到的数据。选择确认（SACK）机制允许接收方明确告知发送方哪些不连续的数据块已被接收，从而实现更高效的重传。请点击下方的字节块来模拟接收乱序数据，观察TCP如何生成确认号（ack）和SACK选项。
+            </p>
+            <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                <h3 class="font-bold text-lg mb-4">SACK 可视化工具</h3>
+                <div id="sack-output" class="mb-4 bg-slate-100 p-4 rounded-lg flex flex-wrap justify-around items-center text-center">
+                    <div>
+                        <p class="text-sm text-slate-500">累积确认号 (ack)</p>
+                        <p id="sack-ack-num" class="text-2xl font-bold text-red-600">1</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-slate-500">SACK 选项 (已收到的不连续块)</p>
+                        <p id="sack-blocks" class="text-lg font-mono text-blue-600 h-8 flex items-center justify-center">-</p>
+                    </div>
+                </div>
+                <div id="sack-receiver-buffer" class="grid grid-cols-10 md:grid-cols-20 gap-1">
+                    <!-- SACK packets will be injected here -->
+                </div>
+                <button id="reset-sack-btn" class="mt-4 w-full bg-slate-500 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg shadow transition-transform transform hover:scale-105">重置</button>
+            </div>
+        </section>
+
+    </main>
+    
+    <footer class="text-center py-6 mt-8 bg-white border-t">
+        <p class="text-sm text-slate-500">一个基于教材内容的交互式学习应用</p>
+    </footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+    // --- Navigation ---
+    const navLinks = document.querySelectorAll('.nav-link');
+    const sections = document.querySelectorAll('main section');
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                navLinks.forEach(link => {
+                    link.classList.remove('active');
+                    if (link.getAttribute('href').substring(1) === entry.target.id) {
+                        link.classList.add('active');
+                    }
+                });
+            }
+        });
+    }, { threshold: 0.5 });
+
+    sections.forEach(section => observer.observe(section));
+
+
+    // --- Sliding Window Simulation ---
+    const packetSize = 100; // Each packet represents 100 bytes
+    const bufferCapacity = 30; // 30 packets, 3000 bytes
+    
+    let senderState = {};
+    let receiverState = {};
+
+    const senderBufferEl = document.getElementById('sender-buffer');
+    const receiverBufferEl = document.getElementById('receiver-buffer');
+    
+    function initWindowSim() {
+        senderState = {
+            buffer: Array.from({ length: bufferCapacity }, (_, i) => ({ id: i * packetSize + 1, status: 'unallowed' })),
+            p1: 1, // Start of window
+            p2: 1, // Next byte to send
+            p3: 2001, // End of window (20 * 100 + 1)
+        };
+        receiverState = {
+            buffer: Array.from({ length: bufferCapacity }, (_, i) => ({ id: i * packetSize + 1, status: 'unreceived' })),
+            rwnd: 2000,
+            expectedSeq: 1,
+        };
+        updateSenderWindowStatus();
+        updateReceiverWindowStatus();
+        renderWindowSim();
+    }
+
+    function updateSenderWindowStatus() {
+        senderState.buffer.forEach(p => {
+            if (p.id < senderState.p1) p.status = 'acked';
+            else if (p.id < senderState.p2) p.status = 'sent';
+            else if (p.id < senderState.p3) p.status = 'usable';
+            else p.status = 'unallowed';
+        });
+    }
+
+    function updateReceiverWindowStatus() {
+        const receiverWindowEnd = receiverState.expectedSeq + receiverState.rwnd;
+        receiverState.buffer.forEach(p => {
+             if (p.id < receiverState.expectedSeq) {
+                // This state is just for visualization, actual buffer might clear it
+                if (p.status !== 'received') p.status = 'received';
+            } else if (p.id < receiverWindowEnd) {
+                 if (p.status !== 'received') p.status = 'allowed';
+            } else {
+                p.status = 'unallowed-recv';
+            }
+        });
+    }
+
+    function renderWindowSim() {
+        // Sender
+        senderBufferEl.innerHTML = '';
+        senderState.buffer.forEach(p => {
+            const el = document.createElement('div');
+            el.className = 'packet w-8 h-16 rounded border-2 flex items-center justify-center';
+            const statusClasses = {
+                acked: 'bg-slate-300 border-slate-400 text-slate-500',
+                sent: 'bg-yellow-400 border-yellow-500',
+                usable: 'bg-sky-300 border-sky-400',
+                unallowed: 'bg-white border-slate-300'
+            };
+            el.classList.add(...statusClasses[p.status].split(' '));
+            el.innerHTML = `<span class="packet-id -rotate-90">${p.id}</span>`;
+            senderBufferEl.appendChild(el);
+        });
+        
+        const totalWidth = senderBufferEl.offsetWidth;
+        const p1_pos = (senderState.p1 / (bufferCapacity * packetSize)) * totalWidth;
+        const p2_pos = (senderState.p2 / (bufferCapacity * packetSize)) * totalWidth;
+        const p3_pos = (senderState.p3 / (bufferCapacity * packetSize)) * totalWidth;
+        
+        document.getElementById('p1-marker').style.marginLeft = `${p1_pos - 20}px`;
+        document.getElementById('p2-marker').style.marginLeft = `${p2_pos - p1_pos - 10}px`;
+        document.getElementById('p3-marker').style.marginLeft = `${p3_pos - p2_pos - 20}px`;
+        
+        document.getElementById('sender-window-size').textContent = senderState.p3 - senderState.p1;
+        document.getElementById('usable-window-size').textContent = Math.max(0, senderState.p3 - senderState.p2);
+
+        // Receiver
+        receiverBufferEl.innerHTML = '';
+        receiverState.buffer.forEach(p => {
+            const el = document.createElement('div');
+            el.className = 'packet w-8 h-16 rounded border-2 flex items-center justify-center';
+             const statusClasses = {
+                received: 'bg-green-300 border-green-400',
+                allowed: 'bg-white border-green-300',
+                'unallowed-recv': 'bg-white border-slate-300',
+                unreceived: 'bg-white border-slate-300'
+            };
+            el.classList.add(...statusClasses[p.status].split(' '));
+            if (p.status !== 'unreceived') {
+                el.innerHTML = `<span class="packet-id -rotate-90">${p.id}</span>`;
+            }
+            receiverBufferEl.appendChild(el);
+        });
+        document.getElementById('receiver-window-size').textContent = receiverState.rwnd;
+        document.getElementById('expected-seq').textContent = receiverState.expectedSeq;
+    }
+
+    document.getElementById('send-btn').addEventListener('click', () => {
+        if (senderState.p2 < senderState.p3) {
+            senderState.p2 += packetSize;
+            updateSenderWindowStatus();
+            renderWindowSim();
+        } else {
+            alert('可用窗口已用完，无法发送新数据！');
+        }
+    });
+
+    document.getElementById('ack-btn').addEventListener('click', () => {
+        const ackedPacket = senderState.buffer.find(p => p.id === senderState.p1 && p.status === 'sent');
+        if (ackedPacket) {
+            // Simulate receiver getting the packet and sending ACK
+            const packetIndex = receiverState.buffer.findIndex(p => p.id === senderState.p1);
+            if (packetIndex !== -1 && receiverState.buffer[packetIndex].id === receiverState.expectedSeq) {
+                 receiverState.buffer[packetIndex].status = 'received';
+                 receiverState.expectedSeq += packetSize;
+            }
+            
+            // Sender processes ACK
+            senderState.p1 += packetSize;
+            senderState.p3 += packetSize; // Assume receiver window doesn't shrink
+            
+            updateSenderWindowStatus();
+            updateReceiverWindowStatus();
+            renderWindowSim();
+        } else {
+            alert('没有可以确认的数据包！');
+        }
+    });
+    
+    document.getElementById('lose-packet-btn').addEventListener('click', () => {
+        if (senderState.p2 < senderState.p3) {
+            // Sender sends a packet, but it's "lost"
+            const sentPacketId = senderState.p2;
+            senderState.p2 += packetSize;
+            updateSenderWindowStatus();
+            renderWindowSim();
+            alert(`已发送序号为 ${sentPacketId} 的数据包，但它在网络中丢失了。接收方不会收到它。`);
+        } else {
+             alert('可用窗口已用完，无法发送新数据！');
+        }
+    });
+
+    document.getElementById('timeout-btn').addEventListener('click', () => {
+        const firstUnackedIndex = senderState.buffer.findIndex(p => p.status === 'sent');
+        if (firstUnackedIndex > -1) {
+            const retransmitId = senderState.buffer[firstUnackedIndex].id;
+            // In a real scenario, this packet is re-sent. Here we just show the logic.
+            // Receiver gets it
+            const packetIndex = receiverState.buffer.findIndex(p => p.id === retransmitId);
+            if (packetIndex > -1 && receiverState.buffer[packetIndex].id === receiverState.expectedSeq) {
+                 receiverState.buffer[packetIndex].status = 'received';
+                 receiverState.expectedSeq += packetSize;
+                 alert(`超时！重传序号为 ${retransmitId} 的包成功。现在可以确认它了。`);
+                 updateReceiverWindowStatus();
+                 renderWindowSim();
+            } else {
+                alert(`超时！正在重传序号为 ${retransmitId} 的包。但接收方期望的是 ${receiverState.expectedSeq}，此包仍为乱序。`);
+            }
+        } else {
+            alert('没有需要超时重传的数据包。');
+        }
+    });
+
+
+    document.getElementById('reset-window-btn').addEventListener('click', initWindowSim);
+    
+    initWindowSim();
+
+
+    // --- RTO Calculator ---
+    const rttInput = document.getElementById('rtt-input');
+    const addRttBtn = document.getElementById('add-rtt-btn');
+    const resetRtoBtn = document.getElementById('reset-rto-btn');
+    const rtoStepsEl = document.getElementById('rto-calculation-steps');
+    
+    let rtoHistory = [];
+    let rtts, rttd, rto;
+    const alpha = 0.125;
+    const beta = 0.25;
+
+    const rtoChartCtx = document.getElementById('rtoChart').getContext('2d');
+    let rtoChart = new Chart(rtoChartCtx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'RTT 样本 (ms)',
+                data: [],
+                borderColor: 'rgb(59, 130, 246)',
+                backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                tension: 0.1
+            }, {
+                label: 'RTO (ms)',
+                data: [],
+                borderColor: 'rgb(239, 68, 68)',
+                backgroundColor: 'rgba(239, 68, 68, 0.5)',
+                tension: 0.1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { y: { beginAtZero: true, title: { display: true, text: '时间 (ms)' } } },
+            plugins: { title: { display: true, text: 'RTT 与 RTO 变化趋势' } }
+        }
+    });
+
+    function resetRtoCalc() {
+        rtoHistory = [];
+        rtts = undefined;
+        rttd = undefined;
+        rto = 6000; // Initial RTO from textbook example
+        rtoChart.data.labels = [];
+        rtoChart.data.datasets[0].data = [];
+        rtoChart.data.datasets[1].data = [];
+        rtoChart.update();
+        rtoStepsEl.innerHTML = '<p class="font-semibold text-slate-700">计算步骤:</p><p>已重置。初始RTO为6000ms。</p>';
+    }
+
+    function calculateRto() {
+        const newRtt = parseFloat(rttInput.value);
+        if (isNaN(newRtt) || newRtt <= 0) {
+            alert('请输入一个有效的正数RTT值。');
+            return;
+        }
+
+        let stepsHtml = `<p class="font-semibold text-slate-700">基于 RTT = ${newRtt}ms 的计算:</p>`;
+
+        if (rtts === undefined) { // First measurement
+            rtts = newRtt;
+            rttd = newRtt / 2;
+            stepsHtml += `<p>首次测量: RTTs = RTT = <b>${rtts.toFixed(2)}</b> ms</p>`;
+            stepsHtml += `<p>首次测量: RTTd = RTT / 2 = <b>${rttd.toFixed(2)}</b> ms</p>`;
+        } else {
+            const oldRtts = rtts;
+            const oldRttd = rttd;
+            rtts = (1 - alpha) * oldRtts + alpha * newRtt;
+            rttd = (1 - beta) * oldRttd + beta * Math.abs(rtts - newRtt);
+            stepsHtml += `<p>新RTTs = (1-α)×${oldRtts.toFixed(2)} + α×${newRtt} = <b>${rtts.toFixed(2)}</b> ms</p>`;
+            stepsHtml += `<p>新RTTd = (1-β)×${oldRttd.toFixed(2)} + β×|${rtts.toFixed(2)}-${newRtt}| = <b>${rttd.toFixed(2)}</b> ms</p>`;
+        }
+        rto = rtts + 4 * rttd;
+        stepsHtml += `<p class="mt-2 font-bold">新 RTO = RTTs + 4×RTTd = <b>${rto.toFixed(2)}</b> ms</p>`;
+        rtoStepsEl.innerHTML = stepsHtml;
+
+        rtoHistory.push({ rtt: newRtt, rto: rto });
+        
+        rtoChart.data.labels.push(`Sample ${rtoHistory.length}`);
+        rtoChart.data.datasets[0].data.push(newRtt);
+        rtoChart.data.datasets[1].data.push(rto);
+        rtoChart.update();
+
+        rttInput.value = '';
+    }
+    
+    addRttBtn.addEventListener('click', calculateRto);
+    rttInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') calculateRto(); });
+    resetRtoBtn.addEventListener('click', resetRtoCalc);
+    resetRtoCalc();
+
+    // --- SACK Visualizer ---
+    const sackBufferSize = 40;
+    const sackPacketSize = 100;
+    const sackBufferEl = document.getElementById('sack-receiver-buffer');
+    const sackAckNumEl = document.getElementById('sack-ack-num');
+    const sackBlocksEl = document.getElementById('sack-blocks');
+    const resetSackBtn = document.getElementById('reset-sack-btn');
+
+    let sackReceived = new Set();
+    
+    function initSack() {
+        sackBufferEl.innerHTML = '';
+        sackReceived.clear();
+        for (let i = 0; i < sackBufferSize; i++) {
+            const seq = i * sackPacketSize + 1;
+            const el = document.createElement('div');
+            el.className = 'packet h-12 rounded border-2 flex items-center justify-center cursor-pointer hover:bg-slate-200';
+            el.dataset.seq = seq;
+            el.innerHTML = `<span class="packet-id text-center">${seq}</span>`;
+            el.addEventListener('click', () => toggleSackPacket(seq));
+            sackBufferEl.appendChild(el);
+        }
+        updateSackOutput();
+    }
+
+    function toggleSackPacket(seq) {
+        if (sackReceived.has(seq)) {
+            sackReceived.delete(seq);
+            document.querySelector(`[data-seq='${seq}']`).classList.remove('bg-green-300', 'border-green-500');
+        } else {
+            sackReceived.add(seq);
+            document.querySelector(`[data-seq='${seq}']`).classList.add('bg-green-300', 'border-green-500');
+        }
+        updateSackOutput();
+    }
+
+    function updateSackOutput() {
+        const sorted = Array.from(sackReceived).sort((a, b) => a - b);
+        let ackNum = 1;
+        let i = 0;
+        while(i < sorted.length && sorted[i] === ackNum) {
+            ackNum += sackPacketSize;
+            i++;
+        }
+        sackAckNumEl.textContent = ackNum;
+
+        const sackBlocks = [];
+        let j = i;
+        while(j < sorted.length) {
+            let leftEdge = sorted[j];
+            let k = j + 1;
+            while(k < sorted.length && sorted[k] === sorted[k-1] + sackPacketSize) {
+                k++;
+            }
+            let rightEdge = sorted[k-1] + sackPacketSize;
+            sackBlocks.push(`(${leftEdge}, ${rightEdge})`);
+            j = k;
+        }
+        
+        sackBlocksEl.textContent = sackBlocks.length > 0 ? sackBlocks.join(', ') : '-';
+    }
+
+    resetSackBtn.addEventListener('click', initSack);
+    initSack();
+});
+</script>
+
+</body>
+</html>
