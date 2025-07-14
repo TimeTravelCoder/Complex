@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cache映射原理演示</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  
+  <!-- 配置Tailwind自定义主题 -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#165DFF',
+            secondary: '#36CFC9',
+            success: '#52C41A',
+            danger: '#FF4D4F',
+            warning: '#FAAD14',
+            info: '#40A9FF',
+            light: '#F5F7FA',
+            dark: '#1D2129'
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+        },
+      }
+    }
+  </script>
+  
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+      .memory-block {
+        @apply w-16 h-16 flex items-center justify-center border-2 rounded-md transition-all duration-300 cursor-pointer text-sm font-medium;
+      }
+      .cache-block {
+        @apply w-20 h-20 flex flex-col items-center justify-center border-2 rounded-md transition-all duration-300 text-xs font-medium;
+      }
+      .cache-set {
+        @apply flex space-x-2 p-2;
+      }
+      .highlight {
+        @apply ring-4 ring-primary scale-105;
+      }
+      .hit {
+        @apply bg-success/20 border-success;
+      }
+      .miss {
+        @apply bg-danger/20 border-danger;
+      }
+      .transferring {
+        @apply animate-pulse;
+      }
+      .path-line {
+        @apply absolute bg-primary/30 z-0 transition-all duration-500;
+      }
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans text-dark">
+  <!-- 顶部导航 -->
+  <header class="bg-white shadow-md sticky top-0 z-50">
+    <div class="container mx-auto px-4 py-4 flex flex-col md:flex-row justify-between items-center">
+      <div class="flex items-center mb-4 md:mb-0">
+        <i class="fa fa-microchip text-primary text-2xl mr-3"></i>
+        <h1 class="text-2xl font-bold text-primary">Cache映射原理演示</h1>
+      </div>
+      
+      <div class="flex flex-wrap gap-2">
+        <button id="direct-map-btn" class="mapping-btn bg-primary text-white px-4 py-2 rounded-md hover:bg-primary/90 transition-colors active">直接映射</button>
+        <button id="full-assoc-btn" class="mapping-btn bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 transition-colors">全相联映射</button>
+        <button id="set-assoc-btn" class="mapping-btn bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 transition-colors">组相联映射</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主要内容区 -->
+  <main class="container mx-auto px-4 py-8">
+    <!-- 说明面板 -->
+    <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+      <h2 class="text-xl font-bold mb-4 flex items-center">
+        <i class="fa fa-info-circle text-primary mr-2"></i>
+        <span id="explanation-title">直接映射原理</span>
+      </h2>
+      <p id="explanation-text" class="text-gray-700 leading-relaxed">
+        直接映射是一种简单的Cache映射方式，主存中的每一块只能映射到Cache中唯一的一行。映射关系为：Cache行号 = 主存块号 mod Cache总行数。
+        这种方式实现简单，但当多个常用的主存块映射到同一Cache行时，会导致频繁的Cache缺失。
+      </p>
+    </div>
+    
+    <!-- 控制面板 -->
+    <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+      <div class="flex flex-col md:flex-row gap-4 items-center">
+        <div class="flex-1">
+          <label for="block-number" class="block text-sm font-medium text-gray-700 mb-1">主存块号：</label>
+          <div class="flex">
+            <input type="number" id="block-number" min="0" max="255" value="0" 
+                  class="flex-1 border border-gray-300 rounded-l-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary">
+            <button id="access-btn" class="bg-primary text-white px-4 py-2 rounded-r-md hover:bg-primary/90 transition-colors">
+              <i class="fa fa-search mr-1"></i>访问
+            </button>
+          </div>
+        </div>
+        
+        <div class="flex items-center gap-4">
+          <div class="flex items-center">
+            <span class="inline-block w-4 h-4 bg-success/20 border-2 border-success rounded-sm mr-2"></span>
+            <span class="text-sm">命中</span>
+          </div>
+          <div class="flex items-center">
+            <span class="inline-block w-4 h-4 bg-danger/20 border-2 border-danger rounded-sm mr-2"></span>
+            <span class="text-sm">未命中</span>
+          </div>
+          <div class="flex items-center">
+            <span class="inline-block w-4 h-4 bg-primary/20 border-2 border-primary rounded-sm mr-2"></span>
+            <span class="text-sm">选中</span>
+          </div>
+        </div>
+        
+        <button id="reset-btn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 transition-colors">
+          <i class="fa fa-refresh mr-1"></i>重置
+        </button>
+      </div>
+      
+      <div class="mt-4 p-4 bg-gray-50 rounded-md">
+        <h3 class="font-medium text-sm text-gray-700 mb-2">映射计算：</h3>
+        <p id="mapping-calculation" class="text-sm text-gray-600">Cache行号 = 主存块号 mod Cache行数 = 0 mod 8 = 0</p>
+      </div>
+    </div>
+    
+    <!-- 可视化区域 -->
+    <div class="relative">
+      <!-- 主存区域 -->
+      <div class="mb-12">
+        <h3 class="text-lg font-bold mb-4 flex items-center">
+          <i class="fa fa-server text-gray-600 mr-2"></i>主存 (32块)
+        </h3>
+        <div id="main-memory" class="grid grid-cols-8 gap-2 p-4 bg-gray-100 rounded-lg min-h-[180px]">
+          <!-- 主存块将通过JavaScript动态生成 -->
+        </div>
+      </div>
+      
+      <!-- 映射路径（将通过JS动态生成） -->
+      <div id="mapping-path" class="hidden md:block absolute top-1/2 left-1/2 w-full h-12 -translate-y-1/2 -translate-x-1/2 z-0">
+        <!-- 映射路径线将通过JavaScript动态生成 -->
+      </div>
+      
+      <!-- Cache区域 -->
+      <div>
+        <h3 class="text-lg font-bold mb-4 flex items-center">
+          <i class="fa fa-database text-primary mr-2"></i>
+          <span>Cache</span>
+          <span id="cache-config" class="ml-2 text-sm font-normal text-gray-600">(8行，直接映射)</span>
+        </h3>
+        <div id="cache-memory" class="flex flex-wrap gap-4 p-4 bg-gray-100 rounded-lg min-h-[220px]">
+          <!-- Cache行将通过JavaScript动态生成 -->
+        </div>
+      </div>
+    </div>
+    
+    <!-- 状态信息 -->
+    <div id="status-message" class="mt-6 p-4 rounded-md bg-info/10 border border-info text-info hidden">
+      <i class="fa fa-info-circle mr-2"></i>
+      <span>状态信息将在这里显示</span>
+    </div>
+  </main>
+
+  <!-- 页脚 -->
+  <footer class="bg-dark text-white py-6 mt-12">
+    <div class="container mx-auto px-4 text-center">
+      <p>Cache映射原理交互式演示 &copy; 2023</p>
+      <p class="text-sm text-gray-400 mt-2">用于理解直接映射、全相联映射和组相联映射的工作原理</p>
+    </div>
+  </footer>
+
+  <script>
+    // 全局状态
+    const state = {
+      mappingMode: 'direct', // direct, full, set
+      mainMemoryBlocks: 32,  // 主存块数量
+      cacheLines: 8,         // Cache行数量
+      setAssociativeGroups: 4, // 组相联映射的组数
+      associativity: 2,      // 组相联映射的关联度
+      cacheData: [],         // 存储Cache中的数据
+      accessHistory: [],     // 访问历史，用于替换算法
+      lruCounters: []        // LRU计数器
+    };
+    
+    // 初始化
+    function init() {
+      // 初始化Cache数据
+      resetCache();
+      
+      // 生成主存块
+      generateMainMemory();
+      
+      // 生成Cache
+      generateCache();
+      
+      // 绑定事件监听器
+      bindEvents();
+    }
+    
+    // 重置Cache
+    function resetCache() {
+      state.cacheData = [];
+      state.accessHistory = [];
+      state.lruCounters = [];
+      
+      // 根据当前映射模式初始化Cache
+      if (state.mappingMode === 'set') {
+        // 组相联：初始化组和行
+        for (let i = 0; i < state.setAssociativeGroups; i++) {
+          const group = [];
+          const lruGroup = [];
+          for (let j = 0; j < state.associativity; j++) {
+            group.push({ valid: false, blockNumber: null });
+            lruGroup.push(0);
+          }
+          state.cacheData.push(group);
+          state.lruCounters.push(lruGroup);
+        }
+      } else {
+        // 直接映射或全相联
+        for (let i = 0; i < state.cacheLines; i++) {
+          state.cacheData.push({ valid: false, blockNumber: null });
+          state.lruCounters.push(0);
+        }
+      }
+    }
+    
+    // 生成主存块
+    function generateMainMemory() {
+      const mainMemoryEl = document.getElementById('main-memory');
+      mainMemoryEl.innerHTML = '';
+      
+      for (let i = 0; i < state.mainMemoryBlocks; i++) {
+        const block = document.createElement('div');
+        block.className = 'memory-block border-gray-300 bg-white';
+        block.dataset.blockNumber = i;
+        block.textContent = `块 ${i}`;
+        block.addEventListener('click', () => {
+          document.getElementById('block-number').value = i;
+          accessBlock(i);
+        });
+        mainMemoryEl.appendChild(block);
+      }
+    }
+    
+    // 生成Cache
+    function generateCache() {
+      const cacheEl = document.getElementById('cache-memory');
+      cacheEl.innerHTML = '';
+      
+      if (state.mappingMode === 'set') {
+        // 组相联映射
+        for (let i = 0; i < state.setAssociativeGroups; i++) {
+          const setEl = document.createElement('div');
+          setEl.className = 'cache-set';
+          setEl.dataset.setNumber = i;
+          
+          for (let j = 0; j < state.associativity; j++) {
+            const lineEl = document.createElement('div');
+            lineEl.className = 'cache-block border-gray-300 bg-white';
+            lineEl.dataset.setNumber = i;
+            lineEl.dataset.lineNumber = j;
+            
+            const validBit = document.createElement('div');
+            validBit.className = 'text-xs mb-1 text-gray-500';
+            validBit.textContent = 'V: 0';
+            
+            const blockNum = document.createElement('div');
+            blockNum.className = 'font-medium';
+            blockNum.textContent = '空';
+            
+            const lineNum = document.createElement('div');
+            lineNum.className = 'text-xs mt-1 text-gray-500';
+            lineNum.textContent = `组${i}行${j}`;
+            
+            lineEl.appendChild(validBit);
+            lineEl.appendChild(blockNum);
+            lineEl.appendChild(lineNum);
+            setEl.appendChild(lineEl);
+          }
+          
+          cacheEl.appendChild(setEl);
+        }
+      } else {
+        // 直接映射或全相联映射
+        for (let i = 0; i < state.cacheLines; i++) {
+          const lineEl = document.createElement('div');
+          lineEl.className = 'cache-block border-gray-300 bg-white';
+          lineEl.dataset.lineNumber = i;
+          
+          const validBit = document.createElement('div');
+          validBit.className = 'text-xs mb-1 text-gray-500';
+          validBit.textContent = 'V: 0';
+          
+          const blockNum = document.createElement('div');
+          blockNum.className = 'font-medium';
+          blockNum.textContent = '空';
+          
+          const lineNum = document.createElement('div');
+          lineNum.className = 'text-xs mt-1 text-gray-500';
+          lineNum.textContent = `行 ${i}`;
+          
+          lineEl.appendChild(validBit);
+          lineEl.appendChild(blockNum);
+          lineEl.appendChild(lineNum);
+          cacheEl.appendChild(lineEl);
+        }
+      }
+      
+      // 更新Cache配置显示
+      updateCacheConfigText();
+    }
+    
+    // 更新Cache配置文本
+    function updateCacheConfigText() {
+      const configEl = document.getElementById('cache-config');
+      switch (state.mappingMode) {
+        case 'direct':
+          configEl.textContent = `(${state.cacheLines}行，直接映射)`;
+          break;
+        case 'full':
+          configEl.textContent = `(${state.cacheLines}行，全相联映射)`;
+          break;
+        case 'set':
+          configEl.textContent = `(${state.setAssociativeGroups}组×${state.associativity}行，组相联映射)`;
+          break;
+      }
+    }
+    
+    // 绑定事件监听器
+    function bindEvents() {
+      // 访问按钮
+      document.getElementById('access-btn').addEventListener('click', () => {
+        const blockNumber = parseInt(document.getElementById('block-number').value);
+        if (isNaN(blockNumber) || blockNumber < 0 || blockNumber >= state.mainMemoryBlocks) {
+          showStatus('请输入有效的主存块号（0-31）', 'warning');
+          return;
+        }
+        accessBlock(blockNumber);
+      });
+      
+      // 重置按钮
+      document.getElementById('reset-btn').addEventListener('click', () => {
+        resetCache();
+        generateCache();
+        clearHighlights();
+        hideMappingPath();
+        showStatus('已重置Cache', 'info');
+      });
+      
+      // 映射模式切换 - 修复事件绑定
+      document.getElementById('direct-map-btn').addEventListener('click', () => setMappingMode('direct'));
+      document.getElementById('full-assoc-btn').addEventListener('click', () => setMappingMode('full'));
+      document.getElementById('set-assoc-btn').addEventListener('click', () => setMappingMode('set'));
+    }
+    
+    // 设置映射模式 - 完全重构版本
+    function setMappingMode(mode) {
+      // 更新状态
+      state.mappingMode = mode;
+      
+      // 更新按钮样式
+      const buttons = {
+        'direct': document.getElementById('direct-map-btn'),
+        'full': document.getElementById('full-assoc-btn'),
+        'set': document.getElementById('set-assoc-btn')
+      };
+      
+      // 重置所有按钮样式
+      Object.values(buttons).forEach(btn => {
+        btn.classList.remove('bg-primary', 'text-white', 'active');
+        btn.classList.add('bg-gray-200', 'text-gray-700');
+      });
+      
+      // 设置当前按钮样式
+      const activeBtn = buttons[mode];
+      if (activeBtn) {
+        activeBtn.classList.remove('bg-gray-200', 'text-gray-700');
+        activeBtn.classList.add('bg-primary', 'text-white', 'active');
+      }
+      
+      // 重置并重新生成Cache
+      resetCache();
+      generateCache();
+      clearHighlights();
+      hideMappingPath();
+      
+      // 更新说明文本
+      updateExplanationText();
+      
+      // 显示状态信息
+      const modeNames = {
+        'direct': '直接映射',
+        'full': '全相联映射',
+        'set': '组相联映射'
+      };
+      showStatus(`已切换到${modeNames[mode]}模式`, 'info');
+    }
+    
+    // 更新说明文本
+    function updateExplanationText() {
+      const titleEl = document.getElementById('explanation-title');
+      const textEl = document.getElementById('explanation-text');
+      
+      switch (state.mappingMode) {
+        case 'direct':
+          titleEl.textContent = '直接映射原理';
+          textEl.textContent = '直接映射是一种简单的Cache映射方式，主存中的每一块只能映射到Cache中唯一的一行。映射关系为：Cache行号 = 主存块号 mod Cache总行数。这种方式实现简单，但当多个常用的主存块映射到同一Cache行时，会导致频繁的Cache缺失。';
+          break;
+        case 'full':
+          titleEl.textContent = '全相联映射原理';
+          textEl.textContent = '全相联映射允许主存中的每一块映射到Cache中的任意一行。这种方式灵活性高，Cache块冲突概率低，命中率较高，但实现复杂，需要比较主存块与所有Cache行的标记，硬件成本高，不适合大容量Cache。';
+          break;
+        case 'set':
+          titleEl.textContent = '组相联映射原理';
+          textEl.textContent = '组相联映射是直接映射和全相联映射的折中方案。主存块首先映射到固定的Cache组，再可以放入该组中的任意一行。映射关系为：Cache组号 = 主存块号 mod Cache组数。这种方式兼顾了成本和性能，是现代计算机系统中最常用的Cache映射方式。';
+          break;
+      }
+    }
+    
+    // 访问指定的主存块
+    function accessBlock(blockNumber) {
+      // 清除之前的高亮
+      clearHighlights();
+      
+      // 高亮选中的主存块
+      const mainMemoryBlock = document.querySelector(`.memory-block[data-block-number="${blockNumber}"]`);
+      if (mainMemoryBlock) mainMemoryBlock.classList.add('highlight');
+      
+      // 根据映射模式处理访问
+      let result;
+      switch (state.mappingMode) {
+        case 'direct':
+          result = accessDirectMapping(blockNumber);
+          break;
+        case 'full':
+          result = accessFullAssociative(blockNumber);
+          break;
+        case 'set':
+          result = accessSetAssociative(blockNumber);
+          break;
+        default:
+          showStatus('未知的映射模式', 'danger');
+          return;
+      }
+      
+      // 显示映射路径
+      showMappingPath(blockNumber, result);
+      
+      // 更新Cache显示
+      updateCacheDisplay(result);
+      
+      // 显示状态信息
+      if (result.hit) {
+        showStatus(`访问主存块 ${blockNumber}：Cache命中`, 'success');
+      } else {
+        showStatus(`访问主存块 ${blockNumber}：Cache未命中，已加载到${result.locationDesc}`, 'info');
+      }
+    }
+    
+    // 直接映射访问
+    function accessDirectMapping(blockNumber) {
+      // 计算映射的Cache行号
+      const lineNumber = blockNumber % state.cacheLines;
+      
+      // 更新计算说明
+      document.getElementById('mapping-calculation').textContent = 
+        `Cache行号 = 主存块号 mod Cache行数 = ${blockNumber} mod ${state.cacheLines} = ${lineNumber}`;
+      
+      // 检查是否命中
+      const cacheLine = state.cacheData[lineNumber];
+      const hit = cacheLine.valid && cacheLine.blockNumber === blockNumber;
+      
+      // 如果未命中，更新Cache
+      if (!hit) {
+        state.cacheData[lineNumber] = { valid: true, blockNumber: blockNumber };
+      }
+      
+      // 更新LRU计数器
+      state.lruCounters[lineNumber] = Date.now();
+      
+      return {
+        hit,
+        lineNumber,
+        setNumber: null,
+        locationDesc: `Cache行 ${lineNumber}`
+      };
+    }
+    
+    // 全相联映射访问
+    function accessFullAssociative(blockNumber) {
+      // 更新计算说明
+      document.getElementById('mapping-calculation').textContent = 
+        `主存块 ${blockNumber} 可映射到Cache中任意一行`;
+      
+      // 检查是否命中
+      let hit = false;
+      let lineNumber = -1;
+      
+      for (let i = 0; i < state.cacheLines; i++) {
+        if (state.cacheData[i].valid && state.cacheData[i].blockNumber === blockNumber) {
+          hit = true;
+          lineNumber = i;
+          break;
+        }
+      }
+      
+      // 如果未命中，选择替换的行（使用LRU算法）
+      if (!hit) {
+        // 查找无效行
+        for (let i = 0; i < state.cacheLines; i++) {
+          if (!state.cacheData[i].valid) {
+            lineNumber = i;
+            break;
+          }
+        }
+        
+        // 如果没有无效行，选择LRU行
+        if (lineNumber === -1) {
+          lineNumber = state.lruCounters.indexOf(Math.min(...state.lruCounters));
+        }
+        
+        // 更新Cache
+        state.cacheData[lineNumber] = { valid: true, blockNumber: blockNumber };
+      }
+      
+      // 更新LRU计数器
+      state.lruCounters[lineNumber] = Date.now();
+      
+      return {
+        hit,
+        lineNumber,
+        setNumber: null,
+        locationDesc: `Cache行 ${lineNumber}`
+      };
+    }
+    
+    // 组相联映射访问
+    function accessSetAssociative(blockNumber) {
+      // 计算映射的Cache组号
+      const setNumber = blockNumber % state.setAssociativeGroups;
+      
+      // 更新计算说明
+      document.getElementById('mapping-calculation').textContent = 
+        `Cache组号 = 主存块号 mod Cache组数 = ${blockNumber} mod ${state.setAssociativeGroups} = ${setNumber}`;
+      
+      // 检查是否命中
+      let hit = false;
+      let lineNumber = -1;
+      const group = state.cacheData[setNumber];
+      
+      for (let i = 0; i < group.length; i++) {
+        if (group[i].valid && group[i].blockNumber === blockNumber) {
+          hit = true;
+          lineNumber = i;
+          break;
+        }
+      }
+      
+      // 如果未命中，选择替换的行（使用LRU算法）
+      if (!hit) {
+        // 查找组中的无效行
+        for (let i = 0; i < group.length; i++) {
+          if (!group[i].valid) {
+            lineNumber = i;
+            break;
+          }
+        }
+        
+        // 如果没有无效行，选择组中LRU行
+        if (lineNumber === -1) {
+          lineNumber = state.lruCounters[setNumber].indexOf(Math.min(...state.lruCounters[setNumber]));
+        }
+        
+        // 更新Cache
+        state.cacheData[setNumber][lineNumber] = { valid: true, blockNumber: blockNumber };
+      }
+      
+      // 更新LRU计数器
+      state.lruCounters[setNumber][lineNumber] = Date.now();
+      
+      return {
+        hit,
+        lineNumber,
+        setNumber,
+        locationDesc: `Cache组 ${setNumber} 行 ${lineNumber}`
+      };
+    }
+    
+    // 更新Cache显示
+    function updateCacheDisplay(result) {
+      if (state.mappingMode === 'set') {
+        // 组相联映射
+        const setEl = document.querySelector(`.cache-set[data-set-number="${result.setNumber}"]`);
+        const lineEl = setEl.querySelector(`.cache-block[data-line-number="${result.lineNumber}"]`);
+        
+        if (lineEl) {
+          const cacheLine = state.cacheData[result.setNumber][result.lineNumber];
+          lineEl.querySelector('div:first-child').textContent = `V: ${cacheLine.valid ? '1' : '0'}`;
+          lineEl.querySelector('div:nth-child(2)').textContent = cacheLine.valid ? `块 ${cacheLine.blockNumber}` : '空';
+          lineEl.classList.add(result.hit ? 'hit' : 'miss');
+        }
+      } else {
+        // 直接映射或全相联映射
+        const lineEl = document.querySelector(`.cache-block[data-line-number="${result.lineNumber}"]`);
+        
+        if (lineEl) {
+          const cacheLine = state.cacheData[result.lineNumber];
+          lineEl.querySelector('div:first-child').textContent = `V: ${cacheLine.valid ? '1' : '0'}`;
+          lineEl.querySelector('div:nth-child(2)').textContent = cacheLine.valid ? `块 ${cacheLine.blockNumber}` : '空';
+          lineEl.classList.add(result.hit ? 'hit' : 'miss');
+        }
+      }
+    }
+    
+    // 清除所有高亮
+    function clearHighlights() {
+      document.querySelectorAll('.memory-block, .cache-block').forEach(el => {
+        el.classList.remove('highlight', 'hit', 'miss', 'transferring');
+      });
+    }
+    
+    // 显示映射路径
+    function showMappingPath(blockNumber, result) {
+      const pathEl = document.getElementById('mapping-path');
+      pathEl.innerHTML = '';
+      pathEl.classList.remove('hidden');
+      
+      // 这里可以实现映射路径的可视化
+    }
+    
+    // 隐藏映射路径
+    function hideMappingPath() {
+      document.getElementById('mapping-path').classList.add('hidden');
+    }
+    
+    // 显示状态信息
+    function showStatus(message, type = 'info') {
+      const statusEl = document.getElementById('status-message');
+      const iconEl = statusEl.querySelector('i');
+      const textEl = statusEl.querySelector('span');
+      
+      // 设置状态类型样式
+      statusEl.className = 'mt-6 p-4 rounded-md transition-colors duration-300';
+      
+      switch (type) {
+        case 'success':
+          statusEl.classList.add('bg-success/10', 'border-success', 'text-success');
+          iconEl.className = 'fa fa-check-circle mr-2';
+          break;
+        case 'warning':
+          statusEl.classList.add('bg-warning/10', 'border-warning', 'text-warning');
+          iconEl.className = 'fa fa-exclamation-circle mr-2';
+          break;
+        case 'danger':
+          statusEl.classList.add('bg-danger/10', 'border-danger', 'text-danger');
+          iconEl.className = 'fa fa-times-circle mr-2';
+          break;
+        default:
+          statusEl.classList.add('bg-info/10', 'border-info', 'text-info');
+          iconEl.className = 'fa fa-info-circle mr-2';
+      }
+      
+      textEl.textContent = message;
+      statusEl.classList.remove('hidden');
+    }
+    
+    // 页面加载完成后初始化
+    window.addEventListener('load', init);
+  </script>
+</body>
+</html>

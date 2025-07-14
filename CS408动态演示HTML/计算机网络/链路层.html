@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式数据链路层学习应用</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Chosen Palette: Cool Gray & Vibrant Indigo */
+        /* Application Structure Plan: A responsive dashboard layout with a persistent sidebar for navigation and a main content area for displaying interactive modules. This structure breaks the linear textbook chapter into thematic, manageable chunks, allowing users to learn in any order they prefer. The flow encourages exploration by transforming passive reading into active engagement with concepts like CRC calculation, CSMA/CD collisions, and switch learning. This non-linear, interactive approach is chosen for superior usability and learning retention compared to a static page. */
+        /* Visualization & Content Choices: Content is mapped to interactive elements. For example, the CSMA/CD algorithm is represented by a clickable simulation (Goal: Understand Process -> Viz: Animated Diagram -> Interaction: User triggers collision -> Justification: Visualizing the abstract timing and backoff is more effective than text). PPP states are a clickable state machine diagram. Ethernet standards are compared using a dynamic Chart.js bar chart. This confirms NO SVG/Mermaid is used, and the chosen methods directly support the user-centric, exploratory structure. */
+        /* CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. */
+        html {
+            scroll-behavior: smooth;
+        }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+            background-color: #f1f5f9; /* Cool Gray background */
+        }
+        .content-card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.07);
+            border: 1px solid #e5e7eb;
+            transition: all 0.3s ease-in-out;
+        }
+        .nav-link {
+            transition: all 0.2s ease-in-out;
+            font-size: 0.9rem;
+            border-radius: 0.5rem;
+        }
+        .nav-link.active {
+            background-color: #4338ca;
+            color: white;
+            font-weight: 600;
+            box-shadow: 0 4px 14px 0 rgb(67 56 202 / 39%);
+        }
+        .nav-link:not(.active):hover {
+            background-color: #e0e7ff;
+            color: #3730a3;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 700px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 350px;
+            max-height: 450px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 400px;
+            }
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .signal {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            height: 8px;
+            border-radius: 4px;
+            transition: all 0.1s linear;
+        }
+        .signal-data-a { background-color: #3b82f6; }
+        .signal-data-b { background-color: #10b981; }
+        .signal-data-c { background-color: #f97316; }
+        .signal-data-d { background-color: #8b5cf6; }
+        .signal-jam { background-color: #facc15; }
+
+        .station-node {
+            position: absolute;
+            bottom: 1.5rem;
+            transform: translateX(-50%);
+            text-align: center;
+        }
+        .station-node::before {
+            content: '';
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 2px;
+            height: 1.5rem;
+            background-color: #94a3b8;
+        }
+        .station-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            border: 3px solid;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <div class="flex flex-col md:flex-row min-h-screen">
+        <!-- Sidebar Navigation -->
+        <aside id="sidebar" class="w-full md:w-72 bg-white/95 backdrop-blur-sm border-r border-slate-200 md:sticky md:top-0 md:h-screen transition-all duration-300">
+            <div class="p-5 border-b border-slate-200">
+                <h1 class="text-2xl font-bold text-indigo-600">数据链路层</h1>
+                <p class="text-sm text-slate-500 mt-1">交互式学习笔记</p>
+            </div>
+            <nav id="nav-menu" class="mt-4 px-4 pb-4">
+                <!-- Navigation links will be inserted here by JS -->
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main id="main-content" class="flex-1 p-4 sm:p-8 lg:p-10">
+            <!-- Content will be dynamically inserted here -->
+        </main>
+    </div>
+
+    <script>
+        const AppData = {
+            "intro": {
+                title: "欢迎来到数据链路层学习中心",
+                content: `
+                    <div class="content-card p-8 lg:p-12 text-center">
+                        <h2 class="text-4xl font-bold text-slate-800">欢迎！</h2>
+                        <p class="mt-4 text-xl text-slate-600 max-w-3xl mx-auto">
+                            本应用将带您交互式地学习数据链路层的核心知识。数据链路层是网络协议栈中的关键一层，负责在两个直接相连的节点之间，可靠地、高效地传送数据帧。
+                        </p>
+                        <p class="mt-4 text-slate-600 max-w-3xl mx-auto">
+                            请从左侧的导航栏中选择一个主题开始您的学习之旅。您将通过交互式图表、模拟动画和动手计算来探索封装成帧、协议、碰撞检测等概念。
+                        </p>
+                        <div class="mt-10">
+                            <button onclick="document.querySelector('.nav-link[data-id=\\'s3_1\\']').click()" class="bg-indigo-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-indigo-700 transition-transform hover:scale-105 duration-300 shadow-lg shadow-indigo-500/50">
+                                从 3.1 节开始学习
+                            </button>
+                        </div>
+                    </div>
+                `
+            },
+            "s3_1": {
+                title: "3.1 点对点信道",
+                subSections: {
+                    "s3_1_1": {
+                        title: "数据链路和帧",
+                        content: `
+                            <div class="content-card p-8 fade-in">
+                                <h3 class="text-2xl font-bold mb-4">数据链路和帧</h3>
+                                <p class="mb-6 text-slate-600 leading-relaxed">在物理线路（链路）的基础上，增加控制数据传输的通信协议，就构成了数据链路。数据链路层负责将网络层的数据报封装成帧进行传输。</p>
+                                <div class="grid md:grid-cols-2 gap-6">
+                                    <div class="p-6 bg-indigo-50 rounded-lg border border-indigo-100">
+                                        <h4 class="font-semibold text-indigo-800 text-lg">链路 (Link)</h4>
+                                        <p class="mt-2 text-slate-700">指从一个结点到相邻结点的一段物理线路（有线或无线），中间没有其他交换结点。它仅仅是路径的物理组成部分。</p>
+                                    </div>
+                                    <div class="p-6 bg-emerald-50 rounded-lg border border-emerald-100">
+                                        <h4 class="font-semibold text-emerald-800 text-lg">数据链路 (Data Link)</h4>
+                                        <p class="mt-2 text-slate-700">是物理链路加上必要的通信协议。数据链路层传输的协议数据单元（PDU）就是**帧 (Frame)**。</p>
+                                    </div>
+                                </div>
+                                <h4 class="text-xl font-bold mt-8 mb-4">封装成帧过程</h4>
+                                <p class="mb-4 text-slate-600">这是数据链路层最核心的功能之一，它为网络层的IP数据报添加了帧头和帧尾，以便在链路上传输。</p>
+                                <div class="p-6 border border-slate-200 rounded-xl bg-slate-50">
+                                    <div class="flex items-center justify-center space-x-2 text-center text-sm font-medium">
+                                        <div class="w-1/4 p-4 bg-blue-200 text-blue-800 rounded-l-lg shadow-inner">帧首部</div>
+                                        <div class="flex-1 p-4 bg-yellow-200 text-yellow-800 shadow-inner">IP 数据报 (来自网络层)</div>
+                                        <div class="w-1/4 p-4 bg-blue-200 text-blue-800 rounded-r-lg shadow-inner">帧尾部</div>
+                                    </div>
+                                    <p class="text-center mt-3 text-xs text-slate-500">[图] 一个数据帧的结构</p>
+                                </div>
+                            </div>
+                        `
+                    },
+                    "s3_1_2": {
+                        title: "三个基本问题",
+                        content: `
+                            <div class="content-card p-8 fade-in">
+                                <h3 class="text-2xl font-bold mb-4">三个基本问题</h3>
+                                <p class="mb-6 text-slate-600 leading-relaxed">任何数据链路层协议都必须解决三个基本问题：封装成帧、透明传输和差错检测。下面我们将通过交互式模块来探索这些概念。</p>
+                                
+                                <div id="basic-problems-tabs">
+                                    <div class="border-b border-slate-200">
+                                        <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                                            <button onclick="showTab('framing')" class="tab-btn active text-indigo-600 border-indigo-600 whitespace-nowrap py-4 px-1 border-b-2 font-semibold text-base">封装成帧</button>
+                                            <button onclick="showTab('transparency')" class="tab-btn text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base">透明传输</button>
+                                            <button onclick="showTab('error-detection')" class="tab-btn text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base">差错检测</button>
+                                        </nav>
+                                    </div>
+
+                                    <div class="mt-8">
+                                        <div id="framing-content" class="tab-content">
+                                            <h4 class="text-xl font-semibold">帧定界与MTU</h4>
+                                            <p class="mt-2 text-slate-600 leading-relaxed">通过在数据前后添加特殊的**帧定界符**（如SOH和EOT），接收方可以从比特流中准确地识别出帧的开始和结束。同时，每种协议都规定了数据部分的最大长度，即**最大传送单元 (MTU)**。</p>
+                                        </div>
+                                        <div id="transparency-content" class="tab-content" style="display:none;">
+                                            <h4 class="text-xl font-semibold">交互式字节填充 (Byte Stuffing)</h4>
+                                            <p class="mt-2 mb-4 text-slate-600 leading-relaxed">当数据中出现与控制字符（如EOT <code>0x04</code>）或转义字符（ESC <code>0x1B</code>）相同的字节时，必须进行字节填充以保证透明传输。请在下方输入包含特殊字符的文本，观察填充结果。</p>
+                                            <div class="flex flex-col md:flex-row gap-4">
+                                                <div class="flex-1">
+                                                    <label for="byte-stuff-input" class="block text-sm font-medium text-slate-700">输入数据 (尝试输入 A B EOT C ESC D):</label>
+                                                    <input type="text" id="byte-stuff-input" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="Data with EOT and ESC">
+                                                </div>
+                                                <div class="flex items-end">
+                                                    <button onclick="performByteStuffing()" class="bg-indigo-600 text-white font-bold py-2 px-4 rounded-md hover:bg-indigo-700 transition">填充</button>
+                                                </div>
+                                            </div>
+                                            <div class="mt-4 p-4 bg-slate-50 rounded-lg">
+                                                <h5 class="font-semibold">填充前:</h5>
+                                                <p id="byte-stuff-before" class="font-mono text-sm break-all text-red-600"></p>
+                                                <h5 class="font-semibold mt-2">填充后:</h5>
+                                                <p id="byte-stuff-after" class="font-mono text-sm break-all text-green-600"></p>
+                                            </div>
+                                        </div>
+                                        <div id="error-detection-content" class="tab-content" style="display:none;">
+                                            <h4 class="text-xl font-semibold">交互式 CRC 计算器</h4>
+                                            <p class="mt-2 mb-4 text-slate-600 leading-relaxed">循环冗余检验 (CRC) 通过模2除法生成帧检验序列 (FCS) 来检测比特差错。请输入二进制数据和生成多项式（二进制表示）进行计算。</p>
+                                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div>
+                                                    <label for="crc-data" class="block text-sm font-medium text-slate-700">要发送的数据 (二进制):</label>
+                                                    <input type="text" id="crc-data" value="1101011011" class="mt-1 font-mono block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                                </div>
+                                                <div>
+                                                    <label for="crc-poly" class="block text-sm font-medium text-slate-700">生成多项式 P (二进制):</label>
+                                                    <input type="text" id="crc-poly" value="10011" class="mt-1 font-mono block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                                </div>
+                                            </div>
+                                            <button onclick="calculateCRC()" class="mt-4 bg-indigo-600 text-white font-bold py-2 px-4 rounded-md hover:bg-indigo-700 transition">计算FCS</button>
+                                            <div id="crc-result" class="mt-4 p-4 bg-slate-50 rounded-lg"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `
+                    }
+                }
+            },
+            "s3_2": {
+                title: "3.2 点对点协议 PPP",
+                subSections: {
+                    "s3_2_1": {
+                        title: "PPP 协议的特点与组成",
+                        content: `
+                            <div class="content-card p-8 fade-in">
+                                <h3 class="text-2xl font-bold mb-4">PPP 协议的特点</h3>
+                                <p class="mb-6 text-slate-600 leading-relaxed">点对点协议 (PPP) 是目前使用最广泛的数据链路层协议之一，特别是在用户拨号或宽带接入ISP时。其设计哲学是“简单”和“通用”。</p>
+                                <ul class="list-disc list-inside space-y-3 text-slate-700">
+                                    <li><b>简单:</b> 只检错，不纠错、不编号、不进行流量控制。</li>
+                                    <li><b>封装成帧:</b> 定义了清晰的帧边界。</li>
+                                    <li><b>透明性:</b> 保证任何数据都能透明传输。</li>
+                                    <li><b>多种网络层协议:</b> 能在同一链路上承载IP、IPX等多种协议。</li>
+                                    <li><b>多种类型链路:</b> 能在同步/异步、高速/低速等多种链路上运行。</li>
+                                    <li><b>差错检测:</b> 必须能检测出错误帧并丢弃。</li>
+                                    <li><b>地址与压缩协商:</b> 能自动协商网络地址和数据压缩方法。</li>
+                                </ul>
+                                <h3 class="text-2xl font-bold mt-8 mb-4">PPP 协议的组成</h3>
+                                <div class="grid md:grid-cols-3 gap-6 text-center">
+                                    <div class="p-6 bg-slate-100 rounded-lg">
+                                        <h4 class="font-bold text-slate-800">封装方法</h4>
+                                        <p class="text-sm mt-2">定义了如何将IP数据报封装到串行链路中。</p>
+                                    </div>
+                                    <div class="p-6 bg-slate-100 rounded-lg">
+                                        <h4 class="font-bold text-slate-800">LCP (链路控制协议)</h4>
+                                        <p class="text-sm mt-2">负责建立、配置和测试数据链路连接。</p>
+                                    </div>
+                                    <div class="p-6 bg-slate-100 rounded-lg">
+                                        <h4 class="font-bold text-slate-800">NCP (网络控制协议)</h4>
+                                        <p class="text-sm mt-2">一套支持不同网络层协议的协议集，如IPCP负责IP地址协商。</p>
+                                    </div>
+                                </div>
+                            </div>
+                        `
+                    },
+                    "s3_2_2": {
+                        title: "PPP 协议的帧格式",
+                        content: `
+                            <div class="content-card p-8 fade-in">
+                                <h3 class="text-2xl font-bold mb-4">PPP 帧格式解析</h3>
+                                <p class="mb-6 text-slate-600 leading-relaxed">PPP 帧有一个固定的结构。将鼠标悬停在下方帧的各个字段上以查看详细信息。</p>
+                                <div id="ppp-frame" class="p-4 border border-slate-200 rounded-lg bg-slate-50 flex items-center justify-center space-x-1 text-center font-mono text-sm">
+                                    <div class="frame-part p-3 bg-red-200 rounded-l-lg" data-info="标志 (Flag): 固定为 0x7E，用于帧定界。">F</div>
+                                    <div class="frame-part p-3 bg-orange-200" data-info="地址 (Address): 固定为 0xFF，广播地址。">A</div>
+                                    <div class="frame-part p-3 bg-yellow-200" data-info="控制 (Control): 固定为 0x03，表示无序号帧。">C</div>
+                                    <div class="frame-part p-3 bg-green-200" data-info="协议 (Protocol): 2字节，指明信息字段中封装的是哪种协议的数据。0x0021表示IP数据报。">协议</div>
+                                    <div class="frame-part flex-1 p-3 bg-blue-200" data-info="信息 (Information): 长度可变，不超过1500字节，承载上层数据。">信息</div>
+                                    <div class="frame-part p-3 bg-purple-200" data-info="帧检验序列 (FCS): 2字节，使用CRC进行差错检测。">FCS</div>
+                                    <div class="frame-part p-3 bg-red-200 rounded-r-lg" data-info="标志 (Flag): 固定为 0x7E，用于帧定界。">F</div>
+                                </div>
+                                <div id="ppp-frame-info" class="mt-4 p-4 bg-indigo-100 text-indigo-800 rounded-md text-center h-14 flex items-center justify-center transition-all">
+                                    将鼠标悬停在帧字段上查看说明
+                                </div>
+                            </div>
+                        `
+                    },
+                    "s3_2_3": {
+                        title: "PPP 协议的工作状态",
+                        content: `
+                            <div class="content-card p-8 fade-in">
+                                <h3 class="text-2xl font-bold mb-4">PPP 协议工作状态机</h3>
+                                <p class="mb-6 text-slate-600 leading-relaxed">PPP链路的建立和拆除遵循一个明确的状态转换过程。点击下方状态图中的节点，查看该阶段的详细说明。</p>
+                                <div class="relative p-4 border rounded-lg bg-slate-50">
+                                    <div id="ppp-state-diagram" class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3 text-center text-sm font-semibold">
+                                        <!-- States will be generated by JS -->
+                                    </div>
+                                    <div id="ppp-state-info" class="mt-4 p-6 bg-white rounded-lg shadow-inner min-h-[120px]">
+                                        <h4 id="ppp-state-title" class="font-bold text-indigo-700 text-lg">请点击一个状态</h4>
+                                        <p id="ppp-state-desc" class="mt-2 text-slate-600"></p>
+                                    </div>
+                                </div>
+                            </div>
+                        `
+                    }
+                }
+            },
+            "s3_3": {
+                title: "3.3 广播信道与以太网",
+                subSections: {
+                     "s3_3_1": {
+                        title: "局域网拓扑与介质访问控制",
+                        content: `
+                            <div class="content-card p-8 fade-in">
+                                <h3 class="text-2xl font-bold mb-4">局域网拓扑与介质访问控制</h3>
+                                <p class="mb-6 text-slate-600 leading-relaxed">局域网（LAN）通常使用广播信道，允许多个设备共享同一传输介质。这引出了两种核心设计问题：网络的物理布局（拓扑）和如何协调设备对介质的访问（介质访问控制）。</p>
+                                
+                                <div class="grid md:grid-cols-2 gap-8">
+                                    <div>
+                                        <h4 class="text-xl font-semibold mb-4">网络拓扑结构</h4>
+                                        <div class="space-y-4">
+                                            <div class="flex items-start gap-4">
+                                                <div class="flex-shrink-0 w-16 h-16 bg-blue-100 rounded-lg flex items-center justify-center font-bold text-blue-700 text-3xl">🚌</div>
+                                                <div>
+                                                    <h5 class="font-bold">总线型</h5>
+                                                    <p class="text-sm text-slate-600">所有设备共享一条主电缆。结构简单，但故障诊断困难。是早期以太网的选择。</p>
+                                                </div>
+                                            </div>
+                                            <div class="flex items-start gap-4">
+                                                <div class="flex-shrink-0 w-16 h-16 bg-green-100 rounded-lg flex items-center justify-center font-bold text-green-700 text-3xl">⭐</div>
+                                                <div>
+                                                    <h5 class="font-bold">星型</h5>
+                                                    <p class="text-sm text-slate-600">所有设备连接到一个中心节点（集线器或交换机）。易于管理和扩展，是现代以太网的主流。</p>
+                                                </div>
+                                            </div>
+                                            <div class="flex items-start gap-4">
+                                                <div class="flex-shrink-0 w-16 h-16 bg-yellow-100 rounded-lg flex items-center justify-center font-bold text-yellow-700 text-3xl">🔄</div>
+                                                <div>
+                                                    <h5 class="font-bold">环型</h5>
+                                                    <p class="text-sm text-slate-600">设备连接成一个闭环，信号单向传递。曾用于令牌环网。</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h4 class="text-xl font-semibold mb-4">介质访问控制 (MAC)</h4>
+                                        <div class="space-y-4">
+                                            <div class="p-6 rounded-lg bg-indigo-50 border border-indigo-100">
+                                                <h5 class="font-bold text-indigo-800">随机接入</h5>
+                                                <p class="text-sm text-slate-600 mt-1">所有用户可随机发送信息，可能会发生冲突（碰撞）。需要协议来解决碰撞。<strong>以太网的 CSMA/CD</strong> 是典型代表。</p>
+                                            </div>
+                                            <div class="p-6 rounded-lg bg-slate-100 border">
+                                                <h5 class="font-bold text-slate-800">受控接入</h5>
+                                                <p class="text-sm text-slate-600 mt-1">用户必须服从一定的控制规则才能发送信息，如令牌传递，避免了碰撞的发生。</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `
+                    },
+                    "s3_3_2": {
+                        title: "CSMA/CD 协议模拟",
+                        content: `
+                            <div class="content-card p-8 fade-in">
+                                <h3 class="text-2xl font-bold mb-4">CSMA/CD 协议模拟 (多主机版)</h3>
+                                <p class="mb-6 text-slate-600 leading-relaxed">这个全新的模拟器展示了4个主机争用总线的情况，能更生动地揭示信号传播、碰撞和退避的全过程。请从任意主机发起一次发送，或者同时点击多个主机的发送按钮来观察碰撞。</p>
+                                <div class="relative w-full h-48" id="bus-container">
+                                    <div class="absolute top-1/2 left-0 w-full h-2 bg-slate-300 rounded-full" id="bus"></div>
+                                    <!-- Stations will be dynamically added here -->
+                                </div>
+                                <div id="simulation-log" class="mt-4 p-4 bg-slate-800 text-white font-mono text-sm rounded-lg h-60 overflow-y-auto">
+                                    <p>&gt; 点击任意主机的“发送”按钮启动模拟。</p>
+                                </div>
+                                <div class="mt-6 p-6 border-t border-slate-200 bg-slate-50 rounded-b-lg">
+                                    <h4 class="font-bold text-lg">核心概念:</h4>
+                                    <ul class="list-disc list-inside mt-2 text-slate-600 space-y-2">
+                                        <li><b>信号传播:</b> 信号从发送主机向总线两端传播。</li>
+                                        <li><b>碰撞检测:</b> 当来自不同主机的信号在总线上相遇时，即发生碰撞。</li>
+                                        <li><b>干扰信号:</b> 碰撞后，所有主机都能感知到总线上的冲突信号。</li>
+                                        <li><b>指数退避算法:</b> 碰撞后，主机随机等待一段时间再尝试发送。</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        `
+                    },
+                    "s3_3_5": {
+                        title: "以太网的 MAC 层",
+                        content: `
+                            <div class="content-card p-8 fade-in">
+                                <h3 class="text-2xl font-bold mb-4">以太网 MAC 帧格式</h3>
+                                <p class="mb-6 text-slate-600 leading-relaxed">以太网 V2 是最常用的 MAC 帧格式。它定义了数据在链路层传输的基本单元。一个标准的以太网帧由以下几个部分组成。</p>
+                                <div class="p-6 border border-slate-200 rounded-xl bg-slate-50">
+                                    <p class="text-right text-xs text-slate-500 mb-1">字节数</p>
+                                    <div class="flex items-stretch text-center font-medium text-xs">
+                                        <div class="w-1/6 border-r border-slate-300 p-2"><div class="mb-1">6</div><div class="p-2 bg-pink-200 rounded">目的地址</div></div>
+                                        <div class="w-1/6 border-r border-slate-300 p-2"><div class="mb-1">6</div><div class="p-2 bg-pink-200 rounded">源地址</div></div>
+                                        <div class="w-1/12 border-r border-slate-300 p-2"><div class="mb-1">2</div><div class="p-2 bg-yellow-200 rounded h-full">类型</div></div>
+                                        <div class="flex-1 border-r border-slate-300 p-2"><div class="mb-1">46-1500</div><div class="p-2 bg-sky-200 rounded h-full">数据</div></div>
+                                        <div class="w-1/12 p-2"><div class="mb-1">4</div><div class="p-2 bg-purple-200 rounded h-full">FCS</div></div>
+                                    </div>
+                                    <p class="text-sm mt-4 text-slate-600">注意：在物理层传输时，帧前面还会加上8字节的前同步码和帧开始定界符，用于时钟同步，但这部分不属于MAC帧本身。</p>
+                                </div>
+                            </div>
+                        `
+                    }
+                }
+            },
+            "s3_4": {
+                title: "3.4 扩展的以太网",
+                subSections: {
+                     "s3_4_1": {
+                        title: "集线器 vs. 交换机",
+                        content: `
+                            <div class="content-card p-8 fade-in">
+                                <h3 class="text-2xl font-bold mb-4">扩展以太网: 集线器 vs. 交换机</h3>
+                                <p class="mb-6 text-slate-600 leading-relaxed">扩展以太网范围的关键在于使用何种设备连接不同的网段。集线器（物理层）和交换机（数据链路层）提供了截然不同的解决方案，后者是现代网络的基础。</p>
+                                <div class="grid md:grid-cols-2 gap-8">
+                                    <div>
+                                        <h4 class="text-xl font-semibold text-center mb-4">物理层扩展: 集线器 (Hub)</h4>
+                                        <div class="p-6 bg-red-50 border border-red-200 rounded-lg">
+                                            <p class="text-center font-bold text-red-700 mb-2">缺点: 扩大碰撞域</p>
+                                            <p class="text-sm text-slate-600">集线器只是简单地将所有网段连接成一个更大的**碰撞域**。这意味着整个网络的总带宽受限，任何时刻只有一个设备能成功发送数据。如果多个设备同时发送，就会发生碰撞。</p>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h4 class="text-xl font-semibold text-center mb-4">数据链路层扩展: 交换机 (Switch)</h4>
+                                        <div class="p-6 bg-green-50 border border-green-200 rounded-lg">
+                                            <p class="text-center font-bold text-green-700 mb-2">优点: 隔离碰撞域</p>
+                                            <p class="text-sm text-slate-600">交换机为每个接口提供一个**独立的碰撞域**。它根据MAC地址智能转发，允许多对设备同时通信而互不干扰，从而极大地提升了网络总容量。</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `
+                    },
+                    "s3_4_2": {
+                        title: "交换机自学习功能",
+                        content: `
+                            <div class="content-card p-8 fade-in">
+                                <h3 class="text-2xl font-bold mb-4">交换机自学习过程模拟</h3>
+                                <p class="mb-6 text-slate-600 leading-relaxed">以太网交换机通过自学习算法自动构建MAC地址表，实现即插即用。点击“下一步”按钮，观察交换机如何学习和转发帧。</p>
+                                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+                                    <div>
+                                        <div id="switch-diagram" class="relative w-full max-w-sm mx-auto p-6 border-2 border-slate-700 rounded-lg bg-slate-800">
+                                            <div class="text-white text-center font-bold mb-4">交换机</div>
+                                            <div class="grid grid-cols-2 gap-4 text-white text-center text-sm">
+                                                <div class="port" id="port-1">口1: <span class="host">A</span></div>
+                                                <div class="port" id="port-2">口2: <span class="host">B</span></div>
+                                                <div class="port" id="port-3">口3: <span class="host">C</span></div>
+                                                <div class="port" id="port-4">口4: <span class="host">D</span></div>
+                                            </div>
+                                        </div>
+                                        <div class="text-center mt-6">
+                                            <button id="next-step-btn" onclick="nextSwitchStep()" class="bg-indigo-600 text-white font-bold py-2 px-6 rounded-md hover:bg-indigo-700 transition">开始</button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-semibold mb-2">交换表 (MAC地址表)</h4>
+                                        <table class="w-full text-sm text-left text-slate-500">
+                                            <thead class="text-xs text-slate-700 uppercase bg-slate-100">
+                                                <tr><th class="px-4 py-3">MAC地址</th><th class="px-4 py-3">接口</th></tr>
+                                            </thead>
+                                            <tbody id="mac-table-body">
+                                                <!-- Table rows will be inserted here -->
+                                            </tbody>
+                                        </table>
+                                        <div id="switch-action-log" class="mt-4 p-4 bg-slate-50 rounded-lg min-h-[120px]">
+                                            <p class="font-semibold">当前动作:</p>
+                                            <p id="current-action" class="text-slate-700"></p>
+                                            <p class="font-semibold mt-2">交换机行为:</p>
+                                            <div id="switch-behavior" class="text-slate-700 space-y-1"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `
+                    },
+                    "s3_4_3": {
+                        title: "虚拟局域网 VLAN",
+                         content: `
+                            <div class="content-card p-8 fade-in">
+                                <h3 class="text-2xl font-bold mb-4">虚拟局域网 (VLAN)</h3>
+                                <p class="mb-6 text-slate-600 leading-relaxed">VLAN是一种将物理局域网划分成多个逻辑广播域的技术。通过在以太网帧中插入一个4字节的VLAN标记，交换机可以识别帧所属的VLAN，从而实现广播域的隔离。</p>
+                                <h4 class="text-lg font-semibold mb-2">802.1Q 帧格式</h4>
+                                <div class="p-4 border border-slate-200 rounded-lg bg-slate-50">
+                                    <div class="flex items-stretch text-center font-medium text-xs">
+                                        <div class="flex-initial p-2 bg-pink-200 rounded-l">目的地址 (6B)</div>
+                                        <div class="flex-initial p-2 bg-pink-200">源地址 (6B)</div>
+                                        <div class="flex-initial p-2 bg-teal-300 text-teal-900 ring-2 ring-teal-500"><b>VLAN 标记 (4B)</b></div>
+                                        <div class="flex-initial p-2 bg-yellow-200">类型 (2B)</div>
+                                        <div class="flex-1 p-2 bg-sky-200">数据 (46-1500B)</div>
+                                        <div class="flex-initial p-2 bg-purple-200 rounded-r">FCS (4B)</div>
+                                    </div>
+                                </div>
+                                <div class="mt-6 grid md:grid-cols-2 gap-6">
+                                    <div class="p-6 bg-slate-100 rounded-lg">
+                                        <h5 class="font-bold">VLAN标记的内部结构</h5>
+                                        <ul class="mt-2 list-disc list-inside text-sm space-y-1">
+                                            <li><b>TPID (2字节):</b> 固定为 <code>0x8100</code>，表示这是一个带标签的帧。</li>
+                                            <li><b>TCI (2字节):</b>
+                                                <ul class="list-disc list-inside ml-4">
+                                                    <li>用户优先级 (3位)</li>
+                                                    <li>CFI (1位)</li>
+                                                    <li><b>VLAN ID (12位):</b> 核心字段，指明所属VLAN。</li>
+                                                </ul>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                    <div class="p-6 bg-slate-100 rounded-lg">
+                                        <h5 class="font-bold">VLAN 的核心优势</h5>
+                                        <ul class="mt-2 list-disc list-inside text-sm space-y-1">
+                                            <li><b>限制广播域:</b> 有效抑制广播风暴，提升网络性能。</li>
+                                            <li><b>增强安全性:</b> 不同VLAN间默认隔离，通信需经路由器。</li>
+                                            <li><b>灵活组网:</b> 用户划分不受物理位置限制。</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        `
+                    }
+                }
+            },
+            "s3_5": {
+                title: "3.5 高速以太网",
+                subSections: {
+                    "s3_5_1": {
+                        title: "高速以太网演进",
+                        content: `
+                            <div class="content-card p-8 fade-in">
+                                <h3 class="text-2xl font-bold mb-4">高速以太网技术演进</h3>
+                                <p class="mb-6 text-slate-600 leading-relaxed">以太网的速率从最初的10 Mbit/s发展到现在的100 Gbit/s甚至更高。这种强大的可扩展性是其成功的关键。下面的图表展示了主要高速以太网标准的速率对比。</p>
+                                <div class="chart-container">
+                                    <canvas id="ethernet-speed-chart"></canvas>
+                                </div>
+                                <p class="text-center text-xs text-slate-500 mt-2">不同以太网标准的数据速率（对数坐标轴）</p>
+                                <div class="mt-8 p-6 bg-slate-50 rounded-lg">
+                                    <h4 class="font-bold text-lg">关键演进点:</h4>
+                                    <ul class="list-disc list-inside mt-2 text-slate-600 space-y-2">
+                                        <li><b>快速以太网 (100 Mbit/s):</b> 为保证CSMA/CD可用，将网段长度缩短至100m。</li>
+                                        <li><b>吉比特以太网 (1 Gbit/s):</b> 引入<b>载波延伸</b>和<b>分组突发</b>机制以兼容半双工模式，但主要工作在全双工模式。</li>
+                                        <li><b>10G 及以上以太网:</b> **只工作在全双工模式**，完全放弃CSMA/CD，从而大大增加了传输距离，应用范围从局域网扩展到城域网和广域网。</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        `
+                    },
+                    "s3_5_4": {
+                        title: "PPPoE 宽带接入",
+                        content: `
+                            <div class="content-card p-8 fade-in">
+                                <h3 class="text-2xl font-bold mb-4">PPPoE (PPP over Ethernet)</h3>
+                                <p class="mb-6 text-slate-600 leading-relaxed">PPPoE 是一种关键的宽带接入技术，它巧妙地将PPP协议的认证、授权和计费 (AAA) 功能与以太网的高效传输结合起来。</p>
+                                <h4 class="text-lg font-semibold mb-2">为什么需要 PPPoE?</h4>
+                                <p class="mb-4 text-slate-600">标准的以太网本身不包含用户认证机制。当运营商（ISP）使用以太网技术为大量家庭用户提供宽带接入时，需要一种方法来识别每个用户并进行计费。PPPoE 正是为此而生。</p>
+                                <h4 class="text-lg font-semibold mb-2">工作流程</h4>
+                                <ol class="list-decimal list-inside space-y-3 text-slate-700">
+                                    <li>用户电脑通过以太网连接到ISP的接入设备（如光猫）。</li>
+                                    <li>用户在电脑上运行PPPoE客户端，输入用户名和密码。</li>
+                                    <li>客户端将包含认证信息的PPP帧，封装在一个新的以太网帧的数据部分。</li>
+                                    <li>ISP的接入服务器接收到这个以太网帧，提取出其中的PPP帧，完成用户认证。</li>
+                                    <li>认证成功后，ISP通过PPP会话为用户分配IP地址，建立起一条通往互联网的逻辑通道。</li>
+                                </ol>
+                                <div class="mt-6 p-6 bg-indigo-50 text-indigo-800 rounded-lg border border-indigo-200">
+                                    <p><b>总结:</b> PPPoE 使得ISP可以利用廉价、高效的以太网硬件设施，同时复用成熟的PPP协议来管理成千上万的宽带用户。</p>
+                                </div>
+                            </div>
+                        `
+                    }
+                }
+            }
+        };
+
+        const sidebar = document.getElementById('nav-menu');
+        const mainContent = document.getElementById('main-content');
+
+        function renderSidebar() {
+            let html = '';
+            for (const sectionId in AppData) {
+                if (sectionId === 'intro') continue;
+                const section = AppData[sectionId];
+                html += `<a href="#" class="nav-link block px-4 py-2.5 my-1" data-id="${sectionId}">${section.title}</a>`;
+            }
+            sidebar.innerHTML = html;
+        }
+
+        function renderContent(sectionId, subSectionId = null) {
+            const section = AppData[sectionId];
+            let targetContent;
+
+            document.querySelectorAll('.nav-link.active').forEach(el => el.classList.remove('active'));
+            const activeLink = document.querySelector(`.nav-link[data-id='${sectionId}']`);
+            if(activeLink) activeLink.classList.add('active');
+
+            if (subSectionId) {
+                targetContent = section.subSections[subSectionId];
+            } else if (section.subSections) {
+                const firstSubSectionId = Object.keys(section.subSections)[0];
+                targetContent = section.subSections[firstSubSectionId];
+                subSectionId = firstSubSectionId;
+            } else {
+                targetContent = section;
+            }
+
+            let fullHtml = `<div class="fade-in">`;
+            if (section.subSections) {
+                fullHtml += `<h2 class="text-4xl font-bold mb-2 text-slate-900">${section.title}</h2>`;
+                fullHtml += `<p class="text-slate-500 mb-8">选择下面的子主题以深入学习。</p>`;
+
+                fullHtml += `<div class="flex space-x-1 mb-8 border-b border-slate-200 overflow-x-auto">`;
+                for (const id in section.subSections) {
+                    const sub = section.subSections[id];
+                    const isActive = id === subSectionId ? 'border-indigo-500 text-indigo-600 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100';
+                    fullHtml += `<button onclick="renderContent('${sectionId}', '${id}')" class="whitespace-nowrap pb-3 pt-2 px-4 border-b-2 font-medium text-sm ${isActive} rounded-t-md">${sub.title}</button>`;
+                }
+                fullHtml += `</div>`;
+            }
+
+            fullHtml += targetContent.content;
+            fullHtml += `</div>`;
+            mainContent.innerHTML = fullHtml;
+            window.scrollTo(0, 0);
+            
+            if (sectionId === 's3_1' && subSectionId === 's3_1_2') {
+                performByteStuffing();
+                calculateCRC();
+            }
+            if (sectionId === 's3_2' && subSectionId === 's3_2_2') initPppFrame();
+            if (sectionId === 's3_2' && subSectionId === 's3_2_3') initPppStateMachine();
+            if (sectionId === 's3_3' && subSectionId === 's3_3_2') initCsmaCdSimulation();
+            if (sectionId === 's3_4' && subSectionId === 's3_4_2') initSwitchSimulation();
+            if (sectionId === 's3_5' && subSectionId === 's3_5_1') renderEthernetSpeedChart();
+        }
+
+        sidebar.addEventListener('click', (e) => {
+            e.preventDefault();
+            const link = e.target.closest('.nav-link');
+            if (link) {
+                const sectionId = link.dataset.id;
+                renderContent(sectionId);
+            }
+        });
+        
+        function performByteStuffing() {
+            const input = document.getElementById('byte-stuff-input').value;
+            const EOT = String.fromCharCode(4);
+            const ESC = String.fromCharCode(27);
+            
+            let originalDisplay = '';
+            let stuffedDisplay = '';
+
+            for (let char of input) {
+                let isSpecial = false;
+                if (char.toUpperCase() === 'E' && input.substr(input.indexOf(char), 3).toUpperCase() === 'EOT') {
+                    originalDisplay += `<span class="text-red-500 font-bold">EOT</span>`;
+                    stuffedDisplay += `<span class="text-blue-500 font-bold">ESC</span><span class="text-red-500 font-bold">EOT</span>`;
+                    input = input.substring(input.indexOf(char) + 2); 
+                    isSpecial = true;
+                } else if (char.toUpperCase() === 'E' && input.substr(input.indexOf(char), 3).toUpperCase() === 'ESC') {
+                    originalDisplay += `<span class="text-blue-500 font-bold">ESC</span>`;
+                    stuffedDisplay += `<span class="text-blue-500 font-bold">ESC</span><span class="text-blue-500 font-bold">ESC</span>`;
+                    input = input.substring(input.indexOf(char) + 2);
+                    isSpecial = true;
+                }
+                
+                if(!isSpecial) {
+                   originalDisplay += char;
+                   stuffedDisplay += char;
+                }
+            }
+
+            document.getElementById('byte-stuff-before').innerHTML = originalDisplay.replace(/EOT/g, EOT).replace(/ESC/g, ESC);
+            document.getElementById('byte-stuff-after').innerHTML = stuffedDisplay.replace(/EOT/g, EOT).replace(/ESC/g, ESC);
+        }
+        
+        function calculateCRC() {
+            let data = document.getElementById('crc-data').value.replace(/[^01]/g, '');
+            let poly = document.getElementById('crc-poly').value.replace(/[^01]/g, '');
+            const resultDiv = document.getElementById('crc-result');
+            
+            if (!data || !poly || poly[0] !== '1') {
+                resultDiv.innerHTML = '<p class="text-red-500">错误：请输入有效的二进制数据和生成多项式（必须以1开头）。</p>';
+                return;
+            }
+
+            const n = poly.length - 1;
+            let dataPadded = data + '0'.repeat(n);
+            let remainder = dataPadded.slice(0, poly.length);
+            
+            for (let i = poly.length; i <= dataPadded.length; i++) {
+                if (remainder[0] === '1') {
+                    let tempRem = '';
+                    for (let j = 0; j < poly.length; j++) {
+                        tempRem += (parseInt(remainder[j]) ^ parseInt(poly[j])).toString();
+                    }
+                    remainder = tempRem.slice(1);
+                } else {
+                    remainder = remainder.slice(1);
+                }
+                if (i < dataPadded.length) {
+                    remainder += dataPadded[i];
+                }
+            }
+            
+            const fcs = remainder.padStart(n, '0');
+            resultDiv.innerHTML = `
+                <p><strong>计算步骤:</strong></p>
+                <p class="text-sm font-mono">数据 M: ${data}</p>
+                <p class="text-sm font-mono">生成多项式 P: ${poly} (n=${n})</p>
+                <p class="text-sm font-mono">补零后数据: ${dataPadded}</p>
+                <p class="mt-2"><strong>计算结果:</strong></p>
+                <p class="text-green-600 font-bold">帧检验序列 (FCS): <span class="font-mono">${fcs}</span></p>
+                <p class="mt-2 text-sm">最终发送的帧 (M + FCS):</p>
+                <p class="font-mono break-all">${data}${fcs}</p>
+            `;
+        }
+        
+        function showTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active', 'text-indigo-600', 'border-indigo-600', 'bg-white'));
+            
+            document.getElementById(tabId + '-content').style.display = 'block';
+            const activeBtn = document.querySelector(`button[onclick="showTab('${tabId}')"]`);
+            activeBtn.classList.add('active', 'text-indigo-600', 'border-indigo-600', 'bg-white');
+        }
+
+        function initPppFrame() {
+            const frameParts = document.querySelectorAll('#ppp-frame .frame-part');
+            const infoBox = document.getElementById('ppp-frame-info');
+            frameParts.forEach(part => {
+                part.addEventListener('mouseover', () => {
+                    infoBox.textContent = part.dataset.info;
+                });
+                part.addEventListener('mouseout', () => {
+                    infoBox.textContent = '将鼠标悬停在帧字段上查看说明';
+                });
+            });
+        }
+        
+        function initPppStateMachine() {
+            const states = {
+                dead: { title: "链路静止", desc: "初始状态，物理链路未连接。" },
+                establish: { title: "链路建立", desc: "物理连接已建立。LCP开始协商链路参数（如MTU）。" },
+                authenticate: { title: "鉴别", desc: "可选状态。通过PAP或CHAP验证用户身份。" },
+                network: { title: "网络层协议", desc: "NCP开始工作，为网络层协议（如IP）进行配置，主要是分配IP地址。" },
+                open: { title: "链路打开", desc: "链路完全建立，可以正常传输数据分组。" },
+                terminate: { title: "链路终止", desc: "连接正在关闭，释放资源。" }
+            };
+            const diagram = document.getElementById('ppp-state-diagram');
+            let html = '';
+            Object.keys(states).forEach(key => {
+                html += `<button class="p-4 bg-white rounded-lg shadow hover:shadow-md hover:-translate-y-1 transition-all" onclick="showPppStateInfo('${key}')">${states[key].title}</button>`;
+            });
+            diagram.innerHTML = html;
+
+            window.showPppStateInfo = (stateKey) => {
+                const state = states[stateKey];
+                document.getElementById('ppp-state-title').textContent = state.title;
+                document.getElementById('ppp-state-desc').textContent = state.desc;
+            };
+            showPppStateInfo('dead');
+        }
+
+        // --- CSMA/CD Simulation ---
+        let simLog, busContainer, bus, stations = {}, isSimulating = false, animationFrameId, signals = [];
+
+        const stationConfig = {
+            'A': { pos: '15%', color: 'blue-600', signalClass: 'signal-data-a', icon: '💻' },
+            'B': { pos: '40%', color: 'green-600', signalClass: 'signal-data-b', icon: '🖥️' },
+            'C': { pos: '65%', color: 'orange-500', signalClass: 'signal-data-c', icon: '💻' },
+            'D': { pos: '90%', color: 'purple-600', signalClass: 'signal-data-d', icon: '🖥️' },
+        };
+
+        function initCsmaCdSimulation() {
+            simLog = document.getElementById('simulation-log');
+            busContainer = document.getElementById('bus-container');
+            isSimulating = false;
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            
+            busContainer.innerHTML = `<div class="absolute top-1/2 left-0 w-full h-2 bg-slate-300 rounded-full" id="bus"></div>`;
+            bus = document.getElementById('bus');
+
+            for (const id in stationConfig) {
+                const config = stationConfig[id];
+                const stationDiv = document.createElement('div');
+                stationDiv.className = 'station-node';
+                stationDiv.style.left = config.pos;
+                stationDiv.innerHTML = `
+                    <div id="node-${id}" class="station-icon bg-${config.color} border-${config.color.replace('600','300')} text-white">${config.icon}</div>
+                    <div id="status-${id}" class="text-xs mt-1 h-4 font-semibold text-${config.color}"></div>
+                    <button onclick="sendFromStation('${id}')" id="send-${id}" class="mt-1 px-3 py-1 bg-${config.color} text-white text-xs rounded-md hover:bg-${config.color.replace('600','700')} transition disabled:opacity-50 disabled:cursor-not-allowed">发送</button>
+                `;
+                busContainer.appendChild(stationDiv);
+                stations[id] = {
+                    el: stationDiv,
+                    button: document.getElementById(`send-${id}`),
+                    status: document.getElementById(`status-${id}`),
+                    pos: parseFloat(config.pos),
+                    isBackoff: false
+                };
+            }
+        }
+        
+        function log(message) {
+            simLog.innerHTML += `<p class="fade-in">&gt; ${message}</p>`;
+            simLog.scrollTop = simLog.scrollHeight;
+        }
+
+        function toggleAllButtons(enable) {
+            Object.values(stations).forEach(s => {
+                if (!s.isBackoff) {
+                    s.button.disabled = !enable;
+                }
+            });
+        }
+
+        async function sendFromStation(stationId) {
+            if (isSimulating) {
+                log(`<span class="text-yellow-400">主机 ${stationId} 监听到信道忙, 正在等待...</span>`);
+                return;
+            }
+            isSimulating = true;
+            toggleAllButtons(false);
+            
+            log(`主机 <span class="font-bold text-${stationConfig[stationId].color.replace('600','400')}">${stationId}</span> 检测到信道空闲, 开始发送...`);
+            stations[stationId].status.textContent = '发送中';
+            
+            signals = [];
+            const busWidth = bus.offsetWidth;
+            const propagationSpeed = busWidth / 2000; // pixels per ms
+
+            function createSignal(sourceStationId) {
+                const sourcePos = stations[sourceStationId].pos / 100 * busWidth;
+                const signal = {
+                    id: `sig-${sourceStationId}-${Date.now()}`,
+                    source: sourceStationId,
+                    left: { el: null, pos: sourcePos, active: true },
+                    right: { el: null, pos: sourcePos, active: true },
+                    type: 'data'
+                };
+                
+                signal.left.el = document.createElement('div');
+                signal.right.el = document.createElement('div');
+                signal.left.el.className = `signal ${stationConfig[sourceStationId].signalClass}`;
+                signal.right.el.className = `signal ${stationConfig[sourceStationId].signalClass}`;
+                
+                bus.appendChild(signal.left.el);
+                bus.appendChild(signal.right.el);
+                
+                signals.push(signal);
+            }
+            
+            createSignal(stationId);
+
+            Object.keys(stations).forEach(id => {
+                if (id !== stationId && Math.random() < 0.4) {
+                    setTimeout(() => {
+                        if (isSimulating && !signals.find(s => s.type === 'jam')) {
+                            log(`主机 <span class="font-bold text-${stationConfig[id].color.replace('600','400')}">${id}</span> 也检测到信道空闲, 开始发送...`);
+                            stations[id].status.textContent = '发送中';
+                            createSignal(id);
+                        }
+                    }, Math.random() * 300 + 50);
+                }
+            });
+
+            let lastTime = performance.now();
+            function simulationLoop(currentTime) {
+                const deltaTime = currentTime - lastTime;
+                lastTime = currentTime;
+
+                if (!isSimulating) return;
+
+                signals.forEach(sig => {
+                    const travelDist = propagationSpeed * deltaTime;
+                    if (sig.left.active) sig.left.pos -= travelDist;
+                    if (sig.right.active) sig.right.pos += travelDist;
+                    if (sig.left.pos < 0) sig.left.active = false;
+                    if (sig.right.pos > busWidth) sig.right.active = false;
+                });
+
+                signals.forEach(sig => {
+                    const sourcePos = stations[sig.source].pos / 100 * busWidth;
+                    if (sig.left.active) {
+                        sig.left.el.style.left = `${sig.left.pos}px`;
+                        sig.left.el.style.width = `${sourcePos - sig.left.pos}px`;
+                    } else {
+                        sig.left.el.style.width = `${sourcePos}px`;
+                        sig.left.el.style.left = '0px';
+                    }
+                    if (sig.right.active) {
+                        sig.right.el.style.left = `${sourcePos}px`;
+                        sig.right.el.style.width = `${sig.right.pos - sourcePos}px`;
+                    } else {
+                        sig.right.el.style.left = `${sourcePos}px`;
+                        sig.right.el.style.width = `${busWidth - sourcePos}px`;
+                    }
+                });
+
+                for (let i = 0; i < signals.length; i++) {
+                    for (let j = i + 1; j < signals.length; j++) {
+                        const s1 = signals[i];
+                        const s2 = signals[j];
+                        if (s1.type === 'data' && s2.type === 'data') {
+                            if (s1.right.pos >= s2.left.pos) {
+                                handleCollision(s1.right.pos);
+                                return;
+                            }
+                        }
+                    }
+                }
+                
+                const allDone = signals.every(s => !s.left.active && !s.right.active);
+                if (allDone) {
+                    if (signals.length === 1 && signals[0].type === 'data') {
+                        handleSuccess(signals[0]);
+                    }
+                    return;
+                }
+
+                animationFrameId = requestAnimationFrame(simulationLoop);
+            }
+            animationFrameId = requestAnimationFrame(simulationLoop);
+        }
+
+        function handleCollision(collisionPos) {
+            cancelAnimationFrame(animationFrameId);
+            log(`<span class="text-red-500 font-bold">碰撞发生!</span>`);
+            
+            const collidingSources = new Set(signals.map(s => s.source));
+            collidingSources.forEach(id => stations[id].status.textContent = '碰撞!');
+            
+            signals.forEach(s => {
+                bus.removeChild(s.left.el);
+                bus.removeChild(s.right.el);
+            });
+            signals.length = 0;
+
+            const jamSignal = {
+                left: { el: document.createElement('div'), pos: collisionPos, active: true },
+                right: { el: document.createElement('div'), pos: collisionPos, active: true },
+            };
+            jamSignal.left.el.className = 'signal signal-jam';
+            jamSignal.right.el.className = 'signal signal-jam';
+            bus.appendChild(jamSignal.left.el);
+            bus.appendChild(jamSignal.right.el);
+            
+            log(`发送强化干扰信号...`);
+
+            let lastTime = performance.now();
+            function jamLoop(currentTime) {
+                const deltaTime = currentTime - lastTime;
+                lastTime = currentTime;
+                const busWidth = bus.offsetWidth;
+                const propagationSpeed = busWidth / 1000; // Faster jam signal
+                const travelDist = propagationSpeed * deltaTime;
+
+                if (jamSignal.left.active) jamSignal.left.pos -= travelDist;
+                if (jamSignal.right.active) jamSignal.right.pos += travelDist;
+                if (jamSignal.left.pos < 0) jamSignal.left.active = false;
+                if (jamSignal.right.pos > busWidth) jamSignal.right.active = false;
+
+                jamSignal.left.el.style.left = `${jamSignal.left.pos}px`;
+                jamSignal.left.el.style.width = `${collisionPos - jamSignal.left.pos}px`;
+                jamSignal.right.el.style.left = `${collisionPos}px`;
+                jamSignal.right.el.style.width = `${jamSignal.right.pos - collisionPos}px`;
+                
+                if (jamSignal.left.active || jamSignal.right.active) {
+                    requestAnimationFrame(jamLoop);
+                } else {
+                    log('所有主机均已检测到碰撞。');
+                    handleBackoff(collidingSources);
+                }
+            }
+            requestAnimationFrame(jamLoop);
+        }
+
+        async function handleBackoff(collidingSources) {
+            log('各碰撞主机执行指数退避算法...');
+            collidingSources.forEach(id => {
+                const station = stations[id];
+                station.isBackoff = true;
+                const backoffTime = (Math.floor(Math.random() * 2) + 1) * 1000; // Simplified time
+                log(`主机 <span class="font-bold text-${stationConfig[id].color.replace('600','400')}">${id}</span> 退避 ${backoffTime}ms`);
+                
+                let timeLeft = backoffTime / 1000;
+                station.status.textContent = `退避: ${timeLeft.toFixed(1)}s`;
+                const intervalId = setInterval(() => {
+                    timeLeft -= 0.1;
+                    station.status.textContent = `退避: ${timeLeft.toFixed(1)}s`;
+                }, 100);
+
+                setTimeout(() => {
+                    clearInterval(intervalId);
+                    station.isBackoff = false;
+                    station.button.disabled = isSimulating;
+                    station.status.textContent = `空闲`;
+                    log(`主机 <span class="font-bold text-${stationConfig[id].color.replace('600','400')}">${id}</span> 退避结束。`);
+                }, backoffTime);
+            });
+
+            await new Promise(res => setTimeout(res, 500));
+            bus.innerHTML = '';
+            isSimulating = false;
+            toggleAllButtons(true);
+            log('信道恢复空闲。');
+        }
+
+        async function handleSuccess(signal) {
+            log(`<span class="text-green-400">主机 ${signal.source} 的帧已成功发送!</span>`);
+            stations[signal.source].status.textContent = '发送成功!';
+            
+            await new Promise(res => setTimeout(res, 1500));
+            
+            signal.left.el.style.opacity = '0';
+            signal.right.el.style.opacity = '0';
+
+            await new Promise(res => setTimeout(res, 500));
+            
+            bus.innerHTML = '';
+            log(`信道恢复空闲。`);
+            isSimulating = false;
+            Object.values(stations).forEach(s => s.status.textContent = '');
+            toggleAllButtons(true);
+        }
+        
+        let switchStep = 0;
+        const switchScenario = [
+            { action: "A 发送帧给 D", src: "A", dest: "D", port: "1" },
+            { action: "D 发送帧给 A", src: "D", dest: "A", port: "4" },
+            { action: "B 发送帧给 C", src: "B", dest: "C", port: "2" },
+            { action: "C 发送帧给 B", src: "C", dest: "B", port: "3" },
+            { action: "A 发送帧给 B", src: "A", dest: "B", port: "1" },
+        ];
+        let macTable = new Map();
+        
+        function initSwitchSimulation() {
+            macTable.clear();
+            switchStep = 0;
+            document.getElementById('next-step-btn').textContent = "开始";
+            updateSwitchUi();
+        }
+
+        function updateSwitchUi() {
+             const tableBody = document.getElementById('mac-table-body');
+             tableBody.innerHTML = '';
+             if (macTable.size === 0) {
+                tableBody.innerHTML = `<tr><td colspan="2" class="px-4 py-3 text-center text-slate-400">表是空的</td></tr>`;
+             } else {
+                macTable.forEach((port, mac) => {
+                    tableBody.innerHTML += `<tr class="fade-in"><td class="px-4 py-3 font-mono">${mac}</td><td class="px-4 py-3">${port}</td></tr>`;
+                });
+             }
+
+             if(switchStep > 0) {
+                const stepData = switchScenario[switchStep - 1];
+                document.getElementById('current-action').textContent = stepData.action;
+                
+                let behavior = `<p>1. <span class="font-semibold">学习:</span> 收到来自接口 ${stepData.port} 的帧，学习到源地址 ${stepData.src} 位于接口 ${stepData.port}。</p>`;
+                if (macTable.has(stepData.dest)) {
+                    behavior += `<p class="mt-1">2. <span class="font-semibold">转发:</span> 在表中查到目的地址 ${stepData.dest}，将帧从接口 ${macTable.get(stepData.dest)} 明确转发。</p>`;
+                } else {
+                    behavior += `<p class="mt-1">2. <span class="font-semibold">泛洪:</span> 在表中未查到目的地址 ${stepData.dest}，向除接口 ${stepData.port} 外的所有接口泛洪。</p>`;
+                }
+                document.getElementById('switch-behavior').innerHTML = behavior;
+             } else {
+                document.getElementById('current-action').textContent = "等待开始...";
+                document.getElementById('switch-behavior').innerHTML = "点击“开始”按钮进行第一步。";
+             }
+        }
+
+        function nextSwitchStep() {
+            if (switchStep >= switchScenario.length) {
+                switchStep = 0;
+                macTable.clear();
+                document.getElementById('next-step-btn').textContent = "重新开始";
+                updateSwitchUi();
+                return;
+            }
+            
+            document.getElementById('next-step-btn').textContent = "下一步";
+            const stepData = switchScenario[switchStep];
+            
+            macTable.set(stepData.src, stepData.port);
+            
+            switchStep++;
+            updateSwitchUi();
+        }
+        
+        function renderEthernetSpeedChart() {
+            const ctx = document.getElementById('ethernet-speed-chart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['以太网', '快速以太网', '吉比特以太网', '10G以太网', '100G以太网'],
+                    datasets: [{
+                        label: '数据速率 (Mbit/s)',
+                        data: [10, 100, 1000, 10000, 100000],
+                        backgroundColor: [
+                            'rgba(59, 130, 246, 0.7)',
+                            'rgba(16, 185, 129, 0.7)',
+                            'rgba(239, 68, 68, 0.7)',
+                            'rgba(249, 115, 22, 0.7)',
+                            'rgba(139, 92, 246, 0.7)'
+                        ],
+                        borderColor: [
+                            'rgb(59, 130, 246)',
+                            'rgb(16, 185, 129)',
+                            'rgb(239, 68, 68)',
+                            'rgb(249, 115, 22)',
+                            'rgb(139, 92, 246)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    scales: {
+                        x: {
+                            type: 'logarithmic',
+                            title: {
+                                display: true,
+                                text: '数据速率 (Mbit/s) - 对数坐标'
+                            }
+                        },
+                        y: {
+                            grid: {
+                                display: false
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.x !== null) {
+                                        label += context.parsed.x.toLocaleString() + ' Mbit/s';
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            renderSidebar();
+            renderContent('intro');
+        });
+
+    </script>
+</body>
+</html>

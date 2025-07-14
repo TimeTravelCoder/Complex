@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高速缓存地址映射动态演示</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8;
+        }
+        .control-panel, .visualization-panel, .log-panel, .info-panel {
+            transition: all 0.3s ease-in-out;
+        }
+        .memory-block, .cache-line {
+            transition: all 0.5s ease;
+            border: 2px solid transparent;
+        }
+        .highlight-check {
+            background-color: #60a5fa !important; /* blue-400 */
+            border-color: #2563eb; /* blue-600 */
+            transform: scale(1.05);
+        }
+        .highlight-hit {
+            background-color: #4ade80 !important; /* green-400 */
+            border-color: #16a34a; /* green-600 */
+            transform: scale(1.1);
+        }
+        .highlight-miss {
+            background-color: #f87171 !important; /* red-400 */
+            border-color: #dc2626; /* red-600 */
+        }
+        .highlight-load {
+            animation: pulse-load 1s ease-in-out;
+        }
+        @keyframes pulse-load {
+            0% { background-color: #facc15; } /* yellow-400 */
+            50% { background-color: #fde68a; } /* yellow-200 */
+            100% { background-color: #facc15; } /* yellow-400 */
+        }
+        .address-part {
+            transition: background-color 0.3s;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">高速缓存 (Cache) 地址映射动态演示</h1>
+            <p class="text-gray-600 mt-2">一个用于理解直接映射、全相联映射和组相联映射工作原理的交互式工具。</p>
+        </header>
+
+        <!-- 控制面板 -->
+        <div id="control-panel" class="control-panel bg-white p-6 rounded-xl shadow-lg mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <!-- 配置部分 -->
+                <div>
+                    <label for="mapping-method" class="block text-sm font-medium text-gray-700 mb-1">映射方式</label>
+                    <select id="mapping-method" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="direct">直接映射 (Direct)</option>
+                        <option value="associative">全相联映射 (Fully Associative)</option>
+                        <option value="set-associative">组相联映射 (Set-Associative)</option>
+                    </select>
+                </div>
+                <div id="set-associative-config" class="hidden">
+                    <label for="ways" class="block text-sm font-medium text-gray-700 mb-1">路数 (Ways)</label>
+                    <select id="ways" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="2">2-路</option>
+                        <option value="4">4-路</option>
+                    </select>
+                </div>
+                <div>
+                    <button id="reset-button" class="w-full bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 h-full">
+                        应用配置并重置
+                    </button>
+                </div>
+                <!-- 访问部分 -->
+                <div class="md:col-span-2 lg:col-span-2 grid grid-cols-3 gap-4">
+                    <div class="col-span-2">
+                        <label for="memory-address" class="block text-sm font-medium text-gray-700 mb-1">要访问的主存地址</label>
+                        <input type="number" id="memory-address" min="0" max="31" value="0" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500">
+                    </div>
+                    <div class="self-end">
+                        <button id="access-button" class="w-full bg-green-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                            访问
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 地址分解信息 -->
+        <div id="info-panel" class="info-panel bg-white p-4 rounded-xl shadow-lg mb-8 hidden">
+             <h3 class="text-lg font-semibold mb-2 text-center">地址分解</h3>
+             <div id="address-breakdown" class="flex justify-center items-center space-x-2 p-2 bg-gray-100 rounded-md">
+                <!-- 内容由JS动态生成 -->
+             </div>
+        </div>
+
+        <!-- 可视化面板 -->
+        <div class="visualization-panel grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- 主存 -->
+            <div class="bg-white p-6 rounded-xl shadow-lg">
+                <h2 class="text-xl font-bold mb-4 text-center">主存 (Main Memory)</h2>
+                <div id="main-memory" class="grid grid-cols-4 gap-2 text-center">
+                    <!-- 主存块由JS动态生成 -->
+                </div>
+            </div>
+            <!-- 高速缓存 -->
+            <div class="bg-white p-6 rounded-xl shadow-lg">
+                <h2 class="text-xl font-bold mb-4 text-center">高速缓存 (Cache)</h2>
+                <div id="cache" class="space-y-2">
+                    <!-- 缓存行由JS动态生成 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 日志面板 -->
+        <div id="log-panel" class="log-panel bg-white p-6 rounded-xl shadow-lg mt-8">
+            <h2 class="text-xl font-bold mb-4">操作日志</h2>
+            <div id="log-content" class="h-48 overflow-y-auto bg-gray-50 p-4 rounded-md font-mono text-sm space-y-2">
+                <p>请配置参数并点击 "访问" 按钮开始演示。</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const mappingMethodSelect = document.getElementById('mapping-method');
+        const setAssociativeConfigDiv = document.getElementById('set-associative-config');
+        const waysSelect = document.getElementById('ways');
+        const resetButton = document.getElementById('reset-button');
+        const accessButton = document.getElementById('access-button');
+        const memoryAddressInput = document.getElementById('memory-address');
+        const mainMemoryDiv = document.getElementById('main-memory');
+        const cacheDiv = document.getElementById('cache');
+        const logContentDiv = document.getElementById('log-content');
+        const infoPanel = document.getElementById('info-panel');
+        const addressBreakdownDiv = document.getElementById('address-breakdown');
+
+        // --- Configuration ---
+        const MEMORY_SIZE = 32; // 32 blocks
+        const CACHE_SIZE = 8;   // 8 lines
+        const BLOCK_SIZE = 4;   // 4 words per block (not directly used in visualization but affects address bits)
+
+        // --- State ---
+        let mainMemory = [];
+        let cache = [];
+        let config = {};
+        let lruCounters = []; // For LRU replacement policy
+
+        // --- Utility Functions ---
+        const log = (message, type = 'info') => {
+            const p = document.createElement('p');
+            let prefix = 'ℹ️';
+            if (type === 'hit') prefix = '✅';
+            if (type === 'miss') prefix = '❌';
+            if (type === 'load') prefix = '📥';
+            p.innerHTML = `${prefix} ${message}`;
+            logContentDiv.appendChild(p);
+            logContentDiv.scrollTop = logContentDiv.scrollHeight;
+        };
+
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        const toBinary = (n, bits) => n.toString(2).padStart(bits, '0');
+
+        // --- Initialization ---
+        function initialize() {
+            // 1. Read configuration from UI
+            config.method = mappingMethodSelect.value;
+            config.ways = parseInt(waysSelect.value);
+            config.memoryBlocks = MEMORY_SIZE;
+            config.cacheLines = CACHE_SIZE;
+            
+            config.offsetBits = Math.log2(BLOCK_SIZE);
+            config.totalAddressBits = Math.log2(config.memoryBlocks) + config.offsetBits;
+            
+            if (config.method === 'direct') {
+                config.indexBits = Math.log2(config.cacheLines);
+                config.tagBits = config.totalAddressBits - config.indexBits - config.offsetBits;
+                config.sets = config.cacheLines;
+            } else if (config.method === 'associative') {
+                config.indexBits = 0;
+                config.tagBits = config.totalAddressBits - config.offsetBits;
+                config.sets = 1;
+            } else if (config.method === 'set-associative') {
+                config.sets = config.cacheLines / config.ways;
+                config.indexBits = Math.log2(config.sets);
+                config.tagBits = config.totalAddressBits - config.indexBits - config.offsetBits;
+            }
+            
+            memoryAddressInput.max = config.memoryBlocks - 1;
+
+            // 2. Initialize Main Memory
+            mainMemory = [];
+            for (let i = 0; i < config.memoryBlocks; i++) {
+                mainMemory.push({ address: i, data: `Data(${i})` });
+            }
+
+            // 3. Initialize Cache
+            cache = [];
+            lruCounters = [];
+            for (let i = 0; i < config.cacheLines; i++) {
+                cache.push({ valid: 0, tag: null, data: null, blockAddr: null });
+                lruCounters.push(0); // Initialize LRU counter for each line
+            }
+            
+            // 4. Render UI
+            renderMainMemory();
+            renderCache();
+
+            // 5. Reset Logs and Info
+            logContentDiv.innerHTML = '<p>配置已应用。请输入地址并点击 "访问"。</p>';
+            infoPanel.classList.add('hidden');
+        }
+
+        // --- Rendering Functions ---
+        function renderMainMemory() {
+            mainMemoryDiv.innerHTML = '';
+            mainMemory.forEach(block => {
+                const blockDiv = document.createElement('div');
+                blockDiv.id = `mem-block-${block.address}`;
+                blockDiv.className = 'memory-block bg-gray-200 p-2 rounded-md text-sm';
+                blockDiv.textContent = `块 ${block.address}`;
+                mainMemoryDiv.appendChild(blockDiv);
+            });
+        }
+
+        function renderCache() {
+            cacheDiv.innerHTML = '';
+            if (config.method === 'set-associative') {
+                for (let i = 0; i < config.sets; i++) {
+                    const setDiv = document.createElement('div');
+                    setDiv.id = `cache-set-${i}`;
+                    setDiv.className = 'cache-set border-2 border-dashed border-gray-300 p-3 rounded-lg mb-3';
+                    
+                    const setTitle = document.createElement('h4');
+                    setTitle.className = 'text-sm font-semibold text-gray-500 mb-2';
+                    setTitle.textContent = `组 ${i}`;
+                    setDiv.appendChild(setTitle);
+
+                    for (let j = 0; j < config.ways; j++) {
+                        const lineIndex = i * config.ways + j;
+                        setDiv.appendChild(createCacheLineElement(lineIndex));
+                    }
+                    cacheDiv.appendChild(setDiv);
+                }
+            } else {
+                for (let i = 0; i < config.cacheLines; i++) {
+                    cacheDiv.appendChild(createCacheLineElement(i));
+                }
+            }
+        }
+        
+        function createCacheLineElement(index) {
+            const line = cache[index];
+            const lineDiv = document.createElement('div');
+            lineDiv.id = `cache-line-${index}`;
+            lineDiv.className = 'cache-line grid grid-cols-12 gap-2 items-center bg-gray-200 p-2 rounded-md';
+            
+            const indexSpan = document.createElement('span');
+            indexSpan.className = 'col-span-1 text-xs font-bold text-gray-600';
+            indexSpan.textContent = `${index}:`;
+            
+            const validSpan = document.createElement('span');
+            validSpan.className = `col-span-1 text-center text-xs font-semibold py-0.5 rounded ${line.valid ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`;
+            validSpan.textContent = line.valid ? '1' : '0';
+            
+            const tagSpan = document.createElement('span');
+            tagSpan.className = 'col-span-3 text-center text-xs font-mono bg-white rounded p-1';
+            tagSpan.textContent = line.tag !== null ? toBinary(line.tag, config.tagBits) : '---';
+
+            const dataSpan = document.createElement('span');
+            dataSpan.className = 'col-span-7 text-xs bg-white rounded p-1 truncate';
+            dataSpan.textContent = line.data || '空 (Empty)';
+
+            lineDiv.append(indexSpan, validSpan, tagSpan, dataSpan);
+            return lineDiv;
+        }
+
+        function updateCacheLine(index) {
+            const lineDiv = document.getElementById(`cache-line-${index}`);
+            if (!lineDiv) return;
+            
+            const line = cache[index];
+            const [ , validSpan, tagSpan, dataSpan ] = lineDiv.children;
+
+            validSpan.className = `col-span-1 text-center text-xs font-semibold py-0.5 rounded ${line.valid ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`;
+            validSpan.textContent = line.valid ? '1' : '0';
+            tagSpan.textContent = line.tag !== null ? toBinary(line.tag, config.tagBits) : '---';
+            dataSpan.textContent = line.data || '空 (Empty)';
+        }
+
+        function highlightElement(id, type, duration = 1500) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.classList.add(`highlight-${type}`);
+                setTimeout(() => el.classList.remove(`highlight-${type}`), duration);
+            }
+        }
+        
+        function renderAddressBreakdown(address, parts) {
+            infoPanel.classList.remove('hidden');
+            addressBreakdownDiv.innerHTML = '';
+            
+            const totalBinary = toBinary(address, config.totalAddressBits - config.offsetBits);
+            
+            const fullAddress = document.createElement('div');
+            fullAddress.className = 'text-center';
+            fullAddress.innerHTML = `<span class="font-bold">主存块地址: ${address}</span> <span class="font-mono text-blue-600">(${totalBinary})</span>`;
+            
+            const breakdown = document.createElement('div');
+            breakdown.className = 'flex space-x-1 font-mono mt-2';
+            
+            const tagPart = document.createElement('div');
+            tagPart.className = 'address-part bg-red-200 p-2 rounded';
+            tagPart.innerHTML = `<div class="text-xs text-red-800">标记 (Tag)</div><div>${toBinary(parts.tag, config.tagBits)}</div>`;
+            
+            breakdown.appendChild(tagPart);
+
+            if (config.indexBits > 0) {
+                const indexPart = document.createElement('div');
+                indexPart.className = 'address-part bg-green-200 p-2 rounded';
+                indexPart.innerHTML = `<div class="text-xs text-green-800">${config.method === 'direct' ? '行号' : '组号'} (Index)</div><div>${toBinary(parts.index, config.indexBits)}</div>`;
+                breakdown.appendChild(indexPart);
+            }
+            
+            addressBreakdownDiv.innerHTML = '';
+            addressBreakdownDiv.append(fullAddress, breakdown);
+        }
+
+        // --- Core Logic ---
+        async function accessMemory() {
+            accessButton.disabled = true;
+            logContentDiv.innerHTML = '';
+
+            const address = parseInt(memoryAddressInput.value);
+            if (isNaN(address) || address < 0 || address >= config.memoryBlocks) {
+                log(`❌ 错误: 地址 ${address} 无效。请输入 0 到 ${config.memoryBlocks - 1} 之间的地址。`);
+                accessButton.disabled = false;
+                return;
+            }
+
+            log(`CPU 请求访问主存块地址: ${address}`);
+            highlightElement(`mem-block-${address}`, 'check', 2000);
+            await sleep(500);
+
+            // 1. Decompose Address
+            const addressBinary = toBinary(address, config.totalAddressBits - config.offsetBits);
+            const tag = parseInt(addressBinary.substring(0, config.tagBits), 2);
+            const index = config.indexBits > 0 ? parseInt(addressBinary.substring(config.tagBits, config.tagBits + config.indexBits), 2) : 0;
+            
+            renderAddressBreakdown(address, { tag, index });
+            await sleep(500);
+
+            let hit = false;
+            let hitIndex = -1;
+            let targetLines = [];
+
+            // 2. Find Target Cache Lines and Check for Hit
+            if (config.method === 'direct') {
+                log(`直接映射: 查找 Cache 行号 ${index}`);
+                targetLines.push(index);
+                const lineDiv = document.getElementById(`cache-line-${index}`);
+                lineDiv.classList.add('highlight-check');
+                await sleep(1000);
+
+                const line = cache[index];
+                if (line.valid && line.tag === tag) {
+                    hit = true;
+                    hitIndex = index;
+                }
+                lineDiv.classList.remove('highlight-check');
+
+            } else if (config.method === 'associative') {
+                log(`全相联映射: 并行查找所有 Cache 行`);
+                for(let i=0; i<config.cacheLines; i++) {
+                    targetLines.push(i);
+                    document.getElementById(`cache-line-${i}`).classList.add('highlight-check');
+                }
+                await sleep(1000);
+
+                for (let i = 0; i < config.cacheLines; i++) {
+                    const line = cache[i];
+                    if (line.valid && line.tag === tag) {
+                        hit = true;
+                        hitIndex = i;
+                        break;
+                    }
+                }
+                 for(let i=0; i<config.cacheLines; i++) {
+                    document.getElementById(`cache-line-${i}`).classList.remove('highlight-check');
+                }
+            } else if (config.method === 'set-associative') {
+                log(`组相联映射: 查找 Cache 组号 ${index}`);
+                const setDiv = document.getElementById(`cache-set-${index}`);
+                setDiv.classList.add('highlight-check');
+                await sleep(1000);
+
+                const start = index * config.ways;
+                const end = start + config.ways;
+                for (let i = start; i < end; i++) {
+                    targetLines.push(i);
+                    const line = cache[i];
+                    if (line.valid && line.tag === tag) {
+                        hit = true;
+                        hitIndex = i;
+                        break;
+                    }
+                }
+                setDiv.classList.remove('highlight-check');
+            }
+
+            // 3. Process Hit or Miss
+            if (hit) {
+                log(`标记匹配! Cache 命中于行 ${hitIndex}`, 'hit');
+                highlightElement(`cache-line-${hitIndex}`, 'hit');
+                // Update LRU for associative methods
+                if (config.method !== 'direct') {
+                    lruCounters[hitIndex] = Date.now();
+                }
+            } else {
+                log(`标记不匹配或无效。Cache 未命中!`, 'miss');
+                targetLines.forEach(i => highlightElement(`cache-line-${i}`, 'miss'));
+                await sleep(1000);
+
+                log(`正在从主存块 ${address} 加载数据...`, 'load');
+                highlightElement(`mem-block-${address}`, 'load', 1500);
+                await sleep(1500);
+
+                // Find a line to replace
+                let replacementIndex = -1;
+                if (config.method === 'direct') {
+                    replacementIndex = index;
+                } else {
+                    // Find an empty line first
+                    const emptyLineIndex = targetLines.find(i => !cache[i].valid);
+                    if (emptyLineIndex !== undefined) {
+                        replacementIndex = emptyLineIndex;
+                        log(`找到空闲行 ${replacementIndex} 用于存放数据。`);
+                    } else {
+                        // LRU replacement policy
+                        let lruIndex = targetLines[0];
+                        let minTimestamp = lruCounters[lruIndex];
+                        for (const i of targetLines) {
+                            if (lruCounters[i] < minTimestamp) {
+                                minTimestamp = lruCounters[i];
+                                lruIndex = i;
+                            }
+                        }
+                        replacementIndex = lruIndex;
+                        log(`所有目标行已满。根据 LRU 策略，替换行 ${replacementIndex}。`);
+                    }
+                }
+                
+                log(`数据已加载到 Cache 行 ${replacementIndex}`, 'hit');
+                cache[replacementIndex] = {
+                    valid: 1,
+                    tag: tag,
+                    data: mainMemory[address].data,
+                    blockAddr: address
+                };
+                lruCounters[replacementIndex] = Date.now(); // Update timestamp
+                
+                updateCacheLine(replacementIndex);
+                highlightElement(`cache-line-${replacementIndex}`, 'hit');
+            }
+            
+            accessButton.disabled = false;
+        }
+
+        // --- Event Listeners ---
+        mappingMethodSelect.addEventListener('change', () => {
+            setAssociativeConfigDiv.classList.toggle('hidden', mappingMethodSelect.value !== 'set-associative');
+        });
+
+        resetButton.addEventListener('click', initialize);
+        accessButton.addEventListener('click', accessMemory);
+
+        // --- Initial Load ---
+        window.onload = () => {
+             mappingMethodSelect.value = 'direct'; // Set default on load
+             setAssociativeConfigDiv.classList.add('hidden');
+             initialize();
+        };
+    </script>
+</body>
+</html>

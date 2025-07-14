@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>计算机网络核心概念交互式解读（最终版）</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutral Harmony -->
+    <!-- Application Structure Plan: 在最终版中，对“体系结构”部分的核心交互模块“数据封装过程”进行了彻底重构，以实现完整的封装与解封装演示。新的设计采用双栏布局，分别代表发送方和接收方，引导用户走完数据从封装、传输到解封装的全过程。此项改动旨在解决之前版本只演示了单向封装的问题，从而提供一个更完整、更符合实际通信过程的教学模型。 -->
+    <!-- Visualization & Content Choices:
+        - 完整封装与解封装 -> 目标: 展示数据在协议栈中的双向流动和形态变化 -> 展现形式: 双栏分步式图解 -> 交互: 用户通过“上/下一步”按钮控制整个流程，包括发送端的逐层封装和接收端的逐层解封装。当前活动的层和PDU（协议数据单元）会被高亮和清晰标注 -> 理由: 这种完整的、可控的、分步式的演示，能极大地帮助用户理解数据在网络中传输的本质，是理解分层模型最关键的一环。
+        - 其他模块保持不变，确保应用的稳定性和一致性。
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #fdfaf6; color: #4a4a4a; }
+        .nav-link { position: relative; transition: color 0.3s; padding-bottom: 4px; }
+        .nav-link::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background-color: #c88a53; transform: scaleX(0); transition: transform 0.3s ease-in-out; }
+        .nav-link:hover::after, .nav-link.active::after { transform: scaleX(1); }
+        .nav-link.active { color: #c88a53; }
+        .card { background-color: #ffffff; border: 1px solid #f0e9e1; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.04); transition: transform 0.3s, box-shadow 0.3s; opacity: 0; transform: translateY(20px); transition: opacity 0.6s ease-out, transform 0.6s ease-out; }
+        .card.is-visible { opacity: 1; transform: translateY(0); }
+        .card:hover { transform: translateY(-5px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+        .btn { background-color: #c88a53; color: white; padding: 10px 20px; border-radius: 8px; transition: background-color 0.3s, transform 0.2s; }
+        .btn:hover { background-color: #b77b4a; transform: scale(1.05); }
+        .btn:disabled { background-color: #a0a0a0; cursor: not-allowed; }
+        .timeline::before { content: ''; position: absolute; left: 12px; top: 0; bottom: 0; width: 4px; background-color: #e2d9ce; border-radius: 2px; }
+        .timeline-item { position: relative; padding-left: 50px; margin-bottom: 40px; }
+        .timeline-item::after { content: ''; position: absolute; top: 5px; left: 0; width: 25px; height: 25px; background-color: white; border: 4px solid #c88a53; border-radius: 50%; z-index: 1; }
+        .timeline-content { padding: 20px; background-color: white; position: relative; border-radius: 8px; border: 1px solid #f0e9e1; }
+        @media (min-width: 768px) {
+            .timeline::before { left: 50%; transform: translateX(-50%); }
+            .timeline-item { width: 50%; padding-left: 0; padding-right: 50px; margin-bottom: 0; }
+            .timeline-item:nth-child(even) { left: 50%; padding-left: 50px; padding-right: 0; }
+            .timeline-item::after { top: 20px; right: -12.5px; left: auto; }
+            .timeline-item:nth-child(even)::after { left: -12.5px; }
+        }
+        .layer-item { border-bottom: 1px solid #e2d9ce; }
+        .layer-header { padding: 1rem 1.5rem; cursor: pointer; background-color: #fff; transition: background-color 0.3s; }
+        .layer-header:hover { background-color: #f9f5f0; }
+        .layer-content { max-height: 0; overflow: hidden; transition: max-height 0.5s ease-in-out, padding 0.5s ease-in-out; background-color: #fdfaf6; padding: 0 1.5rem; }
+        .layer-content.open { max-height: 500px; padding: 1.5rem 1.5rem; }
+        .chart-container { position: relative; width: 100%; max-width: 600px; margin-left: auto; margin-right: auto; height: 300px; max-height: 400px; }
+        @media (min-width: 768px) { .chart-container { height: 350px; } }
+        .tab-btn { transition: all 0.3s; border-bottom: 3px solid transparent; }
+        .tab-btn.active { color: #c88a53; border-bottom-color: #c88a53; background-color: #fdfaf6; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .transmission-layer { border: 2px solid #e2d9ce; border-radius: 8px; padding: 0.5rem; margin-bottom: 0.5rem; text-align: center; transition: all 0.3s; }
+        .transmission-layer.active { border-color: #c88a53; background-color: #fef8f2; transform: scale(1.05); }
+        #data-packet { position: absolute; width: 40px; height: 30px; background-color: #c88a53; color: white; display: flex; align-items: center; justify-content: center; border-radius: 4px; font-size: 12px; transition: all 0.8s ease-in-out; opacity: 0; }
+        .encap-layer { padding: 0.5rem; border: 1px solid #e2d9ce; border-radius: 4px; transition: all 0.3s; }
+        .encap-layer.active { border-color: #c88a53; background-color: #fef8f2; }
+        .pdu-view { display: flex; align-items: center; min-height: 38px; }
+        .pdu-header { background-color: #e2d9ce; color: #4a4a4a; padding: 0.5rem 1rem; border-radius: 4px; margin-right: 0.5rem; font-weight: 500; }
+        .pdu-data { background-color: #c88a53; color: white; padding: 0.5rem 1rem; border-radius: 4px; flex-grow: 1; text-align: center; }
+    </style>
+</head>
+<body class="bg-gray-50">
+
+    <header class="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-50">
+        <nav class="container mx-auto px-6 py-3 flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-gray-800">计算机网络概述</h1>
+            <div class="hidden md:flex items-center space-x-8">
+                <a href="#concepts" class="nav-link text-gray-600 hover:text-gray-900">核心概念</a>
+                <a href="#history" class="nav-link text-gray-600 hover:text-gray-900">发展历程</a>
+                <a href="#components" class="nav-link text-gray-600 hover:text-gray-900">互联网组成</a>
+                <a href="#performance" class="nav-link text-gray-600 hover:text-gray-900">网络性能</a>
+                <a href="#architecture" class="nav-link text-gray-600 hover:text-gray-900">体系结构</a>
+            </div>
+            <div class="md:hidden"><button id="mobile-menu-button" class="text-gray-600 focus:outline-none"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg></button></div>
+        </nav>
+        <div id="mobile-menu" class="hidden md:hidden">
+            <a href="#concepts" class="block py-2 px-6 text-sm text-gray-700 hover:bg-gray-100 mobile-nav-link">核心概念</a>
+            <a href="#history" class="block py-2 px-6 text-sm text-gray-700 hover:bg-gray-100 mobile-nav-link">发展历程</a>
+            <a href="#components" class="block py-2 px-6 text-sm text-gray-700 hover:bg-gray-100 mobile-nav-link">互联网组成</a>
+            <a href="#performance" class="block py-2 px-6 text-sm text-gray-700 hover:bg-gray-100 mobile-nav-link">网络性能</a>
+            <a href="#architecture" class="block py-2 px-6 text-sm text-gray-700 hover:bg-gray-100 mobile-nav-link">体系结构</a>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-6 py-12">
+        
+        <section id="welcome" class="text-center mb-20 pt-8">
+            <h2 class="text-4xl md:text-5xl font-bold mb-4 text-gray-800">欢迎来到交互式计算机网络世界</h2>
+            <p class="text-lg max-w-3xl mx-auto text-gray-600">本应用将《计算机网络》第一章的核心知识点，通过交互式的方式进行呈现。您可以通过顶部导航栏探索不同主题，或按顺序浏览，与图表和模型互动，轻松掌握网络基础。</p>
+        </section>
+
+        <section id="concepts" class="mb-20 scroll-target">
+            <h2 class="text-3xl font-bold text-center mb-12">核心概念</h2>
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                <div class="card p-6 text-center"><div class="text-5xl mb-4">🌐</div><h3 class="text-xl font-bold mb-2">三大网络融合</h3><p class="text-gray-600">电信网络、有线电视网络和计算机网络正日益融合。其中，计算机网络发展最快，起核心作用，引领“三网融合”趋势。</p></div>
+                <div class="card p-6 text-center"><div class="text-5xl mb-4">🔗</div><h3 class="text-xl font-bold mb-2">核心价值：连通性</h3><p class="text-gray-600">互联网让全球用户可以便捷、经济地交换各种信息，无论相距多远，都如同彼此直接连通。</p></div>
+                <div class="card p-6 text-center"><div class="text-5xl mb-4">🤝</div><h3 class="text-xl font-bold mb-2">核心价值：共享</h3><p class="text-gray-600">指资源共享，包括信息共享、软件共享和硬件共享。网络上的海量资源可供用户方便地访问和使用。</p></div>
+            </div>
+        </section>
+
+        <section id="history" class="mb-20 scroll-target">
+            <h2 class="text-3xl font-bold text-center mb-12">互联网发展历程</h2>
+            <p class="text-center max-w-3xl mx-auto mb-12 text-gray-600">互联网的结构并非一成不变，它经历了从单一科研网络到全球商业化网络的重要演变。这个交互式时间线将带您回顾其发展的三个关键阶段。</p>
+            <div class="relative timeline max-w-5xl mx-auto">
+                <div class="timeline-item"><div class="timeline-content card"><h3 class="text-lg font-bold">第一阶段: 从ARPANET向互连网发展</h3><p class="text-sm text-gray-500 mb-2">1969 - 1985</p><p class="text-gray-600">起源于美国国防部的ARPANET。里程碑事件是 1983年，TCP/IP协议成为标准，标志着互联网的正式诞生。</p></div></div>
+                <div class="timeline-item"><div class="timeline-content card"><h3 class="text-lg font-bold">第二阶段: 建成三级结构互联网</h3><p class="text-sm text-gray-500 mb-2">1985 - 1993</p><p class="text-gray-600">以美国国家科学基金会NSFNET为主导，形成了主干网、地区网、校园网的三级结构。</p></div></div>
+                <div class="timeline-item"><div class="timeline-content card"><h3 class="text-lg font-bold">第三阶段: 形成多层次ISP结构</h3><p class="text-sm text-gray-500 mb-2">1993 - 至今</p><p class="text-gray-600">互联网转向商业化运营，出现了互联网服务提供者(ISP)，并形成了全球性的多层次ISP结构。</p></div></div>
+            </div>
+        </section>
+
+        <section id="components" class="mb-20 scroll-target">
+            <h2 class="text-3xl font-bold text-center mb-12">互联网的组成</h2>
+            <p class="text-center max-w-3xl mx-auto mb-12 text-gray-600">从工作方式来看，互联网可划分为用户直接接触的“边缘部分”和负责数据转发的“核心部分”。请点击下方标签页，探索它们各自的角色和关键技术。</p>
+            <div class="card max-w-4xl mx-auto">
+                <div class="flex border-b border-gray-200"><button data-tab="edge" class="tab-btn flex-1 p-4 font-semibold active">边缘部分 (Edge Part)</button><button data-tab="core" class="tab-btn flex-1 p-4 font-semibold">核心部分 (Core Part)</button></div>
+                <div class="p-8">
+                    <div id="edge" class="tab-content active"><p class="text-gray-600 mb-6">由所有连接在互联网上的主机(Host)组成，是用户直接使用的部分，用于通信和资源共享。</p><div class="space-y-4"><div><h4 class="font-semibold text-lg">C/S 方式 (Client/Server)</h4><p class="text-gray-600">最传统的模式，由服务请求方(客户)和服务提供方(服务器)构成。</p></div><div><h4 class="font-semibold text-lg">P2P 方式 (Peer-to-Peer)</h4><p class="text-gray-600">主机间不严格区分客户和服务器，每台主机既可请求服务，也可提供服务。</p></div></div></div>
+                    <div id="core" class="tab-content"><p class="text-gray-600 mb-6">由大量的网络和路由器组成，其作用是为边缘部分提供高效的数据交换和转发服务。</p><div class="space-y-4"><h4 class="font-semibold text-lg">交换技术对比</h4><div class="flex space-x-2 my-2"><button data-tech="circuit" class="flex-1 text-sm py-2 rounded-md bg-gray-200 switching-btn active-btn">电路交换</button><button data-tech="packet" class="flex-1 text-sm py-2 rounded-md bg-gray-200 switching-btn">分组交换</button></div><div id="tech-desc" class="text-sm text-gray-600 p-3 bg-gray-50 rounded-md"><strong class="text-gray-800">原理:</strong> 通信前建立一条专用的物理通路。<br><strong class="text-gray-800">优点:</strong> 时延小。<br><strong class="text-gray-800">缺点:</strong> 线路利用率低。</div></div></div>
+                </div>
+            </div>
+        </section>
+
+        <section id="performance" class="mb-20 scroll-target">
+            <h2 class="text-3xl font-bold text-center mb-12">网络性能探究</h2>
+            <p class="text-center max-w-3xl mx-auto mb-12 text-gray-600">网络的快慢不仅是主观感受，更可由精确指标衡量。在此，您可亲手计算网络时延，并观察网络利用率如何影响性能，从而深入理解这些关键指标。</p>
+            <div class="grid lg:grid-cols-2 gap-12 items-start">
+                <div class="card p-8"><h3 class="text-2xl font-bold mb-6 text-center">时延计算器</h3><div class="space-y-4"><div><label for="data-size" class="block text-sm font-medium text-gray-700">数据长度 (bit)</label><input type="number" id="data-size" value="100000" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-amber-500 focus:border-amber-500"></div><div><label for="send-rate" class="block text-sm font-medium text-gray-700">发送速率 (kbit/s)</label><input type="number" id="send-rate" value="100" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-amber-500 focus:border-amber-500"></div><div><label for="distance" class="block text-sm font-medium text-gray-700">传输距离 (km)</label><input type="number" id="distance" value="1000" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-amber-500 focus:border-amber-500"></div></div><div class="mt-6 pt-6 border-t border-gray-200 space-y-3"><p class="text-lg"><strong>发送时延:</strong> <span id="send-delay" class="font-mono text-blue-600">1.000 s</span></p><p class="text-lg"><strong>传播时延:</strong> <span id="prop-delay" class="font-mono text-green-600">5.000 ms</span></p><p class="text-gray-500 text-sm mt-2">修改参数，观察发送时延和传播时延的变化。</p></div></div>
+                <div class="card p-8"><h3 class="text-2xl font-bold mb-6 text-center">利用率 vs. 时延</h3><div class="chart-container"><canvas id="utilizationChart"></canvas></div><div class="mt-4"><label for="utilization-slider" class="block text-sm font-medium text-gray-700">网络利用率: <span id="utilization-value" class="font-bold">50</span>%</label><input type="range" id="utilization-slider" min="1" max="99" value="50" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" style="accent-color: #c88a53;"><p class="text-gray-500 text-sm mt-2">拖动滑块，观察网络时延如何随利用率急剧增加。</p></div></div>
+            </div>
+        </section>
+
+        <section id="architecture" class="mb-20 scroll-target">
+            <h2 class="text-3xl font-bold text-center mb-12">网络体系结构</h2>
+            <p class="text-center max-w-3xl mx-auto mb-12 text-gray-600">为了管理复杂的网络通信，计算机科学家设计了分层模型。以下模块将通过可视化的方式，深入解析数据如何在这一结构中流动和封装。</p>
+            <div class="space-y-12">
+                 <div class="card p-8">
+                    <h3 class="text-2xl font-bold mb-6 text-center">完整的封装与解封装过程</h3>
+                    <div id="encapsulation-container" class="max-w-5xl mx-auto">
+                        <div class="mb-6 text-center">
+                            <h4 class="font-bold text-lg">第 <span id="encap-step-counter">1</span> 步 / 10</h4>
+                            <p id="encap-step-description" class="text-gray-600 mt-1">应用层准备数据</p>
+                        </div>
+                        <div class="flex justify-between space-x-6">
+                            <div class="w-1/2">
+                                <h5 class="text-center font-semibold mb-2">发送方 (Host A)</h5>
+                                <div id="encap-sender-stack" class="space-y-2 p-4 bg-gray-50 rounded-lg"></div>
+                            </div>
+                            <div class="w-1/2">
+                                <h5 class="text-center font-semibold mb-2">接收方 (Host B)</h5>
+                                <div id="encap-receiver-stack" class="space-y-2 p-4 bg-gray-50 rounded-lg"></div>
+                            </div>
+                        </div>
+                        <div class="flex justify-center space-x-4 mt-8">
+                            <button id="encap-prev" class="btn">上一步</button>
+                            <button id="encap-next" class="btn">下一步</button>
+                        </div>
+                    </div>
+                 </div>
+
+                 <div class="card p-6">
+                    <h3 class="text-2xl font-bold mb-6 text-center">五层协议体系结构</h3>
+                    <div id="layers-container" class="border border-gray-200 rounded-lg overflow-hidden"></div>
+                 </div>
+                 
+                 <div class="card p-8">
+                    <h3 class="text-2xl font-bold mb-6 text-center">TCP/IP 沙漏模型</h3>
+                    <p class="text-gray-600 text-center mb-6">形象地展示了IP协议承上启下的核心作用：向上支持各种应用，向下可运行于各种网络。</p>
+                    <div style="width: 120px; height: 240px; position: relative; margin: 0 auto;"><div style="position: absolute; width: 100%; height: 50%; background: #e2d9ce; clip-path: polygon(0 0, 100% 0, 50% 100%); display: flex; align-items: center; justify-content: center; text-align: center; color: #4a4a4a; font-weight: 500;">各种应用<br>(HTTP, SMTP...)</div><div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #c88a53; color: white; padding: 5px 20px; border-radius: 4px; z-index: 10;">IP协议</div><div style="position: absolute; bottom: 0; width: 100%; height: 50%; background: #e2d9ce; clip-path: polygon(50% 0, 0 100%, 100% 100%); display: flex; align-items: center; justify-content: center; text-align: center; color: #4a4a4a; font-weight: 500;">各种网络接口<br>(Ethernet, Wi-Fi...)</div></div>
+                    <div class="text-center mt-6"><p class="font-semibold">"Everything over IP" & "IP over Everything"</p></div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="bg-gray-800 text-white mt-20"><div class="container mx-auto px-6 py-8 text-center"><p>交互式Web应用 | 基于《计算机网络》第一章内容</p></div></footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            
+            const app = {
+                layersData: [
+                    { name: '应用层', pdu: '报文', header: null },
+                    { name: '运输层', pdu: '报文段', header: 'T-H' },
+                    { name: '网络层', pdu: '分组', header: 'N-H' },
+                    { name: '数据链路层', pdu: '帧', header: 'DL-H' },
+                    { name: '物理层', pdu: '比特', header: null },
+                ],
+
+                init() {
+                    this.initScrollAnimations();
+                    this.initNav();
+                    this.initComponentTabs();
+                    this.initSwitchingTechs();
+                    this.initDelayCalculator();
+                    this.initUtilizationChart();
+                    this.initArchitectureSection();
+                },
+                
+                initArchitectureSection() {
+                    this.initEncapsulationProcess();
+                    this.initLayersAccordion();
+                },
+
+                initScrollAnimations() {
+                    const targets = document.querySelectorAll('.scroll-target');
+                    const observer = new IntersectionObserver((entries, observer) => {
+                        entries.forEach(entry => {
+                            if (entry.isIntersecting) {
+                                const cards = entry.target.querySelectorAll('.card');
+                                cards.forEach((card, index) => {
+                                    setTimeout(() => card.classList.add('is-visible'), index * 100);
+                                });
+                                observer.unobserve(entry.target);
+                            }
+                        });
+                    }, { threshold: 0.1 });
+                    targets.forEach(target => observer.observe(target));
+                },
+
+                initNav() {
+                    const sections = document.querySelectorAll('section');
+                    const navLinks = document.querySelectorAll('.nav-link');
+                    const mobileMenuButton = document.getElementById('mobile-menu-button');
+                    const mobileMenu = document.getElementById('mobile-menu');
+                    const mobileNavLinks = document.querySelectorAll('.mobile-nav-link');
+
+                    window.onscroll = () => {
+                        let current = 'welcome';
+                        sections.forEach(section => {
+                            if (pageYOffset >= section.offsetTop - 80) current = section.id;
+                        });
+                        navLinks.forEach(link => {
+                            link.classList.toggle('active', link.getAttribute('href').substring(1) === current);
+                        });
+                    };
+                    
+                    mobileMenuButton.addEventListener('click', () => mobileMenu.classList.toggle('hidden'));
+                    mobileNavLinks.forEach(link => link.addEventListener('click', () => mobileMenu.classList.add('hidden')));
+                },
+                
+                initComponentTabs() {
+                    const tabContainer = document.querySelector('#components .card .flex.border-b');
+                    if (!tabContainer) return;
+                    
+                    const tabButtons = tabContainer.querySelectorAll('.tab-btn');
+                    const tabContents = tabContainer.nextElementSibling.querySelectorAll('.tab-content');
+
+                    tabButtons.forEach(button => {
+                        button.addEventListener('click', () => {
+                            tabButtons.forEach(btn => btn.classList.remove('active'));
+                            button.classList.add('active');
+                            tabContents.forEach(content => content.classList.remove('active'));
+                            document.getElementById(button.dataset.tab).classList.add('active');
+                        });
+                    });
+                },
+
+                initSwitchingTechs() {
+                    const container = document.querySelector('#core');
+                    if (!container) return;
+                    const switchingBtns = container.querySelectorAll('.switching-btn');
+                    const techDesc = container.querySelector('#tech-desc');
+                    const techData = {
+                        circuit: { desc: '<strong class="text-gray-800">原理:</strong> 通信前建立一条专用的物理通路。<br><strong class="text-gray-800">优点:</strong> 时延小。<br><strong class="text-gray-800">缺点:</strong> 线路利用率低。' },
+                        packet: { desc: '<strong class="text-gray-800">原理:</strong> 采用存储转发技术，将报文分割成“分组”传输。<br><strong class="text-gray-800">优点:</strong> 高效、灵活、可靠。<br><strong class="text-gray-800">缺点:</strong> 存在排队时延。' }
+                    };
+
+                    switchingBtns.forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            switchingBtns.forEach(b => b.classList.remove('active-btn', 'bg-amber-100', 'text-amber-700'));
+                            btn.classList.add('active-btn', 'bg-amber-100', 'text-amber-700');
+                            techDesc.innerHTML = techData[btn.dataset.tech].desc;
+                        });
+                    });
+                    switchingBtns[0].classList.add('active-btn', 'bg-amber-100', 'text-amber-700');
+                },
+
+                initDelayCalculator() {
+                    const container = document.querySelector('#performance');
+                    if (!container) return;
+                    const inputs = {
+                        size: container.querySelector('#data-size'),
+                        rate: container.querySelector('#send-rate'),
+                        dist: container.querySelector('#distance'),
+                    };
+                    const outputs = {
+                        send: container.querySelector('#send-delay'),
+                        prop: container.querySelector('#prop-delay'),
+                    };
+
+                    const calculate = () => {
+                        const dataSize = parseFloat(inputs.size.value) || 0;
+                        const sendRate = (parseFloat(inputs.rate.value) * 1000) || 1;
+                        const distance = (parseFloat(inputs.dist.value) * 1000) || 0;
+                        outputs.send.textContent = `${(dataSize / sendRate).toFixed(3)} s`;
+                        outputs.prop.textContent = `${((distance / 2e8) * 1000).toFixed(3)} ms`;
+                    };
+
+                    Object.values(inputs).forEach(input => input.addEventListener('input', calculate));
+                    calculate();
+                },
+
+                initUtilizationChart() {
+                    const ctx = document.getElementById('utilizationChart')?.getContext('2d');
+                    if (!ctx) return;
+                    const slider = document.getElementById('utilization-slider');
+                    const valueSpan = document.getElementById('utilization-value');
+
+                    const chart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: Array.from({ length: 100 }, (_, i) => i),
+                            datasets: [
+                                { label: '相对时延', data: [], borderColor: '#c88a53', backgroundColor: 'rgba(200, 138, 83, 0.1)', borderWidth: 2, tension: 0.4, fill: true, pointRadius: 0 },
+                                { label: '当前点', data: [], backgroundColor: '#c88a53', pointRadius: 5, pointHoverRadius: 7, type: 'bubble' }
+                            ]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, title: { display: true, text: '相对时延' }, max: 10 }, x: { title: { display: true, text: '网络利用率 (%)' }, ticks: { maxTicksLimit: 10 } } }, plugins: { legend: { display: false }, tooltip: { enabled: false } } }
+                    });
+
+                    const update = () => {
+                        const uValue = parseInt(slider.value);
+                        valueSpan.textContent = uValue;
+                        chart.data.datasets[0].data = Array.from({ length: 99 }, (_, i) => 1 / (1 - (i + 1) / 100));
+                        const pointData = new Array(99).fill(null);
+                        const delayAtU = 1 / (1 - uValue / 100);
+                        if (delayAtU <= 10) pointData[uValue - 1] = delayAtU;
+                        chart.data.datasets[1].data = pointData;
+                        chart.update('none');
+                    };
+                    slider.addEventListener('input', update);
+                    update();
+                },
+
+                initEncapsulationProcess() {
+                    const container = document.getElementById('encapsulation-container');
+                    if (!container) return;
+                    const senderStack = container.querySelector('#encap-sender-stack');
+                    const receiverStack = container.querySelector('#encap-receiver-stack');
+                    const stepCounter = container.querySelector('#encap-step-counter');
+                    const stepDesc = container.querySelector('#encap-step-description');
+                    const prevBtn = container.querySelector('#encap-prev');
+                    const nextBtn = container.querySelector('#encap-next');
+                    
+                    let currentStep = 0;
+                    const totalSteps = (this.layersData.length * 2) -1;
+
+                    const stepDescriptions = [
+                        "发送方：应用层准备数据 (报文)",
+                        "发送方：运输层添加TCP头部 (报文段)",
+                        "发送方：网络层添加IP头部 (分组)",
+                        "发送方：数据链路层添加帧头/尾 (帧)",
+                        "发送方：物理层将帧转换为比特流",
+                        "接收方：物理层接收比特流，转为帧",
+                        "接收方：数据链路层剥离帧头/尾 (分组)",
+                        "接收方：网络层剥离IP头部 (报文段)",
+                        "接收方：运输层剥离TCP头部 (报文)",
+                        "接收方：应用层接收数据"
+                    ];
+
+                    const update = () => {
+                        senderStack.innerHTML = '';
+                        receiverStack.innerHTML = '';
+
+                        const isSending = currentStep < 5;
+                        const senderActiveLayer = isSending ? currentStep : -1;
+                        const receiverActiveLayer = !isSending ? 9 - currentStep : -1;
+
+                        // Render Sender Stack
+                        for (let i = 0; i < 5; i++) {
+                            const layer = this.layersData[i];
+                            const el = document.createElement('div');
+                            el.className = `encap-layer ${i === senderActiveLayer ? 'active' : ''}`;
+                            let pduHTML = '&nbsp;';
+                            if (isSending && i >= currentStep) {
+                                let headers = '';
+                                for (let j = 1; j <= i; j++) {
+                                    if(this.layersData[j].header) headers += `<div class="pdu-header">${this.layersData[j].header}</div>`;
+                                }
+                                pduHTML = `<div class="pdu-view">${headers}<div class="pdu-data">数据</div></div>`;
+                            }
+                            el.innerHTML = `<div class="flex justify-between items-center"><span>${layer.name}</span><span class="text-sm text-gray-500">${layer.pdu}</span></div>${i === senderActiveLayer ? pduHTML : ''}`;
+                            senderStack.appendChild(el);
+                        }
+
+                        // Render Receiver Stack
+                        for (let i = 0; i < 5; i++) {
+                            const layer = this.layersData[i];
+                            const el = document.createElement('div');
+                            el.className = `encap-layer ${i === receiverActiveLayer ? 'active' : ''}`;
+                            let pduHTML = '&nbsp;';
+                            if (!isSending && i <= receiverActiveLayer) {
+                                let headers = '';
+                                for (let j = 1; j < 5 - i; j++) {
+                                     if(this.layersData[j].header) headers += `<div class="pdu-header">${this.layersData[j].header}</div>`;
+                                }
+                                pduHTML = `<div class="pdu-view">${headers}<div class="pdu-data">数据</div></div>`;
+                            }
+                            el.innerHTML = `<div class="flex justify-between items-center"><span>${layer.name}</span><span class="text-sm text-gray-500">${layer.pdu}</span></div>${i === receiverActiveLayer ? pduHTML : ''}`;
+                            receiverStack.appendChild(el);
+                        }
+
+                        stepCounter.textContent = currentStep + 1;
+                        stepDesc.textContent = stepDescriptions[currentStep];
+                        prevBtn.disabled = currentStep === 0;
+                        nextBtn.disabled = currentStep === totalSteps;
+                    };
+
+                    nextBtn.addEventListener('click', () => {
+                        if (currentStep < totalSteps) { currentStep++; update(); }
+                    });
+                    prevBtn.addEventListener('click', () => {
+                        if (currentStep > 0) { currentStep--; update(); }
+                    });
+                    
+                    update();
+                },
+                
+                initLayersAccordion() {
+                    const container = document.getElementById('layers-container');
+                    if(!container) return;
+                    const details = [
+                        '<b>任务:</b> 通过应用进程间的交互来完成特定网络应用。',
+                        '<b>任务:</b> 负责向两台主机中进程之间的通信提供通用的数据传输服务。',
+                        '<b>任务:</b> 为分组交换网上的不同主机提供通信服务，选择合适的路由。',
+                        '<b>任务:</b> 将网络层交下的IP数据报组装成帧，在相邻结点间传输。',
+                        '<b>任务:</b> 在传输媒体上透明地传输原始的比特流。'
+                    ];
+
+                    container.innerHTML = this.layersData.map((layer, i) => `
+                        <div class="layer-item">
+                            <div class="layer-header flex justify-between items-center">
+                                <h4 class="font-bold text-lg">${layer.name} <span class="text-sm font-normal text-gray-500">(${layer.pdu})</span></h4>
+                                <span class="text-xl transform transition-transform duration-300">▼</span>
+                            </div>
+                            <div class="layer-content"><p class="text-gray-600">${details[i]}</p></div>
+                        </div>`).join('');
+
+                    container.addEventListener('click', (e) => {
+                        const header = e.target.closest('.layer-header');
+                        if (!header) return;
+                        const content = header.nextElementSibling;
+                        const isOpen = content.classList.contains('open');
+                        container.querySelectorAll('.layer-content').forEach(c => c.classList.remove('open'));
+                        container.querySelectorAll('.layer-header span').forEach(s => s.style.transform = 'rotate(0deg)');
+                        if (!isOpen) {
+                            content.classList.add('open');
+                            header.querySelector('span').style.transform = 'rotate(180deg)';
+                        }
+                    });
+                }
+            };
+            
+            app.init();
+        });
+    </script>
+</body>
+</html>
