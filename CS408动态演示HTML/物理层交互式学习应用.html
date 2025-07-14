@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>物理层交互式学习应用</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <!-- 
+    Chosen Palette: Warm Neutrals 
+    Application Structure Plan: A thematic, dashboard-style single-page application. The structure prioritizes learning objectives over the linear sequence of the source notes. Key sections are 'Home', 'Core Concepts', 'Transmission Media', 'Channel Sharing', and 'Access Tech'. This design allows users to explore topics non-linearly, focusing on interactive visualizations (like the multiplexing simulator) and comparative tools to enhance understanding and engagement. This is more user-friendly for both quick reviews and in-depth study compared to a simple text document.
+    Visualization & Content Choices:
+    - OSI Model: Goal: Organize. Method: HTML/CSS diagram for a clear structural view.
+    - Communication Model: Goal: Organize. Method: Interactive HTML/CSS diagram with hover-to-reveal details, making complex relationships easy to grasp.
+    - Modulation Chart: Goal: Compare. Method: Dynamic Chart.js visualization to show how a signal transforms, providing a direct comparison of AM/FM/PM.
+    - Shannon Calculator: Goal: Explore. Method: Interactive calculator with sliders (HTML) and a Chart.js bar chart, allowing users to see the cause-and-effect relationship between bandwidth/SNR and capacity.
+    - Multiplexing Simulator: Goal: Compare/Organize. Method: The core interactive element. A central canvas controlled by JS to animate and explain FDM, TDM, and CDMA, making abstract resource allocation tangible.
+    - CDMA Calculator: Goal: Inform/Explore. Method: An interactive HTML/CSS-based tool that walks through the dot-product calculation step-by-step, demystifying the process.
+    - Access Tech Comparison: Goal: Compare. Method: Dynamic Chart.js bar chart to visually compare the asymmetric speeds of ADSL, HFC, and FTTx, coupled with clear HTML/CSS diagrams of their network structures.
+    CONFIRMATION: NO SVG graphics used. NO Mermaid JS used.
+    -->
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #f8f9fa; color: #343a40; }
+        .nav-button { transition: all 0.3s ease; }
+        .nav-button.active, .nav-button:hover { background-color: #0ea5e9; color: white; }
+        .content-section { display: none; }
+        .content-section.active { display: block; animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .card { background-color: white; border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); padding: 1.5rem; transition: all 0.3s ease; }
+        .card:hover { transform: translateY(-5px); box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -2px rgb(0 0 0 / 0.1); }
+        .chart-container { position: relative; width: 100%; max-width: 600px; margin-left: auto; margin-right: auto; height: 300px; max-height: 400px; }
+        @media (min-width: 768px) { .chart-container { height: 350px; } }
+        .interactive-btn { transition: all 0.2s ease; }
+        .interactive-btn.active { background-color: #16a34a; color: white; transform: scale(1.05); }
+        .cdma-cell { border: 1px solid #e5e7eb; width: 2.5rem; height: 2.5rem; display: flex; align-items: center; justify-content: center; font-weight: 500; transition: background-color 0.3s; }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-sky-600">物理层：网络世界的基石</h1>
+            <p class="text-lg text-gray-600 mt-2">一个交互式的物理层学习指南</p>
+        </header>
+
+        <nav class="flex flex-wrap justify-center gap-2 md:gap-4 mb-10">
+            <button class="nav-button font-medium py-2 px-4 rounded-full" data-target="home">🚀 概述</button>
+            <button class="nav-button font-medium py-2 px-4 rounded-full" data-target="concepts">🧠 核心概念</button>
+            <button class="nav-button font-medium py-2 px-4 rounded-full" data-target="media">🔗 传输媒介</button>
+            <button class="nav-button font-medium py-2 px-4 rounded-full" data-target="multiplexing">📡 信道复用</button>
+            <button class="nav-button font-medium py-2 px-4 rounded-full" data-target="access">🏠 宽带接入</button>
+        </nav>
+
+        <main>
+            <!-- 概述 Section -->
+            <section id="home" class="content-section">
+                <div class="card">
+                    <h2 class="text-3xl font-bold text-sky-700 mb-4">欢迎来到物理层世界</h2>
+                    <p class="text-gray-700 leading-relaxed mb-4">本应用旨在将《计算机网络》中关于物理层的复杂概念转化为直观、易于理解的交互式体验。物理层是网络通信的起点，它负责在真实的传输媒体上发送和接收原始的比特流（0和1）。它定义了网络的物理、电气和机械规范。</p>
+                    <p class="text-gray-700 leading-relaxed">在这里，您将不仅仅是阅读，更是亲身体验。您可以通过互动图表、模拟器和比较工具，深入探索数据通信的奥秘。准备好开始您的物理层探索之旅了吗？请点击上方导航按钮选择您感兴趣的主题。</p>
+                    <div class="mt-6 p-6 bg-sky-50 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-3 text-sky-800">物理层的核心任务</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-center">
+                            <div class="p-4 bg-white rounded-lg shadow-sm">
+                                <div class="text-4xl mb-2">🔧</div>
+                                <h4 class="font-bold">机械特性</h4>
+                                <p class="text-sm text-gray-600">接口形状、尺寸、引脚</p>
+                            </div>
+                             <div class="p-4 bg-white rounded-lg shadow-sm">
+                                <div class="text-4xl mb-2">⚡</div>
+                                <h4 class="font-bold">电气特性</h4>
+                                <p class="text-sm text-gray-600">电压范围、传输速率</p>
+                            </div>
+                             <div class="p-4 bg-white rounded-lg shadow-sm">
+                                <div class="text-4xl mb-2">💡</div>
+                                <h4 class="font-bold">功能特性</h4>
+                                <p class="text-sm text-gray-600">电压意义、信号功能</p>
+                            </div>
+                             <div class="p-4 bg-white rounded-lg shadow-sm">
+                                <div class="text-4xl mb-2">⏳</div>
+                                <h4 class="font-bold">过程特性</h4>
+                                <p class="text-sm text-gray-600">事件顺序、时序关系</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 核心概念 Section -->
+            <section id="concepts" class="content-section">
+                <div class="card mb-8">
+                    <h2 class="text-3xl font-bold text-sky-700 mb-4">核心概念解析</h2>
+                     <p class="text-gray-700 leading-relaxed mb-6">本节探讨数据通信的基石。我们将拆解一个典型通信系统的构成，并澄清数据、信号、码元等核心术语。更重要的是，您将通过互动图表，直观地理解基带信号是如何通过不同调制技术（调幅、调频、调相）转换为适合在信道中传输的带通信号的。</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div>
+                            <h3 class="text-xl font-semibold mb-3">信号调制技术</h3>
+                            <div class="flex justify-center space-x-2 mb-4">
+                                <button class="interactive-btn bg-gray-200 py-1 px-3 rounded-full text-sm" data-mod="base">基带信号</button>
+                                <button class="interactive-btn bg-gray-200 py-1 px-3 rounded-full text-sm" data-mod="am">调幅(AM)</button>
+                                <button class="interactive-btn bg-gray-200 py-1 px-3 rounded-full text-sm" data-mod="fm">调频(FM)</button>
+                                <button class="interactive-btn bg-gray-200 py-1 px-3 rounded-full text-sm" data-mod="pm">调相(PM)</button>
+                            </div>
+                            <div class="chart-container"><canvas id="modulationChart"></canvas></div>
+                            <p id="modulation-info" class="text-sm text-center mt-2 text-gray-600">点击按钮查看不同调制方式下的信号波形。</p>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold mb-3">信道极限容量 (香农公式)</h3>
+                            <p class="text-sm text-gray-600 mb-4">信道容量 C = W log₂(1 + S/N)。拖动滑块，观察带宽(W)和信噪比(S/N)如何影响信道的极限传输速率。</p>
+                            <div class="space-y-4">
+                                <div>
+                                    <label for="bandwidth" class="block text-sm font-medium">带宽 (W): <span id="bandwidthValue">3100</span> Hz</label>
+                                    <input type="range" id="bandwidth" min="1000" max="5000" value="3100" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                                </div>
+                                <div>
+                                    <label for="snr" class="block text-sm font-medium">信噪比 (S/N): <span id="snrValue">1000</span> (30 dB)</label>
+                                    <input type="range" id="snr" min="10" max="10000" value="1000" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                                </div>
+                                <div class="text-center p-4 bg-sky-50 rounded-lg">
+                                    <p class="text-lg">极限速率 (C):</p>
+                                    <p class="text-3xl font-bold text-sky-600"><span id="capacityValue">...</span> kbit/s</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 传输媒介 Section -->
+            <section id="media" class="content-section">
+                 <div class="card">
+                     <h2 class="text-3xl font-bold text-sky-700 mb-4">传输媒介对比</h2>
+                      <p class="text-gray-700 leading-relaxed mb-6">数据比特流的旅程离不开物理的传输媒介。本节将带您了解两大类传输媒体：导引型和非导引型。您可以通过点击下方的卡片，详细了解双绞线、同轴电缆、光纤以及无线微波等主流媒介的结构、优缺点和应用场景，并通过图表直观对比它们在关键性能上的差异。</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                        <div class="media-card p-4 bg-gray-50 rounded-lg text-center cursor-pointer border-2 border-transparent hover:border-sky-500" data-media="twisted-pair">
+                            <div class="text-5xl">🔗</div>
+                            <h4 class="font-bold mt-2">双绞线</h4>
+                        </div>
+                        <div class="media-card p-4 bg-gray-50 rounded-lg text-center cursor-pointer border-2 border-transparent hover:border-sky-500" data-media="coaxial">
+                            <div class="text-5xl">🔘</div>
+                            <h4 class="font-bold mt-2">同轴电缆</h4>
+                        </div>
+                         <div class="media-card p-4 bg-gray-50 rounded-lg text-center cursor-pointer border-2 border-transparent hover:border-sky-500" data-media="fiber">
+                            <div class="text-5xl">✨</div>
+                            <h4 class="font-bold mt-2">光纤</h4>
+                        </div>
+                        <div class="media-card p-4 bg-gray-50 rounded-lg text-center cursor-pointer border-2 border-transparent hover:border-sky-500" data-media="wireless">
+                            <div class="text-5xl">📡</div>
+                            <h4 class="font-bold mt-2">无线微波</h4>
+                        </div>
+                    </div>
+                    <div id="media-details" class="p-6 bg-white rounded-lg border border-gray-200 min-h-[200px]">
+                        <p class="text-gray-500">点击上方的媒介类型查看详细信息。</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 信道复用 Section -->
+            <section id="multiplexing" class="content-section">
+                <div class="card mb-8">
+                    <h2 class="text-3xl font-bold text-sky-700 mb-4">信道复用技术模拟器</h2>
+                    <p class="text-gray-700 leading-relaxed mb-6">信道是宝贵的资源。复用技术允许多个用户共享同一信道，从而极大地提高了资源利用率。这个模拟器将为您动态展示最核心的几种复用技术的工作原理。点击按钮，观察信道资源（时间、频率、码字）是如何被不同用户划分和使用的。</p>
+                    <div class="flex justify-center space-x-2 mb-4">
+                        <button class="multiplex-btn interactive-btn bg-gray-200 py-2 px-4 rounded-full" data-type="fdm">频分(FDM)</button>
+                        <button class="multiplex-btn interactive-btn bg-gray-200 py-2 px-4 rounded-full" data-type="tdm">时分(TDM)</button>
+                        <button class="multiplex-btn interactive-btn bg-gray-200 py-2 px-4 rounded-full" data-type="wdm">波分(WDM)</button>
+                        <button class="multiplex-btn interactive-btn bg-gray-200 py-2 px-4 rounded-full" data-type="cdm">码分(CDMA)</button>
+                    </div>
+                    <div class="bg-gray-100 p-4 rounded-lg">
+                        <div class="chart-container mx-auto"><canvas id="multiplexingCanvas"></canvas></div>
+                        <p id="multiplexing-info" class="text-center mt-4 text-gray-700 p-4 bg-white rounded-md min-h-[100px]">选择一种复用技术来查看其工作原理的可视化解释。</p>
+                    </div>
+                </div>
+
+                <div id="cdma-calculator-card" class="card hidden">
+                    <h3 class="text-2xl font-bold text-sky-700 mb-4">CDMA 工作原理演算</h3>
+                    <p class="text-gray-700 leading-relaxed mb-6">CDMA的魔力在于其码片序列的正交性。这里我们来亲手验证一下。以下是四个站(A, B, C, D)的码片序列。假设接收到的叠加信号是 S，我们将 S 与每个站的码片序列做内积运算，来判断哪个站发送了什么信号。</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="font-semibold mb-2">各站码片序列:</h4>
+                            <p class="text-sm font-mono">A: [-1, -1, -1, +1, +1, -1, +1, +1]</p>
+                            <p class="text-sm font-mono">B: [-1, -1, +1, -1, +1, +1, +1, -1]</p>
+                            <p class="text-sm font-mono">C: [-1, +1, -1, +1, +1, +1, -1, -1]</p>
+                            <p class="text-sm font-mono">D: [-1, +1, -1, -1, -1, -1, +1, -1]</p>
+                            <h4 class="font-semibold mb-2 mt-4">接收到的叠加信号:</h4>
+                            <p class="text-sm font-mono">S: [-1, +1, -3, +1, -1, -3, +1, +1]</p>
+                        </div>
+                        <div id="cdma-results" class="space-y-2">
+                             <h4 class="font-semibold mb-2">内积运算结果 (S · 站) / 8:</h4>
+                             <div class="p-3 bg-gray-50 rounded-md">
+                                <span class="font-bold">S · A = ?</span> <span id="resA"></span>
+                             </div>
+                             <div class="p-3 bg-gray-50 rounded-md">
+                                <span class="font-bold">S · B = ?</span> <span id="resB"></span>
+                             </div>
+                              <div class="p-3 bg-gray-50 rounded-md">
+                                <span class="font-bold">S · C = ?</span> <span id="resC"></span>
+                             </div>
+                              <div class="p-3 bg-gray-50 rounded-md">
+                                <span class="font-bold">S · D = ?</span> <span id="resD"></span>
+                             </div>
+                        </div>
+                    </div>
+                    <div id="cdma-conclusion" class="mt-6 p-4 bg-sky-50 rounded-lg text-center font-medium text-sky-800">
+                        点击按钮开始计算
+                    </div>
+                    <div class="text-center mt-4">
+                        <button id="calculate-cdma" class="bg-green-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-green-700">开始演算</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 宽带接入 Section -->
+            <section id="access" class="content-section">
+                <div class="card">
+                     <h2 class="text-3xl font-bold text-sky-700 mb-4">宽带接入技术</h2>
+                    <p class="text-gray-700 leading-relaxed mb-6">从拨号上网到光纤入户，我们离高速互联网越来越近。本节聚焦于将互联网“最后一公里”连接到家的主流技术：ADSL、HFC和FTTx。我们将通过网络结构图和性能对比图，帮助您理解它们的实现方式和优劣差异。</p>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div>
+                            <h3 class="text-xl font-semibold mb-3">技术对比 (典型上下行速率)</h3>
+                            <div class="chart-container"><canvas id="accessTechChart"></canvas></div>
+                        </div>
+                        <div class="space-y-6">
+                            <div>
+                                <h4 class="font-semibold text-lg">ADSL (非对称数字用户线)</h4>
+                                <p class="text-sm text-gray-600">利用现有电话铜线，提供非对称的上下行速率，是普及度很高的宽带方案。</p>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-lg">HFC (光纤同轴混合网)</h4>
+                                <p class="text-sm text-gray-600">基于有线电视网络，采用光纤+同轴电缆的混合结构，带宽为区域内用户共享。</p>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-lg">FTTx (光纤接入)</h4>
+                                <p class="text-sm text-gray-600">将光纤铺设到离用户更近的位置（如大楼FTTB、家庭FTTH），提供极高的带宽和稳定性，是未来的发展方向。</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- Data ---
+        const mediaData = {
+            'twisted-pair': {
+                title: '双绞线 (Twisted Pair)',
+                description: '将两根互相绝缘的铜导线绞合而成，是最常用的传输媒体之一。绞合可以有效减少电磁干扰。',
+                pros: ['价格低廉', '安装方便'],
+                cons: ['易受干扰', '传输距离和速率有限']
+            },
+            'coaxial': {
+                title: '同轴电缆 (Coaxial Cable)',
+                description: '由中心铜线、绝缘层、网状屏蔽层和外层护套构成，抗干扰能力强于双绞线。',
+                pros: ['抗干扰性好', '支持较高带宽'],
+                cons: ['成本高于双绞线', '布线不如双绞线灵活']
+            },
+            'fiber': {
+                title: '光纤 (Optical Fiber)',
+                description: '利用光的全反射原理传输光脉冲信号。由纤芯和包层构成，是现代高速通信的基石。',
+                pros: ['容量巨大', '损耗低，距离远', '抗电磁干扰', '安全保密性好'],
+                cons: ['成本高', '安装维护需要专业设备']
+            },
+            'wireless': {
+                title: '无线微波 (Wireless Microwave)',
+                description: '在自由空间中通过电磁波传输信号，包括地面微波接力和卫星通信。',
+                pros: ['无需布线', '建设速度快', '可跨越地理障碍'],
+                cons: ['易受气候影响', '需要视距传输(地面)', '有较大传播时延(卫星)']
+            },
+        };
+
+        const multiplexingInfoData = {
+            fdm: {
+                title: '频分复用 (FDM)',
+                text: '所有用户在同一时间，占用不同的频率带宽。就像多条并行的车道，每辆车（用户）在自己的车道上行驶，互不干扰。'
+            },
+            tdm: {
+                title: '时分复用 (TDM)',
+                text: '所有用户在不同时间，占用相同的全部频率带宽。就像一个十字路口的红绿灯，车辆（用户）轮流通过，共享路口资源。'
+            },
+            wdm: {
+                title: '波分复用 (WDM)',
+                text: '本质是光频分复用。在一根光纤中同时传输多种不同波长（颜色）的光信号。这极大地提高了单根光纤的传输容量。'
+            },
+            cdm: {
+                title: '码分复用 (CDMA)',
+                text: '所有用户在同一时间、同一频率上传输。通过给每个用户分配一个相互正交的独特“密码”（码片序列）来区分信号。即使所有信号叠加在一起，接收方也能用对应的密码“解锁”出想要的信号。'
+            }
+        };
+
+        // --- Navigation ---
+        const navButtons = document.querySelectorAll('.nav-button');
+        const sections = document.querySelectorAll('.content-section');
+
+        function activateSection(targetId) {
+            sections.forEach(section => {
+                section.classList.toggle('active', section.id === targetId);
+            });
+            navButtons.forEach(button => {
+                button.classList.toggle('active', button.dataset.target === targetId);
+            });
+        }
+        
+        navButtons.forEach(button => {
+            button.addEventListener('click', () => activateSection(button.dataset.target));
+        });
+        
+        activateSection('home');
+
+        // --- Core Concepts: Modulation Chart ---
+        const modCtx = document.getElementById('modulationChart').getContext('2d');
+        const labels = Array.from({ length: 50 }, (_, i) => i);
+        const basebandSignal = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1];
+        
+        let modChart = new Chart(modCtx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '信号',
+                    data: basebandSignal.map(v => v * 0.8),
+                    borderColor: '#0ea5e9',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { min: -1.5, max: 1.5, ticks: { display: false } },
+                    x: { ticks: { display: false } }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        const modButtons = document.querySelectorAll('.interactive-btn[data-mod]');
+        modButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                modButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const modType = btn.dataset.mod;
+                let newData, infoText;
+                const carrier = labels.map(t => Math.sin(t * 0.8));
+
+                switch (modType) {
+                    case 'am':
+                        newData = basebandSignal.map((b, i) => (b > 0 ? 1.5 : 0.5) * carrier[i]);
+                        infoText = "调幅(AM): 载波的振幅随基带信号(1或0)的高低变化而变化。";
+                        break;
+                    case 'fm':
+                        newData = labels.map((t, i) => Math.sin(t * (basebandSignal[i] > 0 ? 1.2 : 0.5)));
+                        infoText = "调频(FM): 载波的频率随基带信号(1或0)的高低变化而变化。";
+                        break;
+                    case 'pm':
+                        newData = labels.map((t, i) => Math.sin(t * 0.8 + (basebandSignal[i] > 0 ? 0 : Math.PI)));
+                        infoText = "调相(PM): 载波的初始相位随基带信号(1或0)的高低变化而变化(例如，相位反转180度)。";
+                        break;
+                    default:
+                        newData = basebandSignal.map(v => v * 0.8);
+                        infoText = "基带信号: 来自信源的原始数字信号，用高低电平表示1和0。";
+                }
+                modChart.data.datasets[0].data = newData;
+                modChart.update();
+                document.getElementById('modulation-info').textContent = infoText;
+            });
+        });
+        document.querySelector('.interactive-btn[data-mod="base"]').click();
+
+        // --- Core Concepts: Shannon Calculator ---
+        const bandwidthSlider = document.getElementById('bandwidth');
+        const snrSlider = document.getElementById('snr');
+        
+        function calculateCapacity() {
+            const W = parseFloat(bandwidthSlider.value);
+            const SNR = parseFloat(snrSlider.value);
+            const capacity = W * Math.log2(1 + SNR);
+            document.getElementById('bandwidthValue').textContent = W;
+            const snrDb = 10 * Math.log10(SNR);
+            document.getElementById('snrValue').textContent = `${SNR.toFixed(0)} (${snrDb.toFixed(1)} dB)`;
+            document.getElementById('capacityValue').textContent = (capacity / 1000).toFixed(2);
+        }
+        
+        bandwidthSlider.addEventListener('input', calculateCapacity);
+        snrSlider.addEventListener('input', calculateCapacity);
+        calculateCapacity();
+
+        // --- Media Section ---
+        const mediaCards = document.querySelectorAll('.media-card');
+        const mediaDetailsContainer = document.getElementById('media-details');
+        mediaCards.forEach(card => {
+            card.addEventListener('click', () => {
+                 mediaCards.forEach(c => c.classList.remove('bg-sky-100', 'border-sky-500'));
+                 card.classList.add('bg-sky-100', 'border-sky-500');
+
+                const mediaType = card.dataset.media;
+                const data = mediaData[mediaType];
+                let prosList = data.pros.map(p => `<li class="flex items-start"><span class="text-green-500 mr-2">✔</span>${p}</li>`).join('');
+                let consList = data.cons.map(c => `<li class="flex items-start"><span class="text-red-500 mr-2">✖</span>${c}</li>`).join('');
+
+                mediaDetailsContainer.innerHTML = `
+                    <h3 class="text-2xl font-bold text-sky-700 mb-3">${data.title}</h3>
+                    <p class="text-gray-700 mb-4">${data.description}</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <h4 class="font-semibold text-green-600">优点</h4>
+                            <ul class="mt-2 space-y-1 text-gray-600">${prosList}</ul>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-red-600">缺点</h4>
+                            <ul class="mt-2 space-y-1 text-gray-600">${consList}</ul>
+                        </div>
+                    </div>
+                `;
+            });
+        });
+
+        // --- Multiplexing Section ---
+        const multiplexCanvas = document.getElementById('multiplexingCanvas');
+        const multiplexCtx = multiplexCanvas.getContext('2d');
+        const multiplexInfoEl = document.getElementById('multiplexing-info');
+        const multiplexButtons = document.querySelectorAll('.multiplex-btn');
+        const cdmaCard = document.getElementById('cdma-calculator-card');
+        
+        let animationId;
+        let currentMultiplexType = '';
+        const users = [
+            { name: '用户A', color: '#34d399' },
+            { name: '用户B', color: '#f87171' },
+            { name: '用户C', color: '#60a5fa' },
+            { name: '用户D', color: '#facc15' }
+        ];
+        let packets = [];
+        let tdmState = { currentUser: 0, counter: 0 };
+
+        function initMultiplexing(type) {
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+            }
+            currentMultiplexType = type;
+            multiplexInfoEl.innerHTML = `<h4 class="font-bold text-lg mb-2">${multiplexingInfoData[type].title}</h4><p>${multiplexingInfoData[type].text}</p>`;
+            
+            packets = [];
+            const canvasWidth = multiplexCanvas.width;
+            const packetSize = 20;
+            
+            users.forEach((user, i) => {
+                for(let j = 0; j < 3; j++) {
+                     packets.push({
+                        x: -50 - j * 60,
+                        y: 0, // y will be set in draw function
+                        size: packetSize,
+                        color: user.color,
+                        userIndex: i,
+                        code: currentMultiplexType === 'cdm' ? (Math.random() > 0.5 ? 1 : -1) : 1
+                    });
+                }
+            });
+
+            tdmState = { currentUser: 0, counter: 0 };
+            animateMultiplexing();
+        }
+
+        function animateMultiplexing() {
+            multiplexCtx.clearRect(0, 0, multiplexCanvas.width, multiplexCanvas.height);
+            
+            const canvasWidth = multiplexCanvas.width;
+            const canvasHeight = multiplexCanvas.height;
+            const channelTop = 50;
+            const channelHeight = canvasHeight - 100;
+
+            // Draw channel
+            multiplexCtx.fillStyle = '#e5e7eb';
+            multiplexCtx.fillRect(0, channelTop, canvasWidth, channelHeight);
+            multiplexCtx.font = "14px 'Noto Sans SC'";
+            multiplexCtx.fillStyle = '#6b7280';
+            multiplexCtx.fillText('共享信道', canvasWidth / 2 - 30, channelTop - 10);
+
+            // Update and draw packets based on type
+            switch (currentMultiplexType) {
+                case 'fdm':
+                case 'wdm':
+                    const laneHeight = channelHeight / users.length;
+                    packets.forEach(p => {
+                        p.y = channelTop + p.userIndex * laneHeight + laneHeight / 2 - p.size / 2;
+                        p.x += 2;
+                        if (p.x > canvasWidth) p.x = -50;
+                        
+                        multiplexCtx.fillStyle = p.color;
+                        multiplexCtx.fillRect(p.x, p.y, p.size, p.size);
+                    });
+                    // Draw lanes
+                    for (let i = 1; i < users.length; i++) {
+                        multiplexCtx.beginPath();
+                        multiplexCtx.setLineDash([5, 5]);
+                        multiplexCtx.moveTo(0, channelTop + i * laneHeight);
+                        multiplexCtx.lineTo(canvasWidth, channelTop + i * laneHeight);
+                        multiplexCtx.strokeStyle = '#cbd5e1';
+                        multiplexCtx.stroke();
+                        multiplexCtx.setLineDash([]);
+                    }
+                    break;
+                case 'tdm':
+                    const activePacketIndex = packets.findIndex(p => p.userIndex === tdmState.currentUser);
+                    if (activePacketIndex !== -1) {
+                         packets.forEach((p, i) => {
+                            if (p.userIndex === tdmState.currentUser) {
+                                p.y = canvasHeight / 2 - p.size / 2;
+                                p.x += 4;
+                                if (p.x > canvasWidth) {
+                                    p.x = -50;
+                                    tdmState.currentUser = (tdmState.currentUser + 1) % users.length;
+                                }
+                            }
+                            // Draw waiting packets
+                            if (p.x < 0) {
+                                multiplexCtx.fillStyle = p.color;
+                                multiplexCtx.fillRect(10 + p.userIndex*30, channelTop - 30, p.size, p.size);
+                            }
+                        });
+                        // Draw active packet
+                        const activePackets = packets.filter(p => p.userIndex === tdmState.currentUser && p.x > 0);
+                        activePackets.forEach(p => {
+                            multiplexCtx.fillStyle = p.color;
+                            multiplexCtx.fillRect(p.x, p.y, p.size, p.size);
+                        });
+                    }
+                    break;
+                case 'cdm':
+                    packets.forEach(p => {
+                        p.y = canvasHeight / 2 - p.size / 2;
+                        p.x += 2;
+                        if (p.x > canvasWidth) p.x = -50;
+                        
+                        // Draw superposition
+                        multiplexCtx.globalAlpha = 0.5;
+                        multiplexCtx.fillStyle = p.color;
+                        multiplexCtx.fillRect(p.x, p.y, p.size, p.size);
+                        
+                        // Draw code symbol
+                        multiplexCtx.globalAlpha = 1.0;
+                        multiplexCtx.fillStyle = 'black';
+                        multiplexCtx.font = "12px sans-serif";
+                        multiplexCtx.fillText(p.code === 1 ? '+' : '-', p.x + p.size/2 - 4, p.y + p.size/2 + 4);
+                    });
+                     multiplexCtx.globalAlpha = 1.0;
+                    break;
+            }
+
+            animationId = requestAnimationFrame(animateMultiplexing);
+        }
+
+        multiplexButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                multiplexButtons.forEach(b => b.classList.remove('active'));
+                button.classList.add('active');
+                const type = button.dataset.type;
+                cdmaCard.classList.toggle('hidden', type !== 'cdm');
+                initMultiplexing(type);
+            });
+        });
+        
+        document.querySelector('.multiplex-btn[data-type="fdm"]').click();
+
+        // CDMA Calculator
+        const btnCalcCdma = document.getElementById('calculate-cdma');
+        btnCalcCdma.addEventListener('click', () => {
+            const stations = {
+                A: [-1, -1, -1, 1, 1, -1, 1, 1],
+                B: [-1, -1, 1, -1, 1, 1, 1, -1],
+                C: [-1, 1, -1, 1, 1, 1, -1, -1],
+                D: [-1, 1, -1, -1, -1, -1, 1, -1]
+            };
+            const S = [-1, 1, -3, 1, -1, -3, 1, 1];
+            let conclusion = '';
+            ['A', 'B', 'C', 'D'].forEach(station => {
+                const result = stations[station].reduce((acc, val, i) => acc + val * S[i], 0);
+                const normalized = result / 8;
+                document.getElementById('res' + station).textContent = `= ${result} / 8 = ${normalized}`;
+                if (normalized === 1) {
+                    conclusion += `<span class="text-green-700 font-bold">${station}站</span> 发送了信号 <span class="font-bold">1</span>。 `;
+                } else if (normalized === -1) {
+                    conclusion += `<span class="text-red-700 font-bold">${station}站</span> 发送了信号 <span class="font-bold">0</span>。 `;
+                } else {
+                     conclusion += `<span class="text-gray-500 font-bold">${station}站</span> 未发送信号。 `;
+                }
+            });
+            document.getElementById('cdma-conclusion').innerHTML = "结论: " + conclusion;
+        });
+
+
+        // --- Access Tech Chart ---
+        const accessCtx = document.getElementById('accessTechChart').getContext('2d');
+        new Chart(accessCtx, {
+            type: 'bar',
+            data: {
+                labels: ['ADSL', 'HFC', 'FTTH (GPON)'],
+                datasets: [
+                    {
+                        label: '下行速率 (Mbit/s)',
+                        data: [16, 50, 1000],
+                        backgroundColor: '#3b82f6',
+                    },
+                    {
+                        label: '上行速率 (Mbit/s)',
+                        data: [1, 5, 500],
+                        backgroundColor: '#fb923c',
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { 
+                        beginAtZero: true,
+                        type: 'logarithmic',
+                        title: { display: true, text: '速率 (对数坐标)' }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.dataset.label}: ${context.parsed.y} Mbit/s`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    });
+    </script>
+
+</body>
+</html>

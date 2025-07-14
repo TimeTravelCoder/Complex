@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式蜂窝移动通信网学习应用 (场景版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-color: #f8f9fa;
+            --text-color: #1f2937;
+            --accent-color: #f97316;
+            --accent-color-dark: #ea580c;
+            --packet-color: #facc15;
+            --packet-glow: #fde047;
+            --packet-encap-color: #60a5fa; /* Blue for encapsulation */
+            --path-color: #94a3b8;
+            --path-active-color: var(--accent-color);
+            --query-path-color: #22c55e; /* Green for query */
+            --node-bg: #e2e8f0;
+            --node-border: #cbd5e1;
+        }
+
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: var(--bg-color); color: var(--text-color); }
+        .nav-link.active { color: var(--accent-color); border-color: var(--accent-color); }
+        
+        .timeline-item-content { max-height: 0; overflow: hidden; transition: max-height 0.5s ease-out, padding 0.5s ease-out; }
+        .timeline-item.active .timeline-item-content { max-height: 500px; padding-top: 1rem; padding-bottom: 1rem; }
+        .timeline-item.active .timeline-dot { background-color: var(--accent-color); transform: scale(1.2); }
+        
+        .animation-diagram {
+            background-color: #f1f5f9;
+            background-image: radial-gradient(var(--node-border) 1px, transparent 1px);
+            background-size: 20px 20px;
+            overflow: hidden;
+        }
+
+        .flow-node .node-body {
+             transition: all 0.3s ease;
+             background-color: var(--node-bg);
+             border: 2px solid var(--node-border);
+        }
+        .flow-node.active .node-body {
+            animation: pulse-node 1s ease-in-out;
+            border-color: var(--accent-color);
+        }
+
+        .flow-path { transition: all 0.5s ease-in-out; stroke: var(--path-color); }
+        .flow-path.active {
+            stroke: var(--path-active-color);
+            stroke-width: 4;
+            filter: drop-shadow(0 0 3px var(--path-active-color));
+        }
+        .flow-path.query-active {
+            stroke: var(--query-path-color);
+            stroke-width: 3;
+            stroke-dasharray: 5;
+            animation: dash-flow 0.5s linear infinite;
+        }
+
+        .packet {
+            position: absolute;
+            width: 24px; /* Slightly larger for icon */
+            height: 24px;
+            opacity: 0;
+            transition: all 1.5s cubic-bezier(0.5, 0, 0.5, 1);
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        .packet .packet-core {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background-color: var(--packet-color);
+            box-shadow: 0 0 15px 3px var(--packet-glow);
+            animation: pulse-packet 1.5s infinite;
+            transition: all 0.5s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .packet.encapsulated {
+            border-radius: 50%;
+            background-color: var(--packet-encap-color);
+            box-shadow: 0 0 10px var(--packet-encap-color);
+        }
+        .packet.encapsulated .packet-core {
+            transform: scale(0.7);
+        }
+        
+        .signal-strength-bar {
+            position: absolute;
+            bottom: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80px;
+            height: 15px;
+            background-color: #e2e8f0;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .signal-strength-fill {
+            width: 100%;
+            height: 100%;
+            background-color: var(--query-path-color);
+            transition: width 1s ease-in-out;
+        }
+
+        .step-label {
+            transition: all 0.3s ease-in-out;
+            opacity: 0.5;
+        }
+        .step-label.active {
+            opacity: 1;
+            transform: scale(1.05);
+            color: var(--accent-color-dark);
+            background-color: #fff;
+            border-left: 4px solid var(--accent-color);
+            font-weight: 500;
+        }
+        
+        @keyframes pulse-node {
+            50% { transform: scale(1.1); box-shadow: 0 0 10px 5px rgba(249, 115, 22, 0.4); }
+        }
+        @keyframes pulse-packet {
+            50% { transform: scale(1.1); box-shadow: 0 0 20px 6px var(--packet-glow); }
+        }
+        @keyframes dash-flow {
+            to { stroke-dashoffset: -10; }
+        }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <header class="bg-white/90 backdrop-blur-lg shadow-sm sticky top-0 z-50">
+        <nav class="container mx-auto px-6 py-4">
+            <div class="flex justify-between items-center">
+                <h1 class="text-2xl font-bold text-slate-900">蜂窝移动通信网</h1>
+                <div class="hidden md:flex space-x-10">
+                    <a href="#evolution" class="nav-link text-slate-600 hover:text-orange-600 border-b-2 border-transparent pb-1 transition-all">技术演进</a>
+                    <a href="#concepts" class="nav-link text-slate-600 hover:text-orange-600 border-b-2 border-transparent pb-1 transition-all">核心概念</a>
+                    <a href="#protocols" class="nav-link text-slate-600 hover:text-orange-600 border-b-2 border-transparent pb-1 transition-all">协议影响</a>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container mx-auto p-4 md:p-8">
+        
+        <section id="intro" class="text-center py-16 md:py-24">
+            <h2 class="text-4xl md:text-5xl font-bold mb-4 text-slate-900">探索蜂窝网络的奥秘</h2>
+            <p class="text-lg text-slate-600 max-w-3xl mx-auto">从第一代模拟信号到第五代万物互联，蜂窝网络彻底改变了我们的通信方式。本应用将带您深入了解其关键技术，包括用户如何在移动中保持连接，以及网络如何智能地路由您的每一次通话和数据访问。</p>
+        </section>
+
+        <section id="evolution" class="py-12 md:py-20">
+            <h3 class="text-3xl font-bold text-center mb-16 text-slate-900">移动通信的演进：一部浓缩的技术史</h3>
+            <div class="relative wrap overflow-hidden p-10 h-full">
+                <div class="border-2-2 absolute border-opacity-20 border-slate-700 h-full border" style="left: 50%"></div>
+                <div id="timeline-container"></div>
+            </div>
+        </section>
+
+        <section id="concepts" class="py-12 md:py-20 bg-white rounded-2xl shadow-lg">
+            <h3 class="text-3xl font-bold text-center mb-4 text-slate-900">核心概念解析</h3>
+            <p class="text-center text-slate-600 mb-12">通过生动的实例，理解蜂窝网络如何实现移动中的无缝通信。</p>
+            <div class="border-b border-slate-200 mb-10">
+                <nav class="flex justify-center -mb-px space-x-6 md:space-x-8" id="concepts-nav">
+                    <button data-target="mobile-ip" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:text-base nav-link active">场景一：高铁上看视频</button>
+                    <button data-target="routing" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:text-base nav-link">场景二：异地接电话</button>
+                    <button data-target="handover" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:text-base nav-link">场景三：边走边打电话</button>
+                </nav>
+            </div>
+            
+            <div id="concepts-content" class="px-4 md:px-8 min-h-[600px]">
+                <div id="mobile-ip" class="content-section">
+                     <p class="text-center mb-8 max-w-3xl mx-auto text-slate-600">你正坐在从北京到上海的高铁上，用手机看着视频。你的手机是如何在高速移动中，持续接收到视频画面的呢？</p>
+                    <div class="flex flex-col md:flex-row gap-8">
+                        <div class="w-full md:w-2/3">
+                             <div class="flex justify-center mb-4 space-x-4">
+                                <button id="play-indirect-route" class="bg-orange-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition disabled:opacity-50">▶ 播放</button>
+                                <button id="reset-ip" class="bg-gray-400 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-500 transition">重置</button>
+                             </div>
+                             <div id="mobile-ip-diagram" class="relative w-full max-w-4xl mx-auto aspect-[16/9] animation-diagram rounded-lg"></div>
+                        </div>
+                        <div id="mobile-ip-steps" class="w-full md:w-1/3 space-y-4"></div>
+                    </div>
+                </div>
+
+                <div id="routing" class="content-section">
+                    <p class="text-center mb-8 max-w-3xl mx-auto text-slate-600">你的手机号归属地是伦敦，但你本人正在爱丁堡度假。这时，你在伦敦的朋友拨打你的号码，电话是如何找到远在爱丁堡的你的？</p>
+                    <div class="flex flex-col md:flex-row gap-8">
+                        <div class="w-full md:w-2/3">
+                            <div class="flex justify-center mb-4 space-x-4">
+                                <button id="play-call-routing" class="bg-orange-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition disabled:opacity-50">▶ 播放寻路过程</button>
+                                <button id="reset-call" class="bg-gray-400 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-500 transition">重置</button>
+                            </div>
+                            <div id="call-routing-diagram" class="relative w-full max-w-4xl mx-auto aspect-[16/9] animation-diagram rounded-lg"></div>
+                        </div>
+                        <div id="call-routing-steps" class="w-full md:w-1/3 space-y-4"></div>
+                    </div>
+                </div>
+                
+                <div id="handover" class="content-section">
+                    <p class="text-center mb-8 max-w-3xl mx-auto text-slate-600">你正一边走路一边和朋友打电话。当你从A街道走到B街道时，手机的信号连接是如何在两个基站之间无缝切换，保证通话不掉线的？</p>
+                    <div class="flex flex-col md:flex-row gap-8">
+                         <div class="w-full md:w-2/3">
+                            <div class="flex justify-center mb-4 space-x-4">
+                                <button id="play-handover" class="bg-orange-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition disabled:opacity-50">▶ 播放切换过程</button>
+                                <button id="reset-handover" class="bg-gray-400 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-500 transition">重置</button>
+                            </div>
+                            <div id="handover-diagram" class="relative w-full max-w-4xl mx-auto aspect-[16/9] animation-diagram rounded-lg"></div>
+                        </div>
+                        <div id="handover-steps" class="w-full md:w-1/3 space-y-4"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="protocols" class="py-16 md:py-20">
+            <h3 class="text-3xl font-bold text-center mb-12 text-slate-900">对高层协议的影响</h3>
+            <div class="max-w-5xl mx-auto grid md:grid-cols-3 gap-8">
+                <div class="bg-white p-8 rounded-xl shadow-lg transform hover:scale-105 transition-transform">
+                    <h4 class="font-bold text-xl mb-3 text-red-600">问题：错误的拥塞判断</h4>
+                    <p class="text-slate-600">无线链路的高误码率和切换导致的数据包丢失，会被TCP协议误判为网络拥塞，从而不必要地降低传输速率。</p>
+                </div>
+                 <div class="bg-white p-8 rounded-xl shadow-lg transform hover:scale-105 transition-transform">
+                    <h4 class="font-bold text-xl mb-3 text-blue-600">方案一：本地恢复</h4>
+                    <p class="text-slate-600">在无线链路层使用ARQ（自动重传请求）等机制，对错误进行本地快速重传，使之对上层TCP透明。</p>
+                </div>
+                 <div class="bg-white p-8 rounded-xl shadow-lg transform hover:scale-105 transition-transform">
+                    <h4 class="font-bold text-xl mb-3 text-green-600">方案二：拆分TCP连接</h4>
+                    <p class="text-slate-600">将端到端的TCP连接拆分为有线和无线两段。针对无线段的特点进行协议优化，从而提升整体性能。</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+    
+    <footer class="text-center py-8 bg-slate-800 text-slate-300">
+        <p>&copy; 2025 交互式蜂窝网络学习应用. All rights reserved.</p>
+    </footer>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const app = {
+            data: {
+                timeline: [
+                    { year: '1G', title: '第一代', description: '模拟信号，像大哥大一样，只能打电话。' },
+                    { year: '2G', title: '第二代', description: '数字信号，能发短信了，还能上很慢的网。' },
+                    { year: '3G', title: '第三代', description: '宽带上网时代，可以在手机上看视频了。' },
+                    { year: '4G', title: '第四代', description: '高速上网，看高清视频、玩网游毫无压力。' },
+                    { year: '5G', title: '第五代', description: '速度超快，延迟超低，未来可以连接万物。' }
+                ],
+                animationSteps: {
+                    indirect: [
+                        "1. 视频网站将下一秒的画面，发往你手机在北京的“家庭网络地址”。",
+                        "2. 你家的路由器发现你不在家，它将视频画面数据重新打包。",
+                        "3. 打包好的数据，通过一个“特殊通道”被发往你所在高铁的路由器。",
+                        "4. 高铁路由器收到数据，拆开包装，把视频画面交给你的手机播放。"
+                    ],
+                    callRouting: [
+                        "1. 你朋友的电话，首先被接到你号码归属地(伦敦)的网络交换机。",
+                        "2. 交换机查询“全国用户数据库”：“这个号码现在在哪里？”",
+                        "3. 数据库回复：“他在爱丁堡，连接在当地的XXX号交换机上。”",
+                        "4. 伦敦的交换机收到信息，立即将电话转接到爱丁堡的交换机。",
+                        "5. 你的手机在爱丁堡成功响铃，你接到了朋友的电话。"
+                    ],
+                    handover: [
+                        "1. 你正一边走路一边打电话，手机连接着A街道的基站。",
+                        "2. 当你走向B街道，手机检测到A基站信号变弱，B基站信号变强。",
+                        "3. 手机将信号变化情况报告给“网络控制器”，控制器决定进行切换。",
+                        "4. 控制器命令你的手机断开A基站，并瞬间连接到B基站。整个过程极快，你的通话毫无中断。"
+                    ]
+                }
+            },
+
+            init() {
+                this.setupEventListeners();
+                this.renderTimeline();
+                this.renderAllDiagrams();
+                this.updateActiveNav();
+                document.querySelector('#concepts-nav button[data-target="mobile-ip"]').click();
+            },
+            
+            sleep(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            },
+
+            setupEventListeners() {
+                const conceptNavs = document.querySelectorAll('#concepts-nav button');
+                conceptNavs.forEach(nav => {
+                    nav.addEventListener('click', (e) => {
+                        const targetId = e.target.dataset.target;
+                        document.querySelectorAll('#concepts-nav button').forEach(n => n.classList.remove('active', 'text-orange-600', 'border-orange-600'));
+                        e.target.classList.add('active', 'text-orange-600', 'border-orange-600');
+                        document.querySelectorAll('#concepts-content .content-section').forEach(section => {
+                            section.style.display = 'none';
+                            if (section.id === targetId) section.style.display = 'block';
+                        });
+                    });
+                });
+                
+                document.getElementById('play-indirect-route').addEventListener('click', () => this.animateRoute());
+                document.getElementById('reset-ip').addEventListener('click', () => this.renderMobileIPDiagram());
+
+                document.getElementById('play-call-routing').addEventListener('click', () => this.animateCallRouting());
+                document.getElementById('reset-call').addEventListener('click', () => this.renderCallRoutingDiagram());
+
+                document.getElementById('play-handover').addEventListener('click', () => this.animateHandover());
+                document.getElementById('reset-handover').addEventListener('click', () => this.renderHandoverDiagram());
+                
+                window.addEventListener('scroll', () => this.updateActiveNav());
+            },
+
+            renderAllDiagrams() {
+                this.renderMobileIPDiagram();
+                this.renderCallRoutingDiagram();
+                this.renderHandoverDiagram();
+            },
+            
+            updateActiveNav() {
+                let current = 'intro';
+                const sections = document.querySelectorAll('main section');
+                const navLinks = document.querySelectorAll('header nav a');
+                sections.forEach(section => {
+                    if (pageYOffset >= section.offsetTop - 70) current = section.getAttribute('id');
+                });
+                navLinks.forEach(link => {
+                    link.classList.remove('active');
+                    if(link.getAttribute('href') === `#${current}`) link.classList.add('active');
+                })
+            },
+
+            renderTimeline() {
+                const container = document.getElementById('timeline-container');
+                if (!container) return;
+                let timelineHTML = '';
+                this.data.timeline.forEach((item, index) => {
+                    const sideClass = index % 2 === 0 ? 'flex-row-reverse text-right' : 'text-left';
+                    timelineHTML += `
+                        <div class="mb-8 flex justify-between items-center w-full ${sideClass} timeline-item">
+                            <div class="order-1 w-5/12"></div>
+                            <div class="z-20 flex items-center order-1 bg-slate-800 shadow-xl w-14 h-14 rounded-full timeline-dot transition-all duration-300">
+                                <h1 class="mx-auto font-semibold text-lg text-white cursor-pointer">${item.year}</h1>
+                            </div>
+                            <div class="order-1 bg-white rounded-lg shadow-xl w-5/12 px-6 py-4">
+                                <h3 class="font-bold text-slate-800 text-xl">${item.title}</h3>
+                                <div class="timeline-item-content">
+                                    <p class="text-sm leading-snug tracking-wide text-slate-600">${item.description}</p>
+                                </div>
+                            </div>
+                        </div>`;
+                });
+                container.innerHTML = timelineHTML;
+                container.querySelectorAll('.timeline-dot').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        e.target.closest('.timeline-item').classList.toggle('active');
+                    });
+                });
+            },
+            
+            createNode(id, text, pos, extras = '') {
+                return `<div id="${id}" class="flow-node absolute flex flex-col items-center" style="left:${pos.x}%; top:${pos.y}%; transform: translate(-50%, -50%);">
+                            <div class="node-body w-20 h-20 md:w-24 md:h-24 rounded-full flex items-center justify-center text-center text-xs md:text-sm font-semibold p-1 shadow-md">${text}</div>
+                            ${extras}
+                        </div>`;
+            },
+            createPath(id, from, to, dashed = false) {
+                 return `<path id="${id}" class="flow-path" d="M ${from.x}% ${from.y}% L ${to.x}% ${to.y}%" stroke-width="2" fill="none" ${dashed ? 'stroke-dasharray="6,6"' : ''}/>`;
+            },
+            createPacket(id, iconSVG) { 
+                return `<div id="${id}" class="packet">
+                            <div class="packet-core">${iconSVG}</div>
+                        </div>`; 
+            },
+
+            renderDiagram(containerId, stepsId, config) {
+                const container = document.getElementById(containerId);
+                const stepsContainer = document.getElementById(stepsId);
+                if (!container || !stepsContainer) return;
+
+                let svgHTML = '<svg width="100%" height="100%" class="absolute top-0 left-0" style="overflow: visible;">';
+                config.paths.forEach(p => svgHTML += this.createPath(p.id, p.from, p.to, p.dashed));
+                svgHTML += '</svg>';
+                
+                let nodesHTML = '';
+                config.nodes.forEach(n => nodesHTML += this.createNode(n.id, n.text, n.pos, n.extras));
+                
+                let extrasHTML = config.extras || '';
+
+                container.innerHTML = svgHTML + nodesHTML + extrasHTML + this.createPacket(config.packetId, config.packetIcon);
+
+                let stepsHTML = '';
+                this.data.animationSteps[config.stepsKey].forEach((step, index) => {
+                    stepsHTML += `<div id="${stepsId}-step-${index}" class="step-label p-3 bg-slate-100 rounded-md">${step}</div>`;
+                });
+                stepsContainer.innerHTML = stepsHTML;
+            },
+
+            renderMobileIPDiagram() {
+                const videoIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" /></svg>`;
+                this.renderDiagram('mobile-ip-diagram', 'mobile-ip-steps', {
+                    nodes: [
+                        { id: 'node-server', text: '视频网站', pos: { x: 15, y: 85 } },
+                        { id: 'node-homerouter', text: '你家路由器 (北京)', pos: { x: 40, y: 20 } },
+                        { id: 'node-trainrouter', text: '高铁路由器 (上海)', pos: { x: 75, y: 50 } },
+                        { id: 'node-phone', text: '你的手机', pos: { x: 85, y: 85 } }
+                    ],
+                    paths: [
+                        {id: 'path-server-home', from: {x:15, y:85}, to: {x:40, y:20}},
+                        {id: 'path-home-train', from: {x:40, y:20}, to: {x:75, y:50}, dashed: true},
+                        {id: 'path-train-phone', from: {x:75, y:50}, to: {x:85, y:85}},
+                    ],
+                    packetId: 'packet-ip',
+                    packetIcon: videoIcon,
+                    stepsKey: 'indirect'
+                });
+            },
+            
+            async animateRoute() {
+                const buttons = ['play-indirect-route', 'reset-ip'].map(id => document.getElementById(id));
+                buttons.forEach(b => b.disabled = true);
+
+                const packet = document.getElementById('packet-ip');
+                const stepsContainerId = 'mobile-ip-steps';
+                const allSteps = document.querySelectorAll(`#${stepsContainerId} .step-label`);
+                
+                const highlightStep = (index) => {
+                    allSteps.forEach(s => s.classList.remove('active'));
+                    if (index >= 0) allSteps[index]?.classList.add('active');
+                };
+
+                const movePacket = async (pos) => {
+                    packet.style.left = `${pos.x}%`;
+                    packet.style.top = `${pos.y}%`;
+                    await this.sleep(1500);
+                };
+                
+                packet.style.transition = 'none';
+                packet.style.opacity = 0;
+                packet.classList.remove('encapsulated');
+                packet.style.left = `15%`;
+                packet.style.top = `85%`;
+                await this.sleep(100);
+                packet.style.transition = 'all 1.5s cubic-bezier(0.5, 0, 0.5, 1)';
+                packet.style.opacity = 1;
+
+                highlightStep(0);
+                await movePacket({x: 40, y: 20});
+                document.getElementById('node-homerouter').classList.add('active');
+
+                highlightStep(1);
+                packet.classList.add('encapsulated');
+                await this.sleep(1000);
+                document.getElementById('node-homerouter').classList.remove('active');
+
+                highlightStep(2);
+                document.getElementById('path-home-train').classList.add('active');
+                await movePacket({x: 75, y: 50});
+                document.getElementById('path-home-train').classList.remove('active');
+                document.getElementById('node-trainrouter').classList.add('active');
+
+                highlightStep(3);
+                packet.classList.remove('encapsulated');
+                await this.sleep(1000);
+                document.getElementById('node-trainrouter').classList.remove('active');
+                await movePacket({x: 85, y: 85});
+                
+                await this.sleep(1000);
+                packet.style.opacity = 0;
+                highlightStep(-1);
+                buttons.forEach(b => b.disabled = false);
+            },
+            
+            renderCallRoutingDiagram() {
+                const callIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" /></svg>`;
+                this.renderDiagram('call-routing-diagram', 'call-routing-steps', {
+                    nodes: [
+                        { id: 'cr-friend', text: '朋友的电话 (伦敦)', pos: { x: 10, y: 85 } },
+                        { id: 'cr-london-switch', text: '伦敦交换机', pos: { x: 35, y: 50 } },
+                        { id: 'cr-db', text: '全国用户数据库', pos: { x: 65, y: 20 } },
+                        { id: 'cr-edinburgh-switch', text: '爱丁堡交换机', pos: { x: 90, y: 50 } },
+                        { id: 'cr-your-phone', text: '你的手机 (爱丁堡)', pos: { x: 90, y: 85 } }
+                    ],
+                    paths: [
+                        {id: 'cr-path-friend-london', from: {x:10, y:85}, to: {x:35, y:50}},
+                        {id: 'cr-path-london-db', from: {x:35, y:50}, to: {x:65, y:20}, dashed: true},
+                        {id: 'cr-path-london-edi', from: {x:35, y:50}, to: {x:90, y:50}},
+                        {id: 'cr-path-edi-you', from: {x:90, y:50}, to: {x:90, y:85}},
+                    ],
+                    packetId: 'packet-call',
+                    packetIcon: callIcon,
+                    stepsKey: 'callRouting'
+                });
+            },
+
+            async animateCallRouting() {
+                const buttons = ['play-call-routing', 'reset-call'].map(id => document.getElementById(id));
+                buttons.forEach(b => b.disabled = true);
+                const packet = document.getElementById('packet-call');
+                const stepsContainerId = 'call-routing-steps';
+                const allSteps = document.querySelectorAll(`#${stepsContainerId} .step-label`);
+
+                const highlightStep = (index) => {
+                    allSteps.forEach(s => s.classList.remove('active'));
+                    if (index >= 0) allSteps[index]?.classList.add('active');
+                };
+                
+                const movePacket = async (pos) => {
+                    packet.style.left = `${pos.x}%`;
+                    packet.style.top = `${pos.y}%`;
+                    await this.sleep(1200);
+                };
+                
+                packet.style.transition = 'none';
+                packet.style.opacity = 0;
+                packet.style.left = '10%'; packet.style.top = '85%';
+                await this.sleep(100);
+                packet.style.transition = 'all 1.2s cubic-bezier(0.5, 0, 0.5, 1)';
+                packet.style.opacity = 1;
+
+                highlightStep(0);
+                await movePacket({x: 35, y: 50});
+                document.getElementById('cr-london-switch').classList.add('active');
+                
+                highlightStep(1);
+                const queryPath = document.getElementById('cr-path-london-db');
+                queryPath.classList.add('query-active');
+                await this.sleep(2000);
+                
+                highlightStep(2);
+                document.getElementById('cr-db').classList.add('active');
+                await this.sleep(1000);
+                queryPath.classList.remove('query-active');
+                document.getElementById('cr-db').classList.remove('active');
+                
+                highlightStep(3);
+                document.getElementById('cr-london-switch').classList.remove('active');
+                await this.sleep(500);
+                
+                highlightStep(4);
+                await movePacket({x: 90, y: 50});
+                await movePacket({x: 90, y: 85});
+                
+                await this.sleep(1000);
+                packet.style.opacity = 0;
+                highlightStep(-1);
+                buttons.forEach(b => b.disabled = false);
+            },
+            
+            renderHandoverDiagram() {
+                const userIcon = `
+                    <div id="h-user" class="absolute" style="left:35%; top:85%; transform: translate(-50%, -50%); transition: left 3s ease-in-out; z-index: 5;">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-orange-500" viewBox="0 0 20 20" fill="currentColor">
+                          <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
+                        </svg>
+                    </div>`;
+                const signalBarA = `<div class="signal-strength-bar"><div id="signal-fill-a" class="signal-strength-fill"></div></div>`;
+                const signalBarB = `<div class="signal-strength-bar"><div id="signal-fill-b" class="signal-strength-fill" style="width:0%"></div></div>`;
+
+                this.renderDiagram('handover-diagram', 'handover-steps', {
+                    nodes: [
+                        {id: 'h-controller', text: '网络控制器', pos:{x:50, y:20}},
+                        {id: 'h-tower-a', text: 'A街基站', pos: {x: 35, y: 85}, extras: signalBarA},
+                        {id: 'h-tower-b', text: 'B街基站', pos: {x: 65, y: 85}, extras: signalBarB},
+                    ],
+                    paths: [
+                        {id: 'h-path-ca', from: {x:50, y:20}, to: {x:35, y:85}},
+                        {id: 'h-path-cb', from: {x:50, y:20}, to: {x:65, y:85}},
+                    ],
+                    packetId: 'packet-handover',
+                    packetIcon: '',
+                    stepsKey: 'handover',
+                    extras: userIcon
+                });
+                document.getElementById('packet-handover').style.display = 'none';
+                document.getElementById('h-path-ca').classList.add('active');
+            },
+            
+            async animateHandover() {
+                const buttons = ['play-handover', 'reset-handover'].map(id => document.getElementById(id));
+                buttons.forEach(b => b.disabled = true);
+                
+                const user = document.getElementById('h-user');
+                const pathA = document.getElementById('h-path-ca');
+                const pathB = document.getElementById('h-path-cb');
+                const signalA = document.getElementById('signal-fill-a');
+                const signalB = document.getElementById('signal-fill-b');
+                const stepsContainerId = 'handover-steps';
+                const allSteps = document.querySelectorAll(`#${stepsContainerId} .step-label`);
+
+                const highlightStep = (index) => {
+                    allSteps.forEach(s => s.classList.remove('active'));
+                    if (index >= 0) allSteps[index]?.classList.add('active');
+                };
+
+                highlightStep(0);
+                await this.sleep(1500);
+                
+                highlightStep(1);
+                user.style.left = '65%';
+                let interval = setInterval(() => {
+                    const userLeft = parseFloat(user.style.left);
+                    const progress = (userLeft - 35) / (65 - 35);
+                    signalA.style.width = `${100 * (1 - progress)}%`;
+                    signalB.style.width = `${100 * progress}%`;
+                }, 50);
+
+                await this.sleep(3000);
+                clearInterval(interval);
+
+                highlightStep(2);
+                document.getElementById('h-controller').classList.add('active');
+                await this.sleep(1000);
+                
+                highlightStep(3);
+                pathA.classList.remove('active');
+                pathB.classList.add('active');
+                document.getElementById('h-controller').classList.remove('active');
+                
+                await this.sleep(1500);
+                highlightStep(-1);
+                buttons.forEach(b => b.disabled = false);
+            },
+        };
+
+        app.init();
+    });
+    </script>
+</body>
+</html>
