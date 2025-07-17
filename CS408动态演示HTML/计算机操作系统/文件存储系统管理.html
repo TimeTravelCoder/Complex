@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件存储空间管理交互式探索</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chosen Palette: "Slate" with "Teal" accent -->
+    <!-- Application Structure Plan: The application uses a tabbed navigation structure to separate the three main storage management methods: "空闲表法", "位示图法", and "成组链接法". This design was chosen because the methods are distinct concepts that benefit from focused, individual exploration. Each tab presents a two-column layout: the left column provides a concise explanation of the method and interactive controls (e.g., allocation/deallocation buttons and inputs), while the right column features a live, dynamic visualization of the data structures and disk blocks. This separation of concerns—explanation/control vs. visualization—allows users to first understand the theory and then immediately apply and observe it in action, enhancing learning and retention. The flow is user-driven, allowing them to switch between methods at will and experiment with the algorithms' behavior. -->
+    <!-- Visualization & Content Choices: 
+        1.  Free Table Method (空闲表法): 
+            - Goal: Demonstrate continuous allocation and merging of free space.
+            - Viz: An HTML table for the free space list.
+            - Interaction: Users input a block count, and the application visually allocates a block from the table using a first-fit algorithm and updates the table. When freeing, it demonstrates how adjacent free blocks are merged. This directly visualizes the data structure.
+        2.  Bitmap Method (位示图法): 
+            - Goal: Illustrate the direct mapping between a bit and a disk block.
+            - Viz: Two grids of HTML divs representing the bitmap and the corresponding physical disk blocks.
+            - Interaction: Users allocate blocks, and the JS code scans the bitmap, highlights the allocated bit and block, and logs the calculated block number. Freeing a block reverses the process. This interactive simulation makes the bit-to-block calculation tangible.
+        3.  Grouped Linked List Method (成组链接法):
+            - Goal: Clarify the complex interaction between the in-memory stack and on-disk block groups.
+            - Viz: Separate visual containers for the "in-memory stack" and "disk block groups".
+            - Interaction: Step-by-step allocation and freeing via buttons. Animations show numbers moving from the stack to the "allocated" state. Crucially, it visualizes the two key scenarios: stack-refill (when the stack becomes empty, it's reloaded from a disk group) and stack-flush (when the stack becomes full on freeing, its contents are written to a disk block). This animation is essential to understanding the algorithm's dynamic nature.
+        - Library/Method: All visualizations are built with Vanilla JS manipulating Tailwind-styled HTML divs. This provides maximum control and clarity for these specific data structures without the overhead of a charting library.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+        body { 
+            font-family: 'Noto Sans SC', sans-serif; 
+            background-color: #f1f5f9;
+        }
+        .tab-btn {
+            transition: all 0.3s ease-in-out;
+        }
+        .tab-btn.active {
+            background-color: #0d9488;
+            color: white;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .content-section {
+            display: none;
+        }
+        .content-section.active {
+            display: block;
+        }
+        .block {
+            transition: all 0.3s ease-in-out;
+            border: 1px solid #cbd5e1;
+        }
+        .block-free { background-color: #a7f3d0; }
+        .block-used { background-color: #fca5a5; }
+        .block-stack { background-color: #bae6fd; }
+        .block-group-link { background-color: #e9d5ff; }
+        .log-message {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-slate-900">文件存储空间的管理</h1>
+            <p class="mt-2 text-slate-600">一个交互式探索工具，用于理解操作系统如何管理磁盘空闲空间。</p>
+        </header>
+
+        <nav id="tabs" class="flex justify-center items-center gap-2 md:gap-4 mb-8 bg-white p-2 rounded-xl shadow-md">
+            <button data-tab="tab-bitmap" class="tab-btn font-semibold py-2 px-3 md:px-6 rounded-lg active">位示图法</button>
+            <button data-tab="tab-grouped-link" class="tab-btn font-semibold py-2 px-3 md:px-6 rounded-lg">成组链接法</button>
+            <button data-tab="tab-free-table" class="tab-btn font-semibold py-2 px-3 md:px-6 rounded-lg">空闲表法</button>
+        </nav>
+
+        <main>
+            <!-- 位示图法 Content -->
+            <section id="tab-content-bitmap" class="content-section active">
+                <div class="bg-white p-6 rounded-xl shadow-lg">
+                    <div class="grid md:grid-cols-2 gap-8">
+                        <div>
+                            <h2 class="text-2xl font-bold text-teal-700 mb-4">位示图法 (Bitmap)</h2>
+                            <p class="mb-4 text-slate-600">
+                                位示图是利用二进制的一位来表示磁盘中一个盘块的使用情况。例如，'0' 代表空闲，'1' 代表已分配。所有盘块的对应位构成一个集合，即位示图。这种方法的优点是能很容易地找到连续的空闲块，且因其体积小可以常驻内存，分配效率高。
+                            </p>
+                            <div class="space-y-4 bg-slate-50 p-4 rounded-lg border">
+                                <h3 class="font-semibold text-lg">操作面板</h3>
+                                <div>
+                                    <label for="bitmap-alloc-count" class="font-medium text-slate-700">要分配的盘块数:</label>
+                                    <input type="number" id="bitmap-alloc-count" value="3" min="1" max="10" class="mt-1 w-full p-2 border rounded-md focus:ring-2 focus:ring-teal-500">
+                                </div>
+                                <button id="bitmap-alloc-btn" class="w-full bg-teal-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-teal-700 transition-colors">分配盘块</button>
+                                <div>
+                                    <label for="bitmap-free-count" class="font-medium text-slate-700">要释放的盘块号:</label>
+                                    <input type="number" id="bitmap-free-count" value="5" min="0" max="127" class="mt-1 w-full p-2 border rounded-md focus:ring-2 focus:ring-teal-500">
+                                </div>
+                                <button id="bitmap-free-btn" class="w-full bg-rose-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-rose-600 transition-colors">释放盘块</button>
+                                <button id="bitmap-reset-btn" class="w-full bg-slate-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-600 transition-colors mt-2">重置状态</button>
+                            </div>
+                            <div class="mt-4">
+                                <h3 class="font-semibold text-lg mb-2">操作日志</h3>
+                                <div id="bitmap-log" class="h-32 bg-slate-900 text-white font-mono text-sm p-3 rounded-md overflow-y-auto"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-lg mb-2 text-center">位示图 (8x16)</h3>
+                            <div id="bitmap-grid" class="grid grid-cols-16 gap-1 p-2 bg-slate-100 rounded-md mb-4 text-xs font-bold text-center select-none"></div>
+                            <h3 class="font-semibold text-lg mb-2 text-center">物理盘块 (0-127)</h3>
+                            <div id="disk-blocks-grid" class="grid grid-cols-16 gap-1 p-2 bg-slate-100 rounded-md text-xs font-bold text-center select-none"></div>
+                            <div class="flex justify-center gap-4 mt-4 text-sm">
+                                <div class="flex items-center gap-2"><div class="w-4 h-4 rounded block-free"></div><span>空闲</span></div>
+                                <div class="flex items-center gap-2"><div class="w-4 h-4 rounded block-used"></div><span>已分配</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 成组链接法 Content -->
+            <section id="tab-content-grouped-link" class="content-section">
+                <div class="bg-white p-6 rounded-xl shadow-lg">
+                    <div class="grid md:grid-cols-2 gap-8">
+                        <div>
+                            <h2 class="text-2xl font-bold text-teal-700 mb-4">成组链接法 (Grouped Linking)</h2>
+                            <p class="mb-4 text-slate-600">
+                                这是UNIX系统采用的高效方法。它将空闲盘块分组，并使用一个内存中的“栈”来管理当前可用的第一组空闲块。当栈空时，会从磁盘上的下一组链接的盘块中“加载”新的空闲块号。当回收的块使栈满时，会将栈中信息“写回”到新回收的块中，形成新的链首。
+                            </p>
+                            <div class="space-y-4 bg-slate-50 p-4 rounded-lg border">
+                                <h3 class="font-semibold text-lg">操作面板</h3>
+                                <button id="grouped-alloc-btn" class="w-full bg-teal-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-teal-700 transition-colors">分配 1 个盘块</button>
+                                <div>
+                                    <label for="grouped-free-block" class="font-medium text-slate-700">要释放的盘块号 (e.g., 55):</label>
+                                    <input type="number" id="grouped-free-block" value="55" min="0" class="mt-1 w-full p-2 border rounded-md focus:ring-2 focus:ring-teal-500">
+                                </div>
+                                <button id="grouped-free-btn" class="w-full bg-rose-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-rose-600 transition-colors">释放盘块</button>
+                                <button id="grouped-reset-btn" class="w-full bg-slate-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-600 transition-colors mt-2">重置状态</button>
+                            </div>
+                            <div class="mt-4">
+                                <h3 class="font-semibold text-lg mb-2">操作日志</h3>
+                                <div id="grouped-log" class="h-32 bg-slate-900 text-white font-mono text-sm p-3 rounded-md overflow-y-auto"></div>
+                            </div>
+                        </div>
+                        <div>
+                           <div class="flex flex-col md:flex-row gap-4">
+                                <div class="flex-1">
+                                    <h3 class="font-semibold text-lg mb-2 text-center">内存: 空闲盘块号栈 (S.free)</h3>
+                                    <div id="grouped-stack" class="p-2 bg-slate-100 rounded-md min-h-[200px] flex flex-col-reverse items-center gap-1"></div>
+                                </div>
+                                <div class="flex-1">
+                                    <h3 class="font-semibold text-lg mb-2 text-center">磁盘: 空闲盘块组</h3>
+                                     <div id="grouped-disk" class="p-2 bg-slate-100 rounded-md min-h-[200px] space-y-2"></div>
+                                </div>
+                           </div>
+                           <div class="flex justify-center gap-4 mt-4 text-sm">
+                                <div class="flex items-center gap-2"><div class="w-4 h-4 rounded block-stack"></div><span>栈内盘块</span></div>
+                                <div class="flex items-center gap-2"><div class="w-4 h-4 rounded block-group-link"></div><span>组链接块</span></div>
+                                <div class="flex items-center gap-2"><div class="w-4 h-4 rounded block-used"></div><span>已分配</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 空闲表法 Content -->
+            <section id="tab-content-free-table" class="content-section">
+                <div class="bg-white p-6 rounded-xl shadow-lg">
+                     <div class="grid md:grid-cols-2 gap-8">
+                        <div>
+                            <h2 class="text-2xl font-bold text-teal-700 mb-4">空闲表法 (Free Table)</h2>
+                            <p class="mb-4 text-slate-600">
+                                此方法为外存上的所有空闲区建立一张空闲表，记录每个空闲区的起始盘块号和长度（盘块数）。分配时，采用首次适应(First-Fit)等算法查找满足大小的空闲区。回收时，会检查并与相邻的空闲区合并，以减少碎片。
+                            </p>
+                           <div class="space-y-4 bg-slate-50 p-4 rounded-lg border">
+                                <h3 class="font-semibold text-lg">操作面板</h3>
+                                <div>
+                                    <label for="table-alloc-count" class="font-medium text-slate-700">要分配的盘块数:</label>
+                                    <input type="number" id="table-alloc-count" value="5" min="1" class="mt-1 w-full p-2 border rounded-md focus:ring-2 focus:ring-teal-500">
+                                </div>
+                                <button id="table-alloc-btn" class="w-full bg-teal-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-teal-700 transition-colors">分配 (首次适应)</button>
+                                <div>
+                                    <label for="table-free-start" class="font-medium text-slate-700">要释放的起始盘块号:</label>
+                                    <input type="number" id="table-free-start" value="20" min="0" class="mt-1 w-full p-2 border rounded-md focus:ring-2 focus:ring-teal-500">
+                                </div>
+                                <div>
+                                    <label for="table-free-length" class="font-medium text-slate-700">要释放的盘块长度:</label>
+                                    <input type="number" id="table-free-length" value="10" min="1" class="mt-1 w-full p-2 border rounded-md focus:ring-2 focus:ring-teal-500">
+                                </div>
+                                <button id="table-free-btn" class="w-full bg-rose-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-rose-600 transition-colors">释放盘块</button>
+                                <button id="table-reset-btn" class="w-full bg-slate-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-600 transition-colors mt-2">重置状态</button>
+                            </div>
+                            <div class="mt-4">
+                                <h3 class="font-semibold text-lg mb-2">操作日志</h3>
+                                <div id="table-log" class="h-32 bg-slate-900 text-white font-mono text-sm p-3 rounded-md overflow-y-auto"></div>
+                            </div>
+                        </div>
+                        <div>
+                           <h3 class="font-semibold text-lg mb-2 text-center">空闲盘区表</h3>
+                           <div class="overflow-x-auto">
+                               <table class="min-w-full bg-white border rounded-lg">
+                                   <thead class="bg-slate-100">
+                                       <tr>
+                                           <th class="py-2 px-4 border-b text-left font-semibold">序号</th>
+                                           <th class="py-2 px-4 border-b text-left font-semibold">起始盘块号</th>
+                                           <th class="py-2 px-4 border-b text-left font-semibold">空闲盘块数</th>
+                                       </tr>
+                                   </thead>
+                                   <tbody id="free-table-body">
+                                   </tbody>
+                               </table>
+                           </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const tabs = document.getElementById('tabs');
+            const tabButtons = document.querySelectorAll('.tab-btn');
+            const contentSections = document.querySelectorAll('.content-section');
+
+            tabs.addEventListener('click', (e) => {
+                if (e.target.tagName !== 'BUTTON') return;
+
+                const targetTab = e.target.dataset.tab;
+                const targetContentId = targetTab.replace('tab-', 'tab-content-');
+
+                tabButtons.forEach(btn => {
+                    btn.classList.remove('active');
+                    if (btn.dataset.tab === targetTab) {
+                        btn.classList.add('active');
+                    }
+                });
+
+                contentSections.forEach(section => {
+                    section.classList.remove('active');
+                    if (section.id === targetContentId) {
+                        section.classList.add('active');
+                    }
+                });
+            });
+
+            // --- 位示图法 (Bitmap) Logic ---
+            const bitmapGrid = document.getElementById('bitmap-grid');
+            const diskBlocksGrid = document.getElementById('disk-blocks-grid');
+            const bitmapLog = document.getElementById('bitmap-log');
+            const BITMAP_ROWS = 8;
+            const BITMAP_COLS = 16;
+            let bitmapState = [];
+
+            const bitmapLogger = (message, type = 'info') => {
+                const colors = { info: 'text-cyan-300', success: 'text-green-400', error: 'text-red-400' };
+                const entry = document.createElement('div');
+                entry.className = `log-message ${colors[type]}`;
+                entry.textContent = `> ${message}`;
+                bitmapLog.appendChild(entry);
+                bitmapLog.scrollTop = bitmapLog.scrollHeight;
+            };
+
+            const renderBitmap = () => {
+                bitmapGrid.innerHTML = '';
+                diskBlocksGrid.innerHTML = '';
+                for (let i = 0; i < BITMAP_ROWS; i++) {
+                    for (let j = 0; j < BITMAP_COLS; j++) {
+                        const bitValue = bitmapState[i][j];
+                        const blockNumber = i * BITMAP_COLS + j;
+
+                        const bitCell = document.createElement('div');
+                        bitCell.className = `w-5 h-5 flex items-center justify-center rounded ${bitValue ? 'block-used' : 'block-free'}`;
+                        bitCell.textContent = bitValue;
+                        bitmapGrid.appendChild(bitCell);
+
+                        const blockCell = document.createElement('div');
+                        blockCell.className = `w-5 h-5 flex items-center justify-center rounded ${bitValue ? 'block-used' : 'block-free'}`;
+                        blockCell.textContent = blockNumber;
+                        diskBlocksGrid.appendChild(blockCell);
+                    }
+                }
+            };
+            
+            const initBitmap = () => {
+                bitmapState = Array(BITMAP_ROWS).fill(0).map(() => Array(BITMAP_COLS).fill(0));
+                // Pre-allocate some blocks
+                [5, 6, 15, 22, 23, 24, 40, 41].forEach(bn => {
+                    const row = Math.floor(bn / BITMAP_COLS);
+                    const col = bn % BITMAP_COLS;
+                    bitmapState[row][col] = 1;
+                });
+                bitmapLog.innerHTML = '';
+                bitmapLogger('位示图已重置并初始化。');
+                renderBitmap();
+            };
+
+            document.getElementById('bitmap-alloc-btn').addEventListener('click', () => {
+                const count = parseInt(document.getElementById('bitmap-alloc-count').value, 10);
+                if (isNaN(count) || count < 1) {
+                    bitmapLogger('请输入有效的分配数量。', 'error');
+                    return;
+                }
+                
+                let allocated = [];
+                for (let i = 0; i < BITMAP_ROWS && allocated.length < count; i++) {
+                    for (let j = 0; j < BITMAP_COLS && allocated.length < count; j++) {
+                        if (bitmapState[i][j] === 0) {
+                            bitmapState[i][j] = 1;
+                            const blockNumber = i * BITMAP_COLS + j;
+                            allocated.push(blockNumber);
+                        }
+                    }
+                }
+
+                if (allocated.length > 0) {
+                    bitmapLogger(`成功分配 ${allocated.length} 个盘块: ${allocated.join(', ')}`, 'success');
+                    if(allocated.length < count) {
+                         bitmapLogger(`空间不足, 只能分配 ${allocated.length} 个。`, 'error');
+                    }
+                } else {
+                    bitmapLogger('没有足够的空闲盘块可供分配。', 'error');
+                }
+                renderBitmap();
+            });
+
+            document.getElementById('bitmap-free-btn').addEventListener('click', () => {
+                const blockNumber = parseInt(document.getElementById('bitmap-free-count').value, 10);
+                if (isNaN(blockNumber) || blockNumber < 0 || blockNumber >= BITMAP_ROWS * BITMAP_COLS) {
+                    bitmapLogger('请输入有效的盘块号 (0-127)。', 'error');
+                    return;
+                }
+
+                const row = Math.floor(blockNumber / BITMAP_COLS);
+                const col = blockNumber % BITMAP_COLS;
+
+                if (bitmapState[row][col] === 1) {
+                    bitmapState[row][col] = 0;
+                    bitmapLogger(`成功释放盘块 ${blockNumber}。`, 'success');
+                } else {
+                    bitmapLogger(`盘块 ${blockNumber} 本来就是空闲的。`, 'error');
+                }
+                renderBitmap();
+            });
+            
+            document.getElementById('bitmap-reset-btn').addEventListener('click', initBitmap);
+
+            // --- 成组链接法 (Grouped Linking) Logic ---
+            const groupedStackDiv = document.getElementById('grouped-stack');
+            const groupedDiskDiv = document.getElementById('grouped-disk');
+            const groupedLog = document.getElementById('grouped-log');
+            const STACK_SIZE = 5;
+            let groupedState = {};
+
+            const groupedLogger = (message, type = 'info') => {
+                const colors = { info: 'text-cyan-300', success: 'text-green-400', error: 'text-red-400' };
+                const entry = document.createElement('div');
+                entry.className = `log-message ${colors[type]}`;
+                entry.textContent = `> ${message}`;
+                groupedLog.appendChild(entry);
+                groupedLog.scrollTop = groupedLog.scrollHeight;
+            };
+            
+            const renderGrouped = () => {
+                groupedStackDiv.innerHTML = `<div class="text-xs text-slate-500 mb-1">栈容量: ${groupedState.stack.length}/${STACK_SIZE}</div>`;
+                groupedState.stack.forEach(blockNum => {
+                    const blockDiv = document.createElement('div');
+                    blockDiv.className = 'w-16 h-8 flex items-center justify-center rounded block-stack font-semibold';
+                    blockDiv.textContent = blockNum;
+                    groupedStackDiv.prepend(blockDiv);
+                });
+
+                groupedDiskDiv.innerHTML = '';
+                Object.keys(groupedState.disk).sort((a,b) => a-b).forEach(key => {
+                     const block = groupedState.disk[key];
+                     const groupDiv = document.createElement('div');
+                     let content = `块 ${key}: `;
+                     if(block.isLink) {
+                         groupDiv.className = 'p-2 rounded block-group-link text-xs';
+                         content += `链接到下一组 (首块: ${block.data[0] || '空'})`;
+                     } else {
+                         groupDiv.className = 'p-2 rounded block-used text-xs';
+                         content += '已分配数据';
+                     }
+                     groupDiv.textContent = content;
+                     groupedDiskDiv.appendChild(groupDiv);
+                });
+            };
+
+            const initGrouped = () => {
+                groupedState = {
+                    stack: [10, 20, 30, 40, 50],
+                    disk: {
+                        1: { isLink: true, data: [60, 70, 80, 90, 100] },
+                        60: { isLink: true, data: [0] } // End of chain
+                    }
+                };
+                 groupedLog.innerHTML = '';
+                 groupedLogger('成组链接法已重置。');
+                renderGrouped();
+            };
+
+            document.getElementById('grouped-alloc-btn').addEventListener('click', () => {
+                if (groupedState.stack.length === 0) {
+                    groupedLogger('栈已空, 无法分配。', 'error');
+                    return;
+                }
+
+                const allocatedBlock = groupedState.stack.pop();
+                groupedLogger(`从栈顶分配盘块 ${allocatedBlock}。`, 'success');
+                groupedState.disk[allocatedBlock] = { isLink: false, data: 'user data' };
+                
+                if (groupedState.stack.length === 0) {
+                     groupedLogger('栈已空!', 'info');
+                     const linkBlockData = groupedState.disk[allocatedBlock];
+                     if (linkBlockData && linkBlockData.isLink) {
+                         groupedLogger(`盘块 ${allocatedBlock} 是链接块, 从中加载下一组空闲块。`, 'info');
+                         groupedState.stack = [...linkBlockData.data];
+                         delete groupedState.disk[allocatedBlock]; // The link block is now used
+                         if(groupedState.stack[0] === 0) groupedState.stack = []; // End of chain
+                     } else {
+                          groupedLogger('无更多链接的空闲块组。', 'error');
+                     }
+                }
+                renderGrouped();
+            });
+
+            document.getElementById('grouped-free-btn').addEventListener('click', () => {
+                const blockToFree = parseInt(document.getElementById('grouped-free-block').value, 10);
+                if (isNaN(blockToFree)) {
+                    groupedLogger('请输入有效的盘块号。', 'error');
+                    return;
+                }
+
+                if (groupedState.stack.length >= STACK_SIZE) {
+                    groupedLogger('栈已满!', 'info');
+                    groupedLogger(`将当前栈内容写入到回收的盘块 ${blockToFree} 中。`, 'info');
+                    groupedState.disk[blockToFree] = { isLink: true, data: [...groupedState.stack] };
+                    groupedState.stack = [blockToFree];
+                    groupedLogger(`盘块 ${blockToFree} 成为新的栈底。`, 'success');
+                } else {
+                    groupedState.stack.push(blockToFree);
+                    delete groupedState.disk[blockToFree];
+                    groupedLogger(`回收盘块 ${blockToFree} 到栈顶。`, 'success');
+                }
+                renderGrouped();
+            });
+
+            document.getElementById('grouped-reset-btn').addEventListener('click', initGrouped);
+            
+            // --- 空闲表法 (Free Table) Logic ---
+            const freeTableBody = document.getElementById('free-table-body');
+            const tableLog = document.getElementById('table-log');
+            let freeTableState = [];
+
+            const tableLogger = (message, type = 'info') => {
+                const colors = { info: 'text-cyan-300', success: 'text-green-400', error: 'text-red-400' };
+                const entry = document.createElement('div');
+                entry.className = `log-message ${colors[type]}`;
+                entry.textContent = `> ${message}`;
+                tableLog.appendChild(entry);
+                tableLog.scrollTop = tableLog.scrollHeight;
+            };
+
+            const renderFreeTable = () => {
+                freeTableBody.innerHTML = '';
+                freeTableState.sort((a, b) => a.start - b.start);
+                freeTableState.forEach((entry, index) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="py-2 px-4 border-b">${index + 1}</td>
+                        <td class="py-2 px-4 border-b">${entry.start}</td>
+                        <td class="py-2 px-4 border-b">${entry.length}</td>
+                    `;
+                    freeTableBody.appendChild(row);
+                });
+            };
+
+            const initFreeTable = () => {
+                freeTableState = [
+                    { start: 10, length: 10 },
+                    { start: 30, length: 20 },
+                    { start: 60, length: 15 },
+                    { start: 90, length: 40 }
+                ];
+                tableLog.innerHTML = '';
+                tableLogger('空闲表已重置。');
+                renderFreeTable();
+            };
+
+            document.getElementById('table-alloc-btn').addEventListener('click', () => {
+                const count = parseInt(document.getElementById('table-alloc-count').value, 10);
+                if (isNaN(count) || count < 1) {
+                    tableLogger('请输入有效的分配数量。', 'error');
+                    return;
+                }
+
+                // First-fit algorithm
+                const foundIndex = freeTableState.findIndex(entry => entry.length >= count);
+                
+                if (foundIndex > -1) {
+                    const entry = freeTableState[foundIndex];
+                    const allocatedStart = entry.start;
+                    tableLogger(`找到满足条件的空闲区, 起始于 ${entry.start}, 长度 ${entry.length}。`, 'info');
+                    entry.start += count;
+                    entry.length -= count;
+
+                    if (entry.length === 0) {
+                        freeTableState.splice(foundIndex, 1);
+                    }
+                    tableLogger(`成功分配 ${count} 个盘块, 从 ${allocatedStart} 开始。`, 'success');
+                } else {
+                    tableLogger(`没有找到足够大的连续空闲区来分配 ${count} 个盘块。`, 'error');
+                }
+                renderFreeTable();
+            });
+
+            document.getElementById('table-free-btn').addEventListener('click', () => {
+                const start = parseInt(document.getElementById('table-free-start').value, 10);
+                const length = parseInt(document.getElementById('table-free-length').value, 10);
+                if (isNaN(start) || isNaN(length) || length < 1) {
+                    tableLogger('请输入有效的起始盘块和长度。', 'error');
+                    return;
+                }
+
+                let newEntry = { start, length };
+                tableLogger(`正在回收从 ${start} 开始, 长度为 ${length} 的区域。`, 'info');
+
+                // Add and merge logic
+                freeTableState.push(newEntry);
+                freeTableState.sort((a, b) => a.start - b.start);
+                
+                let merged = true;
+                while(merged) {
+                    merged = false;
+                    for (let i = 0; i < freeTableState.length - 1; i++) {
+                        let current = freeTableState[i];
+                        let next = freeTableState[i+1];
+                        if (current.start + current.length === next.start) {
+                            tableLogger(`合并相邻空闲区: [${current.start}, ${current.length}] 和 [${next.start}, ${next.length}]。`, 'info');
+                            current.length += next.length;
+                            freeTableState.splice(i + 1, 1);
+                            merged = true;
+                            break; 
+                        }
+                    }
+                }
+                tableLogger('回收和合并完成。', 'success');
+                renderFreeTable();
+            });
+
+            document.getElementById('table-reset-btn').addEventListener('click', initFreeTable);
+
+            // Initial calls
+            initBitmap();
+            initGrouped();
+            initFreeTable();
+        });
+    </script>
+
+</body>
+</html>

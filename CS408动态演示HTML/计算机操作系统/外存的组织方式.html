@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>外存组织方式交互式探索</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chosen Palette: "Slate" with "Emerald" accent -->
+    <!-- Application Structure Plan: The application is designed as a single-page interactive tool with a clear, tab-based navigation system. The three core concepts from the report—连续 (Continuous), 链接 (Linked), and 索引 (Indexed) organization—are presented as distinct, explorable modules. This thematic separation was chosen for usability, allowing a user to focus on understanding one concept completely before moving to the next. Each module features a two-column layout: the left side contains textual explanations (theory, pros, cons) and interactive controls (inputs, buttons), while the right side provides a live, dynamic visualization of the corresponding data structures (disk blocks, FAT, i-node). This structure facilitates an "learn-then-do" user flow, where the user reads the concept and immediately interacts with a simulation to solidify their understanding. -->
+    <!-- Visualization & Content Choices: 
+        1. Continuous Organization: 
+            - Goal: To visually demonstrate external fragmentation.
+            - Viz: A grid of HTML divs representing disk blocks.
+            - Interaction: Users can allocate files of varying sizes. The visualization will show how contiguous blocks are used and how deleting files leaves non-contiguous "holes", making it difficult to allocate larger files later. This directly illustrates the core weakness of the method.
+        2. Linked Organization (FAT):
+            - Goal: To trace the non-contiguous chain of a file through the File Allocation Table.
+            - Viz: A side-by-side view of a simplified FAT (HTML table) and the disk blocks (HTML grid).
+            - Interaction: When a user clicks "Read File", the application will animate the lookup process: highlight the starting block in the FCB, find its entry in the FAT, highlight the next block number, then jump to that entry, and so on, simultaneously highlighting the actual data blocks. This makes the pointer-chasing concept tangible.
+        3. Indexed Organization (UNIX i-node):
+            - Goal: To interactively demonstrate the hybrid address translation for different file sizes.
+            - Viz: A diagram built with styled HTML divs representing an i-node (with direct, single, double, triple indirect pointers) and the disk block space.
+            - Interaction: The user enters a byte offset and clicks "Translate". The application calculates and then *animates* the address lookup path based on the offset's value, highlighting each step: i-node -> indirect block(s) -> final data block. This interaction directly brings the textbook example problem to life, providing a clear visual for a complex process.
+        - Library/Method: All visualizations are implemented with Vanilla JS manipulating Tailwind CSS-styled HTML elements. This avoids external libraries and provides precise control over the animations and state changes needed to represent these specific data structures.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+        body { 
+            font-family: 'Noto Sans SC', sans-serif; 
+            background-color: #f8fafc;
+        }
+        .tab-btn {
+            transition: all 0.3s ease-in-out;
+            border-bottom: 3px solid transparent;
+        }
+        .tab-btn.active {
+            border-bottom-color: #10b981;
+            color: #059669;
+        }
+        .content-section {
+            display: none;
+        }
+        .content-section.active {
+            display: block;
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .block {
+            transition: all 0.3s ease-in-out;
+            border: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        .highlight-path {
+            animation: pulse 1.5s infinite;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.6);
+            z-index: 10;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        .inode-ptr-container {
+            display: grid;
+            grid-template-columns: 80px 1fr;
+            align-items: center;
+            gap: 8px;
+            padding: 4px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="text-slate-700">
+
+    <div class="container mx-auto p-4 sm:p-6 md:p-8">
+        <header class="text-center mb-10">
+            <h1 class="text-3xl md:text-4xl font-bold text-slate-900">外存的组织方式</h1>
+            <p class="mt-2 text-slate-600">一个用于学习文件物理结构的交互式模拟器</p>
+        </header>
+
+        <div class="sticky top-0 z-20 bg-white/80 backdrop-blur-sm shadow-sm mb-8">
+            <nav id="tabs" class="flex justify-center items-center gap-4 md:gap-8 border-b border-slate-200">
+                <button data-tab="continuous" class="tab-btn font-semibold py-3 px-2 md:px-4 active">连续组织</button>
+                <button data-tab="linked" class="tab-btn font-semibold py-3 px-2 md:px-4">链接组织 (FAT)</button>
+                <button data-tab="indexed" class="tab-btn font-semibold py-3 px-2 md:px-4">索引组织 (UNIX)</button>
+            </nav>
+        </div>
+
+        <main>
+            <!-- 连续组织 Content -->
+            <section id="content-continuous" class="content-section active">
+                <div class="grid lg:grid-cols-5 gap-8">
+                    <div class="lg:col-span-2">
+                        <h2 class="text-2xl font-bold text-emerald-700 mb-4">连续组织方式</h2>
+                        <div class="space-y-4 text-slate-600">
+                            <p>要求为每一个文件分配一组相邻接的盘块。逻辑文件中的记录顺序地存储到邻接的各物理盘块中。</p>
+                            <div class="p-4 bg-emerald-50 border-l-4 border-emerald-500 rounded-r-lg">
+                                <h4 class="font-semibold text-emerald-800">优点</h4>
+                                <ul class="list-disc list-inside mt-2">
+                                    <li>顺序访问速度快，磁头移动最少。</li>
+                                    <li>支持高效的随机存取。</li>
+                                </ul>
+                            </div>
+                            <div class="p-4 bg-rose-50 border-l-4 border-rose-500 rounded-r-lg">
+                                <h4 class="font-semibold text-rose-800">缺点</h4>
+                                <ul class="list-disc list-inside mt-2">
+                                    <li>会产生大量外部碎片。</li>
+                                    <li>必须事先知道文件长度。</li>
+                                    <li>文件动态增长困难。</li>
+                                </ul>
+                            </div>
+                            <div class="space-y-4 bg-slate-50 p-4 rounded-lg border mt-4">
+                                <h3 class="font-semibold text-lg">操作面板</h3>
+                                <div>
+                                    <label for="continuous-alloc-size" class="font-medium">分配文件大小 (盘块数):</label>
+                                    <input type="number" id="continuous-alloc-size" value="5" min="1" max="20" class="mt-1 w-full p-2 border rounded-md focus:ring-2 focus:ring-emerald-500">
+                                </div>
+                                <button id="continuous-alloc-btn" class="w-full bg-emerald-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-emerald-700 transition-colors">分配文件</button>
+                                <button id="continuous-reset-btn" class="w-full bg-slate-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-600 transition-colors mt-2">重置磁盘</button>
+                                <div id="continuous-log" class="mt-2 text-sm h-16 overflow-y-auto font-mono bg-slate-100 p-2 rounded"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lg:col-span-3">
+                        <h3 class="font-semibold text-lg mb-2 text-center">磁盘空间示意图</h3>
+                        <div id="continuous-disk-grid" class="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 gap-2 p-2 bg-slate-100 rounded-md"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 链接组织 Content -->
+            <section id="content-linked" class="content-section">
+                 <div class="grid lg:grid-cols-2 gap-8">
+                    <div class="">
+                        <h2 class="text-2xl font-bold text-emerald-700 mb-4">链接组织方式 (FAT)</h2>
+                        <div class="space-y-4 text-slate-600">
+                             <p>允许将一个文件存放在多个离散的盘块中。通过将链接指针集中存放在一张文件分配表 (FAT) 中（显式链接），来记录文件的盘块链。</p>
+                             <div class="p-4 bg-emerald-50 border-l-4 border-emerald-500 rounded-r-lg">
+                                <h4 class="font-semibold text-emerald-800">优点</h4>
+                                <ul class="list-disc list-inside mt-2">
+                                    <li>消除了外部碎片，提高空间利用率。</li>
+                                    <li>无需事先知道文件大小，支持动态增长。</li>
+                                </ul>
+                            </div>
+                            <div class="p-4 bg-rose-50 border-l-4 border-rose-500 rounded-r-lg">
+                                <h4 class="font-semibold text-rose-800">缺点</h4>
+                                <ul class="list-disc list-inside mt-2">
+                                    <li>对随机访问效率不高（需遍历FAT表）。</li>
+                                    <li>FAT表本身需要占用内存空间。</li>
+                                </ul>
+                            </div>
+                            <div class="space-y-4 bg-slate-50 p-4 rounded-lg border mt-4">
+                                <h3 class="font-semibold text-lg">模拟操作</h3>
+                                <p>点击下方按钮，模拟读取文件并观察FAT表如何引导对非连续盘块的访问。</p>
+                                <button id="linked-read-btn" class="w-full bg-emerald-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-emerald-700 transition-colors">读取文件 "report.txt"</button>
+                                <button id="linked-reset-btn" class="w-full bg-slate-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-600 transition-colors mt-2">重置状态</button>
+                                 <div id="linked-log" class="mt-2 text-sm h-16 overflow-y-auto font-mono bg-slate-100 p-2 rounded"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="">
+                         <div class="grid md:grid-cols-2 gap-4">
+                             <div>
+                                <h3 class="font-semibold text-lg mb-2 text-center">文件分配表 (FAT)</h3>
+                                <div class="overflow-hidden rounded-lg border">
+                                <table class="min-w-full">
+                                    <thead class="bg-slate-100"><tr><th class="p-2 text-sm">块号</th><th class="p-2 text-sm">下一块</th></tr></thead>
+                                    <tbody id="linked-fat-table" class="text-center text-sm"></tbody>
+                                </table>
+                                </div>
+                             </div>
+                             <div>
+                                <h3 class="font-semibold text-lg mb-2 text-center">磁盘盘块</h3>
+                                <div id="linked-disk-grid" class="grid grid-cols-4 sm:grid-cols-5 gap-2 p-2 bg-slate-100 rounded-md"></div>
+                             </div>
+                         </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 索引组织 Content -->
+            <section id="content-indexed" class="content-section">
+                <div class="grid lg:grid-cols-5 gap-8">
+                    <div class="lg:col-span-2">
+                        <h2 class="text-2xl font-bold text-emerald-700 mb-4">索引组织方式 (UNIX i-node)</h2>
+                        <div class="space-y-4 text-slate-600">
+                             <p>为每个文件分配一个索引结点 (i-node)，其中混合了直接地址和间接地址指针，以高效支持从小到大的各类文件。</p>
+                             <div class="p-4 bg-emerald-50 border-l-4 border-emerald-500 rounded-r-lg">
+                                <h4 class="font-semibold text-emerald-800">优点</h4>
+                                <ul class="list-disc list-inside mt-2">
+                                    <li>支持高效的直接访问。</li>
+                                    <li>没有外部碎片，文件扩展灵活。</li>
+                                    <li>兼顾了小文件和大文件的访问效率。</li>
+                                </ul>
+                            </div>
+                             <div class="p-4 bg-rose-50 border-l-4 border-rose-500 rounded-r-lg">
+                                <h4 class="font-semibold text-rose-800">缺点</h4>
+                                <ul class="list-disc list-inside mt-2">
+                                    <li>对于大文件，访问需要多次磁盘I/O。</li>
+                                    <li>索引结点本身占用空间。</li>
+                                </ul>
+                            </div>
+                            <div class="space-y-4 bg-slate-50 p-4 rounded-lg border mt-4">
+                                <h3 class="font-semibold text-lg">地址转换模拟</h3>
+                                <p class="text-sm">盘块大小: 1KB (1024字节), 地址: 4字节</p>
+                                <div>
+                                    <label for="indexed-offset" class="font-medium">输入文件字节偏移量:</label>
+                                    <input type="number" id="indexed-offset" value="420000" class="mt-1 w-full p-2 border rounded-md focus:ring-2 focus:ring-emerald-500">
+                                </div>
+                                <button id="indexed-translate-btn" class="w-full bg-emerald-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-emerald-700 transition-colors">转换地址</button>
+                                <div id="indexed-log" class="mt-2 text-sm h-24 overflow-y-auto font-mono bg-slate-100 p-2 rounded"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lg:col-span-3">
+                         <h3 class="font-semibold text-lg mb-2 text-center">i-node 与磁盘块</h3>
+                         <div id="indexed-viz-container" class="space-y-4"></div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const tabs = document.getElementById('tabs');
+        const contentSections = document.querySelectorAll('.content-section');
+        const tabButtons = document.querySelectorAll('.tab-btn');
+
+        tabs.addEventListener('click', (e) => {
+            if (e.target.tagName !== 'BUTTON') return;
+            const targetTab = e.target.dataset.tab;
+
+            tabButtons.forEach(btn => btn.classList.remove('active'));
+            e.target.classList.add('active');
+
+            contentSections.forEach(section => {
+                section.classList.toggle('active', section.id === `content-${targetTab}`);
+            });
+        });
+
+        // --- 连续组织 ---
+        const continuousGrid = document.getElementById('continuous-disk-grid');
+        const continuousLog = document.getElementById('continuous-log');
+        let continuousDisk = new Array(96).fill(null); // 12x8 grid
+        let fileCounter = 0;
+        const colors = ['bg-sky-400', 'bg-indigo-400', 'bg-violet-400', 'bg-fuchsia-400', 'bg-pink-400', 'bg-orange-400'];
+
+        const renderContinuous = () => {
+            continuousGrid.innerHTML = '';
+            continuousDisk.forEach((fileId, i) => {
+                const block = document.createElement('div');
+                block.className = 'block h-8 rounded';
+                if (fileId !== null) {
+                    block.classList.add(colors[fileId % colors.length], 'text-white');
+                    block.textContent = `F${fileId}`;
+                } else {
+                    block.classList.add('bg-slate-200');
+                }
+                block.title = `Block ${i}`;
+                if (fileId !== null) {
+                     block.onclick = () => {
+                        const idToDelete = fileId;
+                        continuousLog.textContent = `> 正在删除文件 F${idToDelete}...`;
+                        continuousDisk = continuousDisk.map(id => id === idToDelete ? null : id);
+                        renderContinuous();
+                    };
+                    block.style.cursor = 'pointer';
+                }
+                continuousGrid.appendChild(block);
+            });
+        };
+        
+        document.getElementById('continuous-alloc-btn').addEventListener('click', () => {
+            const size = parseInt(document.getElementById('continuous-alloc-size').value);
+            let start = -1;
+            for (let i = 0; i <= continuousDisk.length - size; i++) {
+                let isFree = true;
+                for (let j = 0; j < size; j++) {
+                    if (continuousDisk[i + j] !== null) {
+                        isFree = false;
+                        break;
+                    }
+                }
+                if (isFree) {
+                    start = i;
+                    break;
+                }
+            }
+
+            if (start !== -1) {
+                fileCounter++;
+                for (let i = 0; i < size; i++) {
+                    continuousDisk[start + i] = fileCounter;
+                }
+                continuousLog.textContent = `> 成功分配文件 F${fileCounter}，大小 ${size}，起始于块 ${start}。`;
+            } else {
+                continuousLog.textContent = `> 失败：无足够连续空间分配 ${size} 块。`;
+            }
+            renderContinuous();
+        });
+        
+        document.getElementById('continuous-reset-btn').addEventListener('click', () => {
+             continuousDisk = new Array(96).fill(null);
+             fileCounter = 0;
+             continuousLog.textContent = '> 磁盘已重置。';
+             renderContinuous();
+        });
+
+
+        // --- 链接组织 ---
+        const linkedFatTable = document.getElementById('linked-fat-table');
+        const linkedDiskGrid = document.getElementById('linked-disk-grid');
+        const linkedLog = document.getElementById('linked-log');
+        let linkedFAT = {};
+        let linkedDisk = {};
+
+        const initLinked = () => {
+            linkedLog.textContent = '> 状态已重置。';
+            // FCB: report.txt starts at block 2
+            // Chain: 2 -> 8 -> 5 -> 17 -> EOF
+            linkedFAT = {2: 8, 8: 5, 5: 17, 17: 'EOF'};
+            linkedDisk = { 2: 'F1', 8: 'F1', 5: 'F1', 17: 'F1', 3: 'F2', 12: 'F2'};
+            renderLinked();
+        };
+
+        const renderLinked = (highlighted = {}) => {
+            linkedFatTable.innerHTML = '';
+            for(let i=0; i<20; i++){
+                const row = document.createElement('tr');
+                row.className = 'border-b';
+                row.innerHTML = `<td class="p-1">${i}</td><td class="p-1">${linkedFAT[i] || '...'}</td>`;
+                if(i === highlighted.fatEntry) row.classList.add('bg-emerald-200', 'font-bold');
+                linkedFatTable.appendChild(row);
+            }
+            linkedDiskGrid.innerHTML = '';
+            for(let i=0; i<20; i++){
+                const block = document.createElement('div');
+                block.className = 'block h-10 rounded';
+                if(linkedDisk[i]){
+                    block.classList.add('bg-sky-400', 'text-white');
+                    block.textContent = linkedDisk[i];
+                } else {
+                    block.classList.add('bg-slate-200');
+                }
+                 if(i === highlighted.diskBlock) block.classList.add('highlight-path');
+                linkedDiskGrid.appendChild(block);
+            }
+        };
+
+        document.getElementById('linked-read-btn').addEventListener('click', async () => {
+            let currentBlock = 2; // Start block for report.txt
+            linkedLog.textContent = `> 读取文件，从起始块 ${currentBlock} 开始...`;
+            
+            while(currentBlock !== 'EOF' && currentBlock !== undefined) {
+                renderLinked({ diskBlock: currentBlock });
+                await new Promise(res => setTimeout(res, 800));
+                
+                linkedLog.textContent = `> 访问块 ${currentBlock}。查询FAT表...`;
+                const nextBlock = linkedFAT[currentBlock];
+                
+                renderLinked({ diskBlock: currentBlock, fatEntry: currentBlock });
+                await new Promise(res => setTimeout(res, 800));
+                
+                linkedLog.textContent = `> FAT[${currentBlock}] 指向 -> ${nextBlock}`;
+                currentBlock = nextBlock;
+            }
+            linkedLog.textContent = `> 文件读取结束 (EOF)。`;
+            renderLinked();
+        });
+
+        document.getElementById('linked-reset-btn').addEventListener('click', initLinked);
+
+
+        // --- 索引组织 ---
+        const indexedVizContainer = document.getElementById('indexed-viz-container');
+        const indexedLog = document.getElementById('indexed-log');
+
+        const renderIndexed = (highlight = {}) => {
+            indexedVizContainer.innerHTML = '';
+            const createPtrDiv = (label, value, isHighlighted) => 
+                `<div class="inode-ptr-container ${isHighlighted ? 'bg-emerald-200' : ''}">
+                    <span class="text-xs font-semibold text-slate-500">${label}</span>
+                    <div class="block h-8 text-sm bg-slate-200 rounded ${isHighlighted ? 'highlight-path' : ''}">${value}</div>
+                 </div>`;
+            
+            let inodeHTML = `<div class="p-4 border-2 rounded-lg bg-white"><h4 class="font-bold text-center mb-2">i-node</h4>`;
+            for (let i=0; i<10; i++) inodeHTML += createPtrDiv(`Direct[${i}]`, `...`, highlight.inodePtr === i);
+            inodeHTML += createPtrDiv(`Single Ind.`, `...`, highlight.inodePtr === 10);
+            inodeHTML += createPtrDiv(`Double Ind.`, `...`, highlight.inodePtr === 11);
+            inodeHTML += createPtrDiv(`Triple Ind.`, `...`, highlight.inodePtr === 12);
+            inodeHTML += `</div>`;
+            
+            indexedVizContainer.innerHTML += inodeHTML;
+
+            if(highlight.l1Block) {
+                 let l1HTML = `<div class="p-4 border-2 rounded-lg bg-white relative">
+                                <div class="absolute -left-8 top-1/2 text-emerald-500 text-2xl font-bold">&rarr;</div>
+                                <h4 class="font-bold text-center mb-2">一级索引块</h4>`;
+                 for(let i=0; i<5; i++) l1HTML += createPtrDiv(`L1[${i}]`, '...', i === highlight.l1Index);
+                 l1HTML += `<div class="text-center">...</div>`;
+                 for(let i=250; i<256; i++) l1HTML += createPtrDiv(`L1[${i}]`, '...', i === highlight.l1Index);
+                 l1HTML += `</div>`;
+                 indexedVizContainer.innerHTML += l1HTML;
+            }
+            if(highlight.l2Block) {
+                 let l2HTML = `<div class="p-4 border-2 rounded-lg bg-white relative">
+                                <div class="absolute -left-8 top-1/2 text-emerald-500 text-2xl font-bold">&rarr;</div>
+                                <h4 class="font-bold text-center mb-2">二级索引块</h4>`;
+                 for(let i=0; i<5; i++) l2HTML += createPtrDiv(`L2[${i}]`, '...', i === highlight.l2Index);
+                 l2HTML += `<div class="text-center">...</div>`;
+                 l2HTML += `</div>`;
+                 indexedVizContainer.innerHTML += l2HTML;
+            }
+             if(highlight.dataBlock) {
+                 indexedVizContainer.innerHTML += `
+                    <div class="p-4 border-2 border-emerald-500 rounded-lg bg-emerald-100 relative highlight-path">
+                         <div class="absolute -left-8 top-1/2 text-emerald-500 text-2xl font-bold">&rarr;</div>
+                         <h4 class="font-bold text-center mb-2">数据块</h4>
+                         <p class="text-center">物理块号: ${highlight.dataBlock.pBlock}<br/>盘内偏移: ${highlight.dataBlock.dOffset}</p>
+                    </div>`;
+             }
+        };
+
+        const indexedLogger = (msg) => {
+            indexedLog.innerHTML += `<p>${msg}</p>`;
+            indexedLog.scrollTop = indexedLog.scrollHeight;
+        };
+
+        document.getElementById('indexed-translate-btn').addEventListener('click', async () => {
+            const offset = parseInt(document.getElementById('indexed-offset').value);
+            indexedLog.innerHTML = '';
+            indexedLogger(`> 开始转换偏移量: ${offset}`);
+
+            const blockSize = 1024;
+            const addrPerBlock = 256;
+            const dOffset = offset % blockSize;
+            const lBlock = Math.floor(offset / blockSize);
+            
+            indexedLogger(`> 逻辑块号: ${lBlock}, 盘内偏移: ${dOffset}`);
+            await new Promise(res => setTimeout(res, 500));
+            
+            // Direct
+            if (lBlock < 10) {
+                indexedLogger(`> 命中直接地址范围 (0-9)`);
+                renderIndexed({ inodePtr: lBlock });
+                await new Promise(res => setTimeout(res, 800));
+                renderIndexed({ inodePtr: lBlock, dataBlock: {pBlock: `i.addr[${lBlock}]`, dOffset: dOffset}});
+                indexedLogger(`> 物理地址 = (i.addr[${lBlock}], ${dOffset})`);
+                return;
+            }
+            
+            // Single Indirect
+            if (lBlock < 10 + addrPerBlock) {
+                const l1Index = lBlock - 10;
+                indexedLogger(`> 命中一次间接地址范围`);
+                renderIndexed({ inodePtr: 10 });
+                await new Promise(res => setTimeout(res, 800));
+                
+                indexedLogger(`> 访问 i.addr[10] 指向的一级索引块...`);
+                renderIndexed({ inodePtr: 10, l1Block: true });
+                await new Promise(res => setTimeout(res, 800));
+                
+                indexedLogger(`> 读取一级索引块的第 ${l1Index} 项...`);
+                renderIndexed({ inodePtr: 10, l1Block: true, l1Index: l1Index });
+                await new Promise(res => setTimeout(res, 800));
+
+                renderIndexed({ inodePtr: 10, l1Block: true, l1Index: l1Index, dataBlock: { pBlock: `L1[${l1Index}]`, dOffset: dOffset } });
+                indexedLogger(`> 物理地址 = (L1[${l1Index}], ${dOffset})`);
+                return;
+            }
+            
+            // Double Indirect
+            const l1Base = 10 + addrPerBlock;
+            if (lBlock < l1Base + addrPerBlock * addrPerBlock) {
+                const offsetInL2 = lBlock - l1Base;
+                const l2Index = Math.floor(offsetInL2 / addrPerBlock);
+                const l1Index = offsetInL2 % addrPerBlock;
+                
+                indexedLogger(`> 命中二次间接地址范围`);
+                renderIndexed({ inodePtr: 11 });
+                await new Promise(res => setTimeout(res, 800));
+                
+                indexedLogger(`> 访问 i.addr[11] 指向的二级索引块...`);
+                renderIndexed({ inodePtr: 11, l2Block: true });
+                await new Promise(res => setTimeout(res, 800));
+
+                indexedLogger(`> 读取二级索引块的第 ${l2Index} 项...`);
+                renderIndexed({ inodePtr: 11, l2Block: true, l2Index: l2Index });
+                await new Promise(res => setTimeout(res, 800));
+
+                indexedLogger(`> 访问该项指向的一级索引块...`);
+                renderIndexed({ inodePtr: 11, l2Block: true, l2Index: l2Index, l1Block: true });
+                await new Promise(res => setTimeout(res, 800));
+
+                indexedLogger(`> 读取一级索引块的第 ${l1Index} 项...`);
+                renderIndexed({ inodePtr: 11, l2Block: true, l2Index: l2Index, l1Block: true, l1Index: l1Index });
+                await new Promise(res => setTimeout(res, 800));
+                
+                renderIndexed({ inodePtr: 11, l2Block: true, l2Index: l2Index, l1Block: true, l1Index: l1Index, dataBlock: { pBlock: `L2[${l2Index}]->L1[${l1Index}]`, dOffset: dOffset } });
+                indexedLogger(`> 物理地址 = (L2[${l2Index}]->L1[${l1Index}], ${dOffset})`);
+                return;
+            }
+
+            indexedLogger(`> 偏移量过大，可能需要三次间接寻址（本模拟未实现）。`);
+            renderIndexed({inodePtr: 12});
+        });
+        
+        // Initial calls
+        renderContinuous();
+        initLinked();
+        renderIndexed();
+    });
+    </script>
+
+</body>
+</html>
