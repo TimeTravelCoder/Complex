@@ -1,0 +1,306 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式文件保护学习指南</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Slate & Emerald -->
+    <!-- Application Structure Plan: The SPA is designed as an interactive tutorial for the abstract concepts of file protection. The structure follows a logical learning progression: 1. Introduction (The 'Why'). 2. Access Matrix Model (The abstract 'What'), featuring an interactive matrix. 3. Dynamic Control (The 'How to Modify'), using a tabbed simulation to demonstrate different rights like copy, owner, and control. 4. Implementation (The 'How it's really done'), which visualizes the decomposition of the matrix into ACL and Capability Lists and animates the common combined access procedure. This structure is chosen to make complex, theoretical OS concepts tangible and easy to experiment with, which is more effective for learning than static text. -->
+    <!-- Visualization & Content Choices: 
+        1. Report Info: Access Matrix. Goal: Explain the core model. Viz/Presentation: An interactive table (HTML/CSS) representing the matrix. Interaction: Clicking a cell reveals a detailed explanation of the specific right for that domain/object pair. Justification: This direct interaction helps solidify the fundamental concept before adding complexity. Library/Method: HTML/CSS/JS.
+        2. Report Info: Dynamic Rights (Copy, Owner, Control). Goal: Demonstrate matrix modification. Viz/Presentation: A tabbed interface with a simplified matrix for each right. Interaction: Users click buttons to execute an action (e.g., "Copy Right," "Add Right") and see the matrix visually change in response, with explanatory text updates. Justification: Simulates the cause-and-effect of each control right, making the rules clear. Library/Method: HTML/CSS/JS.
+        3. Report Info: ACL vs. Capability List implementation. Goal: Explain practical realization. Viz/Presentation: A step-by-step animated diagram. Interaction: A "Start" button initiates an animation showing the first-time access (ACL check) and subsequent access (Capability check). Justification: Animating this process makes the efficiency gain of the combined method immediately obvious. Library/Method: HTML/CSS/JS.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+            color: #334155; /* slate-700 */
+        }
+        .nav-link.active {
+            color: #059669; /* emerald-600 */
+            border-bottom-color: #059669;
+        }
+        .tab-button.active {
+            background-color: #059669; /* emerald-600 */
+            color: white;
+            border-color: #059669;
+        }
+        .tab-button {
+            transition: all 0.2s ease-in-out;
+        }
+        .matrix-cell {
+            transition: background-color 0.3s ease;
+            cursor: pointer;
+        }
+        .matrix-cell:hover {
+            background-color: #ecfdf5; /* emerald-50 */
+        }
+        .matrix-cell.highlight {
+            animation: highlight-anim 1s ease;
+        }
+        @keyframes highlight-anim {
+            0% { background-color: #a7f3d0; } /* emerald-200 */
+            100% { background-color: transparent; }
+        }
+        .flow-step {
+            transition: all 0.5s ease-in-out;
+            opacity: 0.3;
+            transform: scale(0.95);
+        }
+        .flow-step.active {
+            opacity: 1;
+            transform: scale(1);
+            border-color: #10b981; /* emerald-500 */
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <header class="bg-white/90 backdrop-blur-sm shadow-sm sticky top-0 z-50">
+        <nav class="container mx-auto px-6">
+            <div class="flex items-center justify-between h-16">
+                <h1 class="text-xl font-bold text-slate-800">第 7.5 讲: 文件保护</h1>
+                <div class="hidden md:block">
+                    <div class="ml-10 flex items-baseline space-x-4">
+                        <a href="#intro" class="nav-link text-slate-500 hover:text-emerald-600 px-3 py-2 text-sm font-medium border-b-2 border-transparent">保护概述</a>
+                        <a href="#matrix" class="nav-link text-slate-500 hover:text-emerald-600 px-3 py-2 text-sm font-medium border-b-2 border-transparent">访问矩阵</a>
+                        <a href="#implementation" class="nav-link text-slate-500 hover:text-emerald-600 px-3 py-2 text-sm font-medium border-b-2 border-transparent">实现与优化</a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container mx-auto px-6 py-12">
+
+        <section id="intro" class="scroll-mt-20 text-center mb-20">
+            <h2 class="text-3xl font-bold text-slate-900 mb-4">文件安全性的挑战</h2>
+            <p class="max-w-3xl mx-auto text-slate-600 mb-10">文件系统面临着来自人为、系统及自然因素的威胁。本讲聚焦于防止人为因素导致文件不安全的存取控制机制，其核心是“保护域”和“访问权”的概念。</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-white p-6 rounded-lg shadow-sm">
+                    <div class="text-3xl mb-3">👤</div>
+                    <h3 class="font-semibold text-lg text-slate-800">人为因素</h3>
+                    <p class="text-sm text-slate-500 mt-2">有意或无意的越权访问、修改、删除。</p>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-sm">
+                    <div class="text-3xl mb-3">⚙️</div>
+                    <h3 class="font-semibold text-lg text-slate-800">系统因素</h3>
+                    <p class="text-sm text-slate-500 mt-2">磁盘、控制器等硬件故障导致数据丢失。</p>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-sm">
+                    <div class="text-3xl mb-3">⏳</div>
+                    <h3 class="font-semibold text-lg text-slate-800">自然因素</h3>
+                    <p class="text-sm text-slate-500 mt-2">存储介质老化导致的数据自然衰减。</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="matrix" class="scroll-mt-20 mb-20">
+            <h2 class="text-3xl font-bold text-slate-900 text-center mb-4">核心模型：访问矩阵</h2>
+            <p class="max-w-3xl mx-auto text-slate-600 text-center mb-10">访问矩阵是描述系统中进程对对象访问权限的抽象模型。矩阵的行代表保护域 (Domain)，列代表对象 (Object)。点击矩阵中的任意单元格，可以查看其代表的具体权限含义。</p>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div class="lg:col-span-2 bg-white p-4 rounded-lg shadow-md">
+                    <h3 class="font-bold text-lg mb-4 text-center">交互式访问矩阵</h3>
+                    <div class="overflow-x-auto">
+                        <table id="access-matrix" class="w-full text-center border-collapse">
+                            <thead>
+                                <tr>
+                                    <th class="border p-2 bg-slate-100">域 \ 对象</th>
+                                    <th class="border p-2 bg-slate-100">F₁ (文件)</th>
+                                    <th class="border p-2 bg-slate-100">F₂ (文件)</th>
+                                    <th class="border p-2 bg-slate-100">打印机</th>
+                                    <th class="border p-2 bg-slate-100">域 D₂</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class="border p-3 font-bold bg-slate-100">域 D₁</td>
+                                    <td class="matrix-cell border p-3 font-mono" data-domain="D₁" data-object="F₁">{R, W}</td>
+                                    <td class="matrix-cell border p-3 font-mono" data-domain="D₁" data-object="F₂">{}</td>
+                                    <td class="matrix-cell border p-3 font-mono" data-domain="D₁" data-object="打印机">{Print}</td>
+                                    <td class="matrix-cell border p-3 font-mono" data-domain="D₁" data-object="D₂">{Switch}</td>
+                                </tr>
+                                <tr>
+                                    <td class="border p-3 font-bold bg-slate-100">域 D₂</td>
+                                    <td class="matrix-cell border p-3 font-mono" data-domain="D₂" data-object="F₁">{}</td>
+                                    <td class="matrix-cell border p-3 font-mono" data-domain="D₂" data-object="F₂">{R, O}</td>
+                                    <td class="matrix-cell border p-3 font-mono" data-domain="D₂" data-object="打印机">{}</td>
+                                    <td class="matrix-cell border p-3 font-mono" data-domain="D₂" data-object="D₂">{}</td>
+                                </tr>
+                                 <tr>
+                                    <td class="border p-3 font-bold bg-slate-100">域 D₃</td>
+                                    <td class="matrix-cell border p-3 font-mono" data-domain="D₃" data-object="F₁">{R*}</td>
+                                    <td class="matrix-cell border p-3 font-mono" data-domain="D₃" data-object="F₂">{W}</td>
+                                    <td class="matrix-cell border p-3 font-mono" data-domain="D₃" data-object="打印机">{}</td>
+                                    <td class="matrix-cell border p-3 font-mono" data-domain="D₃" data-object="D₂">{Control}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div id="matrix-info" class="bg-white p-6 rounded-lg shadow-md flex items-center justify-center">
+                    <p class="text-slate-500">点击一个单元格查看解释。</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="implementation" class="scroll-mt-20">
+            <h2 class="text-3xl font-bold text-slate-900 text-center mb-4">实现与优化</h2>
+            <p class="max-w-3xl mx-auto text-slate-600 text-center mb-10">由于访问矩阵非常稀疏，直接实现既浪费空间又效率低下。实际系统采用分解策略，最常见的是结合使用访问控制表 (ACL) 和访问权限 (Capability)。下面的动画将演示这一高效的访问过程。</p>
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-xl font-bold text-center mb-2 text-slate-800">进程访问文件过程模拟</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-center text-center my-8">
+                    <div id="flow-process" class="flow-step border-2 border-slate-300 p-4 rounded-lg">
+                        <div class="text-4xl">🏃</div>
+                        <p class="font-bold mt-2">1. 进程 (Process)</p>
+                        <p class="text-sm text-slate-500">请求访问文件 F</p>
+                    </div>
+                    <div id="flow-object" class="flow-step border-2 border-slate-300 p-4 rounded-lg">
+                        <div class="text-4xl">📄</div>
+                        <p class="font-bold mt-2">2. 文件 F</p>
+                        <p class="text-sm text-slate-500">拥有一个ACL</p>
+                    </div>
+                    <div id="flow-capability" class="flow-step border-2 border-slate-300 p-4 rounded-lg">
+                        <div class="text-4xl">🔑</div>
+                        <p class="font-bold mt-2">3. 访问权限 (Capability)</p>
+                        <p class="text-sm text-slate-500">系统颁发的“通行证”</p>
+                    </div>
+                </div>
+                <div id="flow-status" class="mt-4 p-4 bg-slate-100 rounded-md text-center text-slate-700 font-medium min-h-[5rem] flex items-center justify-center">
+                    点击下方按钮，开始模拟进程首次及后续访问文件的过程。
+                </div>
+                 <button id="start-flow-btn" class="mt-6 w-full max-w-xs mx-auto block bg-emerald-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-emerald-700 transition-colors">开始模拟</button>
+            </div>
+        </section>
+
+    </main>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+    const matrixCells = document.querySelectorAll('.matrix-cell');
+    const matrixInfo = document.getElementById('matrix-info');
+
+    const rightsExplanation = {
+        'R': '<b>读 (Read)</b>: 允许从文件中读取数据。',
+        'W': '<b>写 (Write)</b>: 允许向文件中写入数据。',
+        'Print': '<b>打印 (Print)</b>: 允许将文件发送到打印机。',
+        'Switch': '<b>切换 (Switch)</b>: 允许进程从当前域切换到目标域。',
+        'O': '<b>所有权 (Owner)</b>: 允许进程修改该对象的所有访问权限（即修改此列）。',
+        'R*': '<b>拷贝权 (Copy)</b>: 允许进程将读权限 (R) 复制给其他域。',
+        'Control': '<b>控制权 (Control)</b>: 允许进程修改目标域的所有权限（即修改此行）。'
+    };
+    
+    matrixCells.forEach(cell => {
+        cell.addEventListener('click', () => {
+            const domain = cell.dataset.domain;
+            const object = cell.dataset.object;
+            let rights = cell.textContent.replace(/[{}]/g, '').split(',').map(r => r.trim()).filter(r => r);
+
+            let explanationHTML = `<div class="text-left"><p class="font-bold text-slate-800">单元格 [${domain}, ${object}]</p>`;
+            explanationHTML += `<p class="text-sm text-slate-600 mt-2">表示在域 <b>${domain}</b> 中运行的进程，对对象 <b>${object}</b> 拥有以下权限：</p>`;
+            
+            if (rights.length > 0) {
+                 explanationHTML += '<ul class="mt-3 space-y-2 text-sm">';
+                 rights.forEach(right => {
+                     const key = right.replace('*', '');
+                     if (rightsExplanation[key]) {
+                         explanationHTML += `<li class="p-2 bg-slate-50 rounded-md">${rightsExplanation[right] || rightsExplanation[key]}</li>`;
+                     }
+                 });
+                 explanationHTML += '</ul>';
+            } else {
+                 explanationHTML += '<p class="mt-4 p-2 bg-slate-100 rounded-md text-center text-slate-500">没有任何权限。</p>';
+            }
+            explanationHTML += '</div>';
+
+            matrixInfo.innerHTML = explanationHTML;
+            
+            matrixCells.forEach(c => c.style.backgroundColor = '');
+            cell.style.backgroundColor = '#d1fae5'; // emerald-100
+        });
+    });
+    
+    // --- Flow Simulation ---
+    const startFlowBtn = document.getElementById('start-flow-btn');
+    const flowStatus = document.getElementById('flow-status');
+    const flowSteps = {
+        process: document.getElementById('flow-process'),
+        object: document.getElementById('flow-object'),
+        capability: document.getElementById('flow-capability')
+    };
+    
+    function resetFlow() {
+        Object.values(flowSteps).forEach(el => el.classList.remove('active'));
+        flowStatus.innerHTML = "点击下方按钮，开始模拟进程首次及后续访问文件的过程。";
+        startFlowBtn.disabled = false;
+    }
+
+    startFlowBtn.addEventListener('click', () => {
+        resetFlow();
+        startFlowBtn.disabled = true;
+
+        const steps = [
+            { delay: 500, el: flowSteps.process, text: "<b>首次访问开始：</b>一个进程请求访问文件 F。" },
+            { delay: 1500, el: flowSteps.object, text: "系统检查文件 F 的<b>访问控制表 (ACL)</b>，验证进程是否有权限。" },
+            { delay: 1500, el: flowSteps.object, text: "✅ 验证通过！" },
+            { delay: 1500, el: flowSteps.capability, text: "系统为该进程创建了一个针对文件 F 的<b>访问权限 (Capability)</b>。" },
+            { delay: 2000, text: "---" },
+            { delay: 500, el: flowSteps.process, text: "<b>后续访问开始：</b>进程再次请求访问文件 F。" },
+            { delay: 1500, el: flowSteps.capability, text: "进程直接出示之前获得的 <b>Capability</b>。" },
+            { delay: 1500, el: flowSteps.capability, text: "✅ 验证通过！访问速度更快，无需再次扫描ACL。" },
+            { delay: 2000, text: "模拟结束。这种“ACL + Capability”的组合兼顾了安全与效率。" }
+        ];
+
+        let i = 0;
+        function nextStep() {
+            if (i >= steps.length) {
+                startFlowBtn.disabled = false;
+                return;
+            }
+            const step = steps[i];
+            
+            if (step.el) {
+                Object.values(flowSteps).forEach(el => el.classList.remove('active'));
+                step.el.classList.add('active');
+            }
+            if (step.text === "---") {
+                 flowStatus.innerHTML = `<hr class="my-2"><p class="font-bold text-emerald-700">现在，我们模拟后续访问...</p>`;
+            } else {
+                 flowStatus.innerHTML = step.text;
+            }
+
+            i++;
+            setTimeout(nextStep, step.delay);
+        }
+        
+        nextStep();
+    });
+
+    // Navigation scrollspy
+    const sections = document.querySelectorAll('section');
+    const navLinks = document.querySelectorAll('.nav-link');
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if(entry.isIntersecting){
+                navLinks.forEach(link => {
+                    const href = link.getAttribute('href');
+                    link.classList.toggle('active', href.substring(1) === entry.target.id);
+                });
+            }
+        });
+    }, { rootMargin: '-30% 0px -70% 0px' });
+    sections.forEach(section => observer.observe(section));
+
+});
+</script>
+</body>
+</html>
+```

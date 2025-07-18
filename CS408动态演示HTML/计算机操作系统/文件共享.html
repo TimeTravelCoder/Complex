@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式文件共享学习指南</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Slate & Indigo -->
+    <!-- Application Structure Plan: The SPA is designed as an interactive learning module focused on comparing the two main file sharing methods. The structure progresses from a high-level introduction to a core interactive simulation, and finally a summary table. The main feature is a tab-based component that allows users to directly simulate and contrast the mechanics of Hard Links (i-node sharing) and Soft Links (symbolic linking). This hands-on, comparative approach is chosen because it makes the abstract concepts of link counting and dangling pointers tangible and easier to understand than a linear text description. -->
+    <!-- Visualization & Content Choices: 
+        1. Report Info: Hard Link process (i-node sharing & link count). Goal: Demonstrate lifecycle. Viz/Presentation: Interactive diagram built with HTML/CSS. Interaction: Buttons to "Create Link" and "Delete Link" that visually update a 'link count' number and the state of file entries. Justification: Actively engaging with the process reinforces the core concept of the link count's role in file persistence. Library/Method: HTML/CSS/JS.
+        2. Report Info: Soft Link process (path-based linking). Goal: Demonstrate path dependency and failure state. Viz/Presentation: Interactive diagram. Interaction: Buttons to "Create Link," "Delete Original File," and "Access Link." This simulates the "file not found" error, a key characteristic of soft links. Justification: Directly showing the consequence of a broken link is more impactful than describing it. Library/Method: HTML/CSS/JS.
+        3. Report Info: Comparison of attributes. Goal: Organize and summarize differences. Viz/Presentation: A clear, side-by-side HTML table. Interaction: None. Justification: A static table is the most effective way to present a dense, comparative summary for review. Library/Method: HTML/Tailwind.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+            color: #334155; /* slate-700 */
+        }
+        .nav-link.active {
+            color: #4f46e5; /* indigo-600 */
+            border-bottom-color: #4f46e5;
+        }
+        .tab-button.active {
+            background-color: #4f46e5; /* indigo-600 */
+            color: white;
+            border-color: #4f46e5;
+        }
+        .tab-button {
+            transition: all 0.2s ease-in-out;
+        }
+        .sim-box {
+            transition: opacity 0.5s ease-in-out, background-color 0.5s ease-in-out;
+        }
+        .sim-box.deleted {
+            opacity: 0.4;
+            background-color: #fecaca; /* red-200 */
+            text-decoration: line-through;
+        }
+        .sim-arrow {
+            position: relative;
+            width: 100%;
+            height: 2px;
+            background-color: #64748b; /* slate-500 */
+        }
+        .sim-arrow::after {
+            content: '';
+            position: absolute;
+            right: -1px;
+            top: -4px;
+            border-style: solid;
+            border-width: 5px 0 5px 10px;
+            border-color: transparent transparent transparent #64748b;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <header class="bg-white/90 backdrop-blur-sm shadow-sm sticky top-0 z-50">
+        <nav class="container mx-auto px-6">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex-shrink-0">
+                    <h1 class="text-xl font-bold text-slate-800">第 7.4 讲: 文件共享</h1>
+                </div>
+                <div class="hidden md:block">
+                    <div class="ml-10 flex items-baseline space-x-4">
+                        <a href="#intro" class="nav-link text-slate-500 hover:text-indigo-600 px-3 py-2 text-sm font-medium border-b-2 border-transparent">引言</a>
+                        <a href="#simulation" class="nav-link text-slate-500 hover:text-indigo-600 px-3 py-2 text-sm font-medium border-b-2 border-transparent">交互式模拟</a>
+                        <a href="#summary" class="nav-link text-slate-500 hover:text-indigo-600 px-3 py-2 text-sm font-medium border-b-2 border-transparent">对比总结</a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container mx-auto px-6 py-12">
+
+        <section id="intro" class="scroll-mt-20 text-center mb-20">
+            <h2 class="text-3xl font-bold text-slate-900 mb-4">为何需要文件共享?</h2>
+            <p class="max-w-3xl mx-auto text-slate-600">在多用户操作系统中，允许多个用户共同访问同一个文件是一项至关重要的功能。它不仅能极大节省磁盘空间，还能方便用户间的协作。本指南将通过交互式模拟，带您深入理解实现文件共享的两种核心技术：硬链接和软链接。</p>
+        </section>
+        
+        <section id="simulation" class="scroll-mt-20 mb-20">
+            <h2 class="text-3xl font-bold text-slate-900 text-center mb-4">硬链接 vs. 软链接 交互模拟</h2>
+            <p class="max-w-3xl mx-auto text-slate-600 text-center mb-10">理解文件共享的关键在于掌握硬链接（基于i-node）和软链接（符号链接）的工作原理及区别。请点击下方标签页，并通过按钮操作来模拟链接的创建和删除过程，直观感受它们的不同之处。</p>
+            
+            <div class="flex justify-center border-b border-slate-200 mb-8">
+                <button data-tab="hardlink" class="tab-button border-b-2 border-transparent -mb-px px-6 py-3 font-semibold text-slate-600">🔗 硬链接 (Hard Link)</button>
+                <button data-tab="softlink" class="tab-button border-b-2 border-transparent -mb-px px-6 py-3 font-semibold text-slate-600">🪁 软链接 (Soft Link)</button>
+            </div>
+
+            <div id="simulation-content">
+                <!-- Hard Link Content -->
+                <div id="hardlink-panel" class="hidden">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+                        <!-- Diagram -->
+                        <div class="bg-white p-6 rounded-lg shadow-md">
+                            <h3 class="font-bold text-lg mb-4 text-center">硬链接模拟器</h3>
+                            <div class="flex justify-around items-center">
+                                <!-- User Directories -->
+                                <div class="space-y-4 w-1/3 text-center">
+                                    <p class="font-semibold">User A 目录</p>
+                                    <div id="hardlink-userA-box" class="sim-box bg-slate-100 p-3 rounded-lg">
+                                        📄 report.docx
+                                    </div>
+                                    <p class="font-semibold mt-8">User B 目录</p>
+                                    <div id="hardlink-userB-box" class="sim-box bg-slate-100 p-3 rounded-lg opacity-0">
+                                        📄 sales_report.docx
+                                    </div>
+                                </div>
+                                <!-- Arrow and i-node -->
+                                <div class="w-1/3 flex flex-col items-center">
+                                    <div class="sim-arrow w-full mb-2"></div>
+                                    <div id="hardlink-arrowB" class="sim-arrow w-full mt-16 opacity-0"></div>
+                                </div>
+                                <div class="w-1/3 text-center">
+                                    <p class="font-semibold">i-node</p>
+                                    <div id="hardlink-inode-box" class="sim-box bg-indigo-100 p-4 rounded-lg border-2 border-indigo-300">
+                                        <p class="text-sm">文件元数据...</p>
+                                        <p class="text-sm">物理地址...</p>
+                                        <hr class="my-2">
+                                        <p class="text-sm">链接计数 (count): <span id="link-count" class="text-2xl font-bold text-indigo-600">1</span></p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Controls and Explanation -->
+                        <div class="bg-white p-6 rounded-lg shadow-md">
+                            <h3 class="font-bold text-lg mb-2">工作原理</h3>
+                            <p class="text-sm text-slate-600 mb-4">硬链接让多个目录项直接指向同一个i-node。i-node中的“链接计数”记录了有多少个目录项指向它。只有当计数值减为0时，文件才会被真正删除。</p>
+                            <div class="space-y-3 mb-4">
+                                <button id="create-hardlink-btn" class="w-full bg-indigo-600 text-white font-semibold py-2 px-4 rounded hover:bg-indigo-700 transition-colors">1. User B 创建硬链接</button>
+                                <button id="delete-hardlink-btn-A" class="w-full bg-slate-500 text-white font-semibold py-2 px-4 rounded hover:bg-slate-600 transition-colors">2. User A 删除文件</button>
+                                <button id="delete-hardlink-btn-B" class="w-full bg-slate-500 text-white font-semibold py-2 px-4 rounded hover:bg-slate-600 transition-colors disabled:opacity-50" disabled>3. User B 删除文件</button>
+                            </div>
+                            <div id="hardlink-status" class="mt-4 p-3 bg-slate-100 rounded-md text-center text-slate-700 font-medium h-12 flex items-center justify-center">
+                                请开始操作...
+                            </div>
+                            <button id="reset-hardlink-btn" class="mt-4 text-sm text-slate-500 hover:text-indigo-600 w-full">重置模拟</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Soft Link Content -->
+                <div id="softlink-panel" class="hidden">
+                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+                        <!-- Diagram -->
+                        <div class="bg-white p-6 rounded-lg shadow-md">
+                            <h3 class="font-bold text-lg mb-4 text-center">软链接模拟器</h3>
+                            <div class="flex justify-around items-start">
+                                <!-- User Directories -->
+                                <div class="space-y-4 w-2/5 text-center">
+                                    <p class="font-semibold">User A 目录 (文件主)</p>
+                                    <div id="softlink-userA-box" class="sim-box bg-slate-100 p-3 rounded-lg">
+                                        📄 report.docx
+                                    </div>
+                                     <p class="font-semibold mt-8">User B 目录</p>
+                                    <div id="softlink-userB-box" class="sim-box bg-slate-100 p-3 rounded-lg opacity-0">
+                                        <p class="text-sm">🪁 sales_report.lnk</p>
+                                        <p class="text-xs text-slate-500">类型: LINK</p>
+                                    </div>
+                                </div>
+                                <!-- i-nodes -->
+                                <div class="w-3/5 grid grid-cols-2 gap-4 text-center pt-10">
+                                    <div id="softlink-inodeA" class="sim-box bg-indigo-100 p-2 rounded-lg border-2 border-indigo-300">
+                                        <p class="text-xs font-semibold">i-node of report.docx</p>
+                                    </div>
+                                     <div id="softlink-inodeB" class="sim-box bg-sky-100 p-2 rounded-lg border-2 border-sky-300 opacity-0">
+                                        <p class="text-xs font-semibold">i-node of .lnk</p>
+                                        <p class="text-[10px] break-all text-sky-700">内容: "/UserA/report.docx"</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <p class="text-center text-xs text-slate-400 mt-4">箭头表示访问时路径的解析方向</p>
+                            <div id="softlink-access-arrow" class="w-1/2 h-10 border-b-2 border-r-2 border-dashed border-red-500 rounded-br-full mx-auto opacity-0"></div>
+                        </div>
+                        <!-- Controls and Explanation -->
+                        <div class="bg-white p-6 rounded-lg shadow-md">
+                            <h3 class="font-bold text-lg mb-2">工作原理</h3>
+                            <p class="text-sm text-slate-600 mb-4">软链接（符号链接）是创建一个特殊的文件，其内容是被链接文件的路径名。访问软链接时，系统会根据路径重新查找原文件。</p>
+                            <div class="space-y-3 mb-4">
+                                <button id="create-softlink-btn" class="w-full bg-indigo-600 text-white font-semibold py-2 px-4 rounded hover:bg-indigo-700 transition-colors">1. User B 创建软链接</button>
+                                <button id="delete-softlink-original-btn" class="w-full bg-red-600 text-white font-semibold py-2 px-4 rounded hover:bg-red-700 transition-colors disabled:opacity-50" disabled>2. User A 删除原文件</button>
+                                <button id="access-softlink-btn" class="w-full bg-slate-500 text-white font-semibold py-2 px-4 rounded hover:bg-slate-600 transition-colors disabled:opacity-50" disabled>3. User B 访问链接</button>
+                            </div>
+                            <div id="softlink-status" class="mt-4 p-3 bg-slate-100 rounded-md text-center text-slate-700 font-medium h-12 flex items-center justify-center">
+                                请开始操作...
+                            </div>
+                            <button id="reset-softlink-btn" class="mt-4 text-sm text-slate-500 hover:text-indigo-600 w-full">重置模拟</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="summary" class="scroll-mt-20">
+            <h2 class="text-3xl font-bold text-slate-900 text-center mb-4">特性对比总结</h2>
+            <p class="max-w-3xl mx-auto text-slate-600 text-center mb-10">下表总结了硬链接和软链接在关键特性上的核心区别，帮助您快速回顾和巩固知识点。</p>
+            <div class="bg-white rounded-lg shadow-md overflow-x-auto">
+                <table class="w-full text-sm text-left text-slate-500">
+                    <thead class="text-xs text-slate-700 uppercase bg-slate-100">
+                        <tr>
+                            <th scope="col" class="px-6 py-3">特性</th>
+                            <th scope="col" class="px-6 py-3">🔗 硬链接 (Hard Link)</th>
+                            <th scope="col" class="px-6 py-3">🪁 软链接 (Soft Link)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="bg-white border-b">
+                            <th scope="row" class="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">本质</th>
+                            <td class="px-6 py-4">一个指向文件i-node的指针</td>
+                            <td class="px-6 py-4">一个独立的文件，内容是目标文件的路径</td>
+                        </tr>
+                        <tr class="bg-slate-50 border-b">
+                            <th scope="row" class="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">i-node</th>
+                            <td class="px-6 py-4">共享同一个i-node</td>
+                            <td class="px-6 py-4">拥有自己独立的i-node</td>
+                        </tr>
+                        <tr class="bg-white border-b">
+                            <th scope="row" class="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">删除源文件</th>
+                            <td class="px-6 py-4">只要链接计数 > 0，文件依然可访问</td>
+                            <td class="px-6 py-4">链接失效，产生“悬空指针”</td>
+                        </tr>
+                         <tr class="bg-slate-50 border-b">
+                            <th scope="row" class="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">跨文件系统</th>
+                            <td class="px-6 py-4">❌ 不可以</td>
+                            <td class="px-6 py-4">✅ 可以</td>
+                        </tr>
+                         <tr class="bg-white">
+                            <th scope="row" class="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">链接对象</th>
+                            <td class="px-6 py-4">只能链接文件</td>
+                            <td class="px-6 py-4">可以链接文件和目录</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+    </main>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const tabs = document.querySelectorAll('.tab-button');
+    const hardlinkPanel = document.getElementById('hardlink-panel');
+    const softlinkPanel = document.getElementById('softlink-panel');
+
+    function switchTab(activeTab) {
+        tabs.forEach(tab => tab.classList.remove('active'));
+        activeTab.classList.add('active');
+
+        if (activeTab.dataset.tab === 'hardlink') {
+            hardlinkPanel.style.display = 'block';
+            softlinkPanel.style.display = 'none';
+        } else {
+            hardlinkPanel.style.display = 'none';
+            softlinkPanel.style.display = 'block';
+        }
+    }
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => switchTab(tab));
+    });
+    
+    // Default to first tab
+    switchTab(tabs[0]);
+
+    // --- Hard Link Simulation ---
+    const linkCountEl = document.getElementById('link-count');
+    const userBBox = document.getElementById('hardlink-userB-box');
+    const userABox = document.getElementById('hardlink-userA-box');
+    const inodeBox = document.getElementById('hardlink-inode-box');
+    const arrowB = document.getElementById('hardlink-arrowB');
+    const createHardlinkBtn = document.getElementById('create-hardlink-btn');
+    const deleteHardlinkBtnA = document.getElementById('delete-hardlink-btn-A');
+    const deleteHardlinkBtnB = document.getElementById('delete-hardlink-btn-B');
+    const resetHardlinkBtn = document.getElementById('reset-hardlink-btn');
+    const hardlinkStatus = document.getElementById('hardlink-status');
+
+    let count = 1;
+
+    function resetHardlinkSim() {
+        count = 1;
+        linkCountEl.textContent = count;
+        userBBox.style.opacity = '0';
+        arrowB.style.opacity = '0';
+        userABox.classList.remove('deleted');
+        inodeBox.classList.remove('deleted');
+        createHardlinkBtn.disabled = false;
+        deleteHardlinkBtnA.disabled = false;
+        deleteHardlinkBtnB.disabled = true;
+        hardlinkStatus.textContent = '请开始操作...';
+        hardlinkStatus.className = 'mt-4 p-3 bg-slate-100 rounded-md text-center text-slate-700 font-medium h-12 flex items-center justify-center';
+    }
+
+    createHardlinkBtn.addEventListener('click', () => {
+        if (count === 1) {
+            count++;
+            linkCountEl.textContent = count;
+            userBBox.style.opacity = '1';
+            arrowB.style.opacity = '1';
+            hardlinkStatus.textContent = 'User B 创建了硬链接，链接计数增加。';
+            deleteHardlinkBtnB.disabled = false;
+            createHardlinkBtn.disabled = true;
+        }
+    });
+
+    deleteHardlinkBtnA.addEventListener('click', () => {
+        if (count > 0) {
+            count--;
+            linkCountEl.textContent = count;
+            userABox.classList.add('deleted');
+             if (count === 0) {
+                inodeBox.classList.add('deleted');
+                hardlinkStatus.className = 'mt-4 p-3 bg-red-100 rounded-md text-center text-red-700 font-medium h-12 flex items-center justify-center';
+                hardlinkStatus.textContent = '链接计数为0，文件被真正删除！';
+            } else {
+                hardlinkStatus.textContent = 'User A删除了它的链接，计数减少，但文件依然存在。';
+            }
+        }
+    });
+
+    deleteHardlinkBtnB.addEventListener('click', () => {
+        if (count > 0 && userBBox.style.opacity === '1') {
+            count--;
+            linkCountEl.textContent = count;
+            userBBox.classList.add('deleted');
+            if (count === 0) {
+                inodeBox.classList.add('deleted');
+                hardlinkStatus.className = 'mt-4 p-3 bg-red-100 rounded-md text-center text-red-700 font-medium h-12 flex items-center justify-center';
+                hardlinkStatus.textContent = '链接计数为0，文件被真正删除！';
+            } else {
+                 hardlinkStatus.textContent = 'User B删除了它的链接，计数减少。';
+            }
+        }
+    });
+
+    resetHardlinkBtn.addEventListener('click', resetHardlinkSim);
+
+    // --- Soft Link Simulation ---
+    const createSoftlinkBtn = document.getElementById('create-softlink-btn');
+    const deleteOriginalBtn = document.getElementById('delete-softlink-original-btn');
+    const accessSoftlinkBtn = document.getElementById('access-softlink-btn');
+    const resetSoftlinkBtn = document.getElementById('reset-softlink-btn');
+    const softlinkStatus = document.getElementById('softlink-status');
+    const softUserBBox = document.getElementById('softlink-userB-box');
+    const softInodeB = document.getElementById('softlink-inodeB');
+    const softUserABox = document.getElementById('softlink-userA-box');
+    const softInodeA = document.getElementById('softlink-inodeA');
+    const accessArrow = document.getElementById('softlink-access-arrow');
+
+    let originalExists = true;
+    let softlinkCreated = false;
+
+    function resetSoftlinkSim() {
+        originalExists = true;
+        softlinkCreated = false;
+        softUserBBox.style.opacity = '0';
+        softInodeB.style.opacity = '0';
+        softUserABox.classList.remove('deleted');
+        softInodeA.classList.remove('deleted');
+        accessArrow.style.opacity = '0';
+        
+        createSoftlinkBtn.disabled = false;
+        deleteOriginalBtn.disabled = true;
+        accessSoftlinkBtn.disabled = true;
+
+        softlinkStatus.textContent = '请开始操作...';
+        softlinkStatus.className = 'mt-4 p-3 bg-slate-100 rounded-md text-center text-slate-700 font-medium h-12 flex items-center justify-center';
+    }
+    
+    createSoftlinkBtn.addEventListener('click', () => {
+        if (!softlinkCreated) {
+            softlinkCreated = true;
+            softUserBBox.style.opacity = '1';
+            softInodeB.style.opacity = '1';
+            softlinkStatus.textContent = 'User B 创建了软链接文件。';
+            createSoftlinkBtn.disabled = true;
+            deleteOriginalBtn.disabled = false;
+            accessSoftlinkBtn.disabled = false;
+        }
+    });
+
+    deleteOriginalBtn.addEventListener('click', () => {
+        if (originalExists) {
+            originalExists = false;
+            softUserABox.classList.add('deleted');
+            softInodeA.classList.add('deleted');
+            softlinkStatus.textContent = '文件主删除了原文件！';
+        }
+    });
+
+    accessSoftlinkBtn.addEventListener('click', () => {
+        if(softlinkCreated){
+            accessArrow.style.opacity = '1';
+            setTimeout(() => {
+                if (originalExists) {
+                    softlinkStatus.className = 'mt-4 p-3 bg-green-100 rounded-md text-center text-green-700 font-medium h-12 flex items-center justify-center';
+                    softlinkStatus.textContent = '访问成功！系统通过路径找到了原文件。';
+                } else {
+                    softlinkStatus.className = 'mt-4 p-3 bg-red-100 rounded-md text-center text-red-700 font-medium h-12 flex items-center justify-center';
+                    softlinkStatus.textContent = '访问失败！链接已悬空，找不到原文件。';
+                }
+                accessArrow.style.opacity = '0';
+            }, 1000);
+        }
+    });
+
+    resetSoftlinkBtn.addEventListener('click', resetSoftlinkSim);
+
+    // Navigation scrollspy
+    const sections = document.querySelectorAll('section');
+    const navLinks = document.querySelectorAll('.nav-link');
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if(entry.isIntersecting){
+                navLinks.forEach(link => {
+                    const href = link.getAttribute('href');
+                    link.classList.toggle('active', href.substring(1) === entry.target.id);
+                });
+            }
+        });
+    }, { rootMargin: '-30% 0px -70% 0px' });
+    sections.forEach(section => observer.observe(section));
+
+});
+</script>
+</body>
+</html>

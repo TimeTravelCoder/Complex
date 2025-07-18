@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>磁盘I/O提速技术交互式探索</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
+    <!-- Chosen Palette: "Slate" with "Emerald" and "Sky" accents -->
+    <!-- Application Structure Plan: The application is structured as a single, scrollable page divided into three distinct thematic sections based on the source report: "磁盘高速缓存" (Disk Cache), "其他I/O加速方法" (Other I/O Acceleration Methods), and "廉价磁盘冗余阵列 (RAID)". This vertical layout encourages a linear, progressive learning path, allowing the user to build knowledge from fundamental concepts (caching) to more advanced ones (RAID). Each section employs a two-column responsive layout. The left column provides concise theoretical explanations, key characteristics, and interactive controls. The right column is dedicated to a dynamic, visual simulation of the concept being explained. This design ensures that theory and practice are presented side-by-side, creating an intuitive "learn-and-try" user experience that enhances comprehension and retention. -->
+    <!-- Visualization & Content Choices: 
+        1. Disk Cache:
+            - Goal: Visually demonstrate the cache hit/miss mechanism and the LRU replacement policy.
+            - Viz: HTML divs representing memory cache slots and a log for narration. A bar chart (Chart.js) visualizes the performance difference between cached and non-cached access.
+            - Interaction: The user inputs a disk block number to read. The JS logic simulates checking the cache. The visualization highlights the accessed block, shows whether it's a "Hit" or "Miss," and animates the LRU replacement process when the cache is full. The chart dynamically updates to reflect the speed gain, making the benefit tangible.
+        2. Other I/O Methods:
+            - Goal: Illustrate the principles of Read-ahead and Delayed Write.
+            - Viz: Simple, animated diagrams made of styled HTML divs.
+            - Interaction: For "Read-ahead," clicking a "Read" button animates not just the requested block but also the subsequent block moving into a buffer. For "Delayed Write," a "Write" action animates data moving to a temporary "write buffer," and a separate "Flush" button triggers the final write to the disk visualization. This clearly separates the logical and physical write operations.
+        3. RAID:
+            - Goal: Show how data is striped and distributed across multiple disks for different RAID levels.
+            - Viz: A grid of HTML divs, where each column represents a physical disk.
+            - Interaction: The user selects a RAID level (0, 1, or 5) from a dropdown and provides input data. Clicking "Write" triggers an animation that distributes the data blocks ('D') and parity blocks ('P') across the disk visualizations according to the selected level's algorithm. This makes the abstract striping and parity concepts easy to compare and understand.
+        - Library/Method: Vanilla JS for all DOM manipulation and interactive logic. Chart.js is used specifically for the performance comparison chart in the cache section to provide a clear, quantitative visualization of the speed benefits. All other visuals are built with HTML/Tailwind.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+        body { 
+            font-family: 'Noto Sans SC', sans-serif; 
+            background-color: #f8fafc;
+        }
+        .section-card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            margin-bottom: 2.5rem;
+            padding: 1.5rem;
+            overflow: hidden;
+        }
+        .block, .cache-slot, .raid-disk div {
+            transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 500;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in {
+            animation: fadeIn 0.6s ease-out forwards;
+        }
+        @keyframes popIn {
+            0% { transform: scale(0.5); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .pop-in {
+            animation: popIn 0.4s ease-out forwards;
+        }
+        @keyframes highlight-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        .highlight {
+            animation: highlight-pulse 1.5s;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 250px;
+            max-height: 300px;
+        }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+        <header class="text-center mb-12">
+            <h1 class="text-3xl md:text-4xl font-bold text-slate-900">磁盘I/O提速技术探索</h1>
+            <p class="mt-3 text-slate-600 max-w-2xl mx-auto">本应用将复杂的磁盘I/O优化技术转化为直观的交互式体验，助您深入理解其工作原理。</p>
+        </header>
+
+        <main>
+            <!-- Section 1: Disk Cache -->
+            <section id="disk-cache" class="section-card fade-in">
+                <div class="grid md:grid-cols-2 gap-8 items-start">
+                    <div>
+                        <h2 class="text-2xl font-bold text-emerald-700 mb-4">8.3.1 磁盘高速缓存 (Disk Cache)</h2>
+                        <p class="mb-4 text-slate-600">在内存中开辟一块区域作为磁盘盘块的缓冲区。当需要访问数据时，优先从缓存中读取，若命中则极大提升速度；若未命中，则从磁盘读取并存入缓存。</p>
+                        <div class="bg-slate-50 p-4 rounded-lg border">
+                            <h3 class="font-semibold text-lg mb-3">缓存读取模拟 (LRU 算法)</h3>
+                            <div class="flex items-center gap-2 mb-3">
+                                <label for="block-to-read" class="whitespace-nowrap">读取盘块号:</label>
+                                <input type="number" id="block-to-read" value="105" min="1" class="w-full p-2 border rounded-md focus:ring-2 focus:ring-emerald-500">
+                                <button id="read-block-btn" class="bg-emerald-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-emerald-700 transition-colors whitespace-nowrap">读取</button>
+                            </div>
+                            <div id="cache-log" class="mt-2 text-sm h-12 font-mono bg-slate-100 p-2 rounded">等待操作...</div>
+                        </div>
+                         <div class="mt-6">
+                             <h3 class="font-semibold text-lg mb-2 text-center">访问性能对比</h3>
+                             <div class="chart-container">
+                                <canvas id="performance-chart"></canvas>
+                            </div>
+                         </div>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-lg mb-2 text-center">内存中的高速缓存 (4个插槽)</h3>
+                        <div id="cache-slots" class="grid grid-cols-4 gap-3 p-3 bg-slate-100 rounded-md min-h-[80px]"></div>
+                        <p class="text-xs text-center mt-1 text-slate-500">缓存中的块按访问时间排序，最左侧为最近最久未使用 (LRU)。</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 2: Other Methods -->
+            <section id="other-methods" class="section-card fade-in" style="animation-delay: 0.2s;">
+                 <h2 class="text-2xl font-bold text-sky-700 mb-6 text-center">8.3.2 其他I/O加速方法</h2>
+                <div class="grid md:grid-cols-2 gap-12 items-start">
+                    <div>
+                        <h3 class="font-semibold text-lg mb-3">提前读 (Read-ahead)</h3>
+                        <p class="text-slate-600 mb-4">对于顺序文件访问，系统在读取当前块的同时，预先将下一个块读入缓冲区，以备后续使用。</p>
+                        <button id="read-ahead-btn" class="w-full bg-sky-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors">模拟顺序读取</button>
+                        <div class="mt-4 p-4 bg-slate-100 rounded-lg">
+                            <h4 class="font-medium mb-2">磁盘与缓冲区</h4>
+                            <div class="flex items-center gap-4">
+                                <div class="text-center">
+                                    <div class="flex gap-1">
+                                        <div id="ra-disk-1" class="block w-12 h-12 rounded bg-slate-300">块N</div>
+                                        <div id="ra-disk-2" class="block w-12 h-12 rounded bg-slate-300">块N+1</div>
+                                    </div>
+                                    <span class="text-xs text-slate-500">磁盘</span>
+                                </div>
+                                <div id="ra-arrow" class="text-2xl text-slate-400 invisible">&#8594;</div>
+                                <div class="text-center">
+                                    <div id="ra-buffer" class="block w-24 h-12 rounded bg-sky-100 border-2 border-dashed border-sky-300">缓冲区</div>
+                                     <span class="text-xs text-slate-500">内存</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-lg mb-3">延迟写 (Delayed Write)</h3>
+                        <p class="text-slate-600 mb-4">写操作先在内存缓冲区完成，并不立即写入磁盘，等待合适的时机（如缓冲区将要被复用时）再批量写回。</p>
+                        <div class="flex gap-2">
+                             <button id="delayed-write-btn" class="flex-1 bg-sky-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors">写入数据</button>
+                             <button id="flush-btn" class="flex-1 bg-slate-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-600 transition-colors">刷回磁盘</button>
+                        </div>
+                        <div class="mt-4 p-4 bg-slate-100 rounded-lg">
+                            <h4 class="font-medium mb-2">数据流向</h4>
+                             <div class="flex items-center gap-4">
+                                <div class="text-center">
+                                    <div id="dw-app" class="block w-16 h-12 rounded bg-purple-200">应用</div>
+                                </div>
+                                 <div id="dw-arrow1" class="text-2xl text-slate-400 invisible">&#8594;</div>
+                                <div class="text-center">
+                                    <div id="dw-buffer" class="block w-24 h-12 rounded bg-sky-100 border-2 border-dashed border-sky-300">写缓冲区</div>
+                                </div>
+                                <div id="dw-arrow2" class="text-2xl text-slate-400 invisible">&#8594;</div>
+                                <div class="text-center">
+                                    <div id="dw-disk" class="block w-16 h-12 rounded bg-slate-300">磁盘</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Section 3: RAID -->
+            <section id="raid" class="section-card fade-in" style="animation-delay: 0.4s;">
+                <div class="grid md:grid-cols-2 gap-8 items-start">
+                    <div>
+                        <h2 class="text-2xl font-bold text-indigo-700 mb-4">8.3.3 廉价磁盘冗余阵列 (RAID)</h2>
+                        <p class="mb-4 text-slate-600">通过组合多个磁盘，利用并行交叉存取和冗余技术，同时提升I/O速度和数据可靠性。</p>
+                        <div class="bg-slate-50 p-4 rounded-lg border">
+                            <h3 class="font-semibold text-lg mb-3">RAID写入模拟</h3>
+                            <div class="mb-3">
+                                <label for="raid-level" class="font-medium">选择RAID级别:</label>
+                                <select id="raid-level" class="mt-1 w-full p-2 border rounded-md focus:ring-2 focus:ring-indigo-500">
+                                    <option value="0">RAID 0 (条带化)</option>
+                                    <option value="1">RAID 1 (镜像)</option>
+                                    <option value="5">RAID 5 (分布式奇偶校验)</option>
+                                </select>
+                            </div>
+                             <div class="mb-3">
+                                <label for="raid-data" class="font-medium">输入数据 (4个字符):</label>
+                                <input type="text" id="raid-data" value="DATA" maxlength="4" class="mt-1 w-full p-2 border rounded-md focus:ring-2 focus:ring-indigo-500 font-mono tracking-widest text-center">
+                            </div>
+                            <button id="write-raid-btn" class="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors">写入数据</button>
+                        </div>
+                        <div id="raid-desc" class="mt-4 p-3 bg-indigo-50 text-indigo-800 rounded-lg text-sm"></div>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-lg mb-2 text-center">磁盘阵列 (4个磁盘)</h3>
+                        <div id="raid-disks" class="grid grid-cols-4 gap-3 p-3 bg-slate-100 rounded-md">
+                            <div class="raid-disk text-center"><div class="font-bold mb-2">磁盘0</div><div class="space-y-2"></div></div>
+                            <div class="raid-disk text-center"><div class="font-bold mb-2">磁盘1</div><div class="space-y-2"></div></div>
+                            <div class="raid-disk text-center"><div class="font-bold mb-2">磁盘2</div><div class="space-y-2"></div></div>
+                            <div class="raid-disk text-center"><div class="font-bold mb-2">磁盘3</div><div class="space-y-2"></div></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+    // --- Section 1: Disk Cache ---
+    const cacheSlotsDiv = document.getElementById('cache-slots');
+    const readBlockBtn = document.getElementById('read-block-btn');
+    const blockToReadInput = document.getElementById('block-to-read');
+    const cacheLog = document.getElementById('cache-log');
+    const cacheSize = 4;
+    let cache = []; // Stores {blockId, dirty}
+    let perfData = { cached: 0, disk: 0 };
+
+    const perfChartCtx = document.getElementById('performance-chart').getContext('2d');
+    const performanceChart = new Chart(perfChartCtx, {
+        type: 'bar',
+        data: {
+            labels: ['缓存读取', '磁盘读取'],
+            datasets: [{
+                label: '访问次数',
+                data: [0, 0],
+                backgroundColor: [
+                    'rgba(16, 185, 129, 0.6)',
+                    'rgba(239, 68, 68, 0.6)'
+                ],
+                borderColor: [
+                    'rgba(16, 185, 129, 1)',
+                    'rgba(239, 68, 68, 1)'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        }
+    });
+
+    function updatePerfChart() {
+        performanceChart.data.datasets[0].data = [perfData.cached, perfData.disk];
+        performanceChart.update();
+    }
+    
+    function renderCache() {
+        cacheSlotsDiv.innerHTML = '';
+        for (let i = 0; i < cacheSize; i++) {
+            const slot = document.createElement('div');
+            slot.className = 'cache-slot h-16 rounded border-2 flex items-center justify-center';
+            if (cache[i]) {
+                slot.textContent = `块 ${cache[i].blockId}`;
+                slot.classList.add('bg-emerald-100', 'border-emerald-300', 'pop-in');
+            } else {
+                slot.textContent = '空';
+                slot.classList.add('bg-slate-200', 'border-slate-300');
+            }
+            cacheSlotsDiv.appendChild(slot);
+        }
+    }
+
+    readBlockBtn.addEventListener('click', () => {
+        const blockId = parseInt(blockToReadInput.value);
+        if (isNaN(blockId)) return;
+
+        const cacheIndex = cache.findIndex(item => item.blockId === blockId);
+        
+        // Clear previous highlights
+        Array.from(cacheSlotsDiv.children).forEach(child => child.classList.remove('highlight', 'bg-red-200', 'border-red-400'));
+        
+        if (cacheIndex !== -1) { // Cache Hit
+            cacheLog.textContent = `缓存命中: 块 ${blockId} 存在!`;
+            perfData.cached++;
+            const item = cache.splice(cacheIndex, 1)[0];
+            cache.unshift(item); // Move to front (MRU)
+            renderCache();
+            setTimeout(() => {
+                if(cacheSlotsDiv.children[0]) cacheSlotsDiv.children[0].classList.add('highlight');
+            }, 50);
+
+        } else { // Cache Miss
+            cacheLog.textContent = `缓存未命中: 从磁盘读取块 ${blockId}...`;
+            perfData.disk++;
+            if (cache.length >= cacheSize) {
+                const evicted = cache.pop(); // Evict LRU
+                cacheLog.textContent += ` 缓存已满, 换出块 ${evicted.blockId}.`;
+                // Animate eviction
+                 if (cacheSlotsDiv.children[cacheSize - 1]) {
+                     const lruSlot = cacheSlotsDiv.children[cacheSize-1];
+                     lruSlot.classList.add('bg-red-200', 'border-red-400');
+                     lruSlot.style.transform = 'scale(0)';
+                 }
+            }
+            cache.unshift({ blockId, dirty: false }); // Add to front (MRU)
+            setTimeout(renderCache, 500);
+        }
+        updatePerfChart();
+    });
+
+    // --- Section 2: Other Methods ---
+    const readAheadBtn = document.getElementById('read-ahead-btn');
+    const raDisk1 = document.getElementById('ra-disk-1');
+    const raDisk2 = document.getElementById('ra-disk-2');
+    const raBuffer = document.getElementById('ra-buffer');
+    const raArrow = document.getElementById('ra-arrow');
+
+    readAheadBtn.addEventListener('click', () => {
+        raBuffer.textContent = '...';
+        raBuffer.classList.remove('bg-emerald-200');
+        raArrow.classList.add('invisible');
+
+        raDisk1.classList.add('highlight');
+        
+        setTimeout(() => {
+            raArrow.classList.remove('invisible');
+            raBuffer.textContent = '块N, 块N+1';
+            raBuffer.classList.add('bg-emerald-200');
+            raDisk1.classList.remove('highlight');
+            raDisk2.classList.add('highlight');
+        }, 800);
+        setTimeout(()=> raDisk2.classList.remove('highlight'), 1600);
+    });
+
+    const delayedWriteBtn = document.getElementById('delayed-write-btn');
+    const flushBtn = document.getElementById('flush-btn');
+    const dwApp = document.getElementById('dw-app');
+    const dwBuffer = document.getElementById('dw-buffer');
+    const dwDisk = document.getElementById('dw-disk');
+    const dwArrow1 = document.getElementById('dw-arrow1');
+    const dwArrow2 = document.getElementById('dw-arrow2');
+    let bufferDirty = false;
+
+    delayedWriteBtn.addEventListener('click', () => {
+        dwApp.classList.add('highlight');
+        setTimeout(() => {
+            dwArrow1.classList.remove('invisible');
+            dwBuffer.textContent = '新数据';
+            dwBuffer.classList.add('bg-yellow-200', 'border-yellow-400');
+            dwApp.classList.remove('highlight');
+            bufferDirty = true;
+        }, 500);
+    });
+
+    flushBtn.addEventListener('click', () => {
+        if (!bufferDirty) return;
+        dwBuffer.classList.add('highlight');
+        setTimeout(() => {
+            dwArrow2.classList.remove('invisible');
+            dwDisk.textContent = '新数据';
+            dwDisk.classList.add('bg-emerald-200');
+            dwBuffer.classList.remove('highlight');
+            dwBuffer.textContent = '写缓冲区';
+            dwBuffer.classList.remove('bg-yellow-200', 'border-yellow-400');
+            bufferDirty = false;
+        }, 500);
+        setTimeout(() => {
+            dwDisk.classList.remove('bg-emerald-200');
+            dwDisk.textContent = '磁盘';
+            dwArrow1.classList.add('invisible');
+            dwArrow2.classList.add('invisible');
+        }, 2000);
+    });
+
+
+    // --- Section 3: RAID ---
+    const writeRaidBtn = document.getElementById('write-raid-btn');
+    const raidLevelSelect = document.getElementById('raid-level');
+    const raidDataInput = document.getElementById('raid-data');
+    const raidDisksDiv = document.getElementById('raid-disks');
+    const raidDescDiv = document.getElementById('raid-desc');
+    const raidDescContent = {
+        '0': 'RAID 0: 数据被分割成块（条带化）并依次写入不同磁盘。速度最快，但无冗余，风险最高。',
+        '1': 'RAID 1: 数据被完整地复制（镜像）到另一组磁盘。可靠性最高，但磁盘利用率仅50%。',
+        '5': 'RAID 5: 数据和奇偶校验信息交错分布在所有磁盘上。在速度、容量和可靠性之间取得平衡。'
+    };
+    
+    function renderRaid() {
+        const level = raidLevelSelect.value;
+        const data = raidDataInput.value.padEnd(4, ' ').split('');
+        const disks = Array.from(raidDisksDiv.querySelectorAll('.raid-disk .space-y-2'));
+        
+        disks.forEach(d => d.innerHTML = '');
+        raidDescDiv.textContent = raidDescContent[level];
+
+        let parityIndex = 3; 
+
+        for (let i = 0; i < 4; i++) {
+            setTimeout(() => {
+                const char = data[i];
+                const dataBlock = (val, type) => {
+                    const el = document.createElement('div');
+                    el.className = `block h-10 w-full rounded pop-in ${type === 'data' ? 'bg-sky-200' : 'bg-orange-200'}`;
+                    el.textContent = val;
+                    return el;
+                };
+
+                if (level === '0') {
+                    disks[i].appendChild(dataBlock(char, 'data'));
+                } else if (level === '1') {
+                    if (i < 2) {
+                        disks[i].appendChild(dataBlock(data[i*2], 'data'));
+                        disks[i+2].appendChild(dataBlock(data[i*2], 'data')); // Mirror
+                        disks[i].appendChild(dataBlock(data[i*2+1], 'data'));
+                        disks[i+2].appendChild(dataBlock(data[i*2+1], 'data')); // Mirror
+                    }
+                } else if (level === '5') {
+                    let diskIndex = i;
+                    if (i === parityIndex) {
+                        disks[diskIndex].appendChild(dataBlock('P'+i, 'parity'));
+                    } else {
+                        disks[diskIndex].appendChild(dataBlock(char, 'data'));
+                    }
+                }
+            }, i * 200);
+        }
+    }
+
+    writeRaidBtn.addEventListener('click', renderRaid);
+    raidLevelSelect.addEventListener('change', renderRaid);
+
+    // Initial renders
+    renderCache();
+    updatePerfChart();
+    renderRaid();
+});
+</script>
+
+</body>
+</html>
