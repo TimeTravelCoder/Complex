@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式学习笔记：对换(Swapping)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chosen Palette: Tech & Learn (Slate, Blue, Green, Orange) -->
+    <!-- Application Structure Plan: The SPA is structured as a guided, interactive simulation. It starts with a high-level animation to introduce the core concept, then transitions into a hands-on simulator. The layout places memory and disk side-by-side, with a process list and control panel, allowing users to trigger events and observe the OS's reaction (swapping). This simulator-centric design is chosen because swapping is a dynamic process, and watching it happen is far more effective than reading static text. Explanations of swapping policies are integrated into the log, providing context at the exact moment an action occurs. -->
+    <!-- Visualization & Content Choices: 
+        - Swap Animation (Intro): Goal: Inform. Method: JS-driven animation of blocks moving between two containers. Interaction: Automatic. Justification: A simple, visual hook to explain the fundamental idea of swapping.
+        - Memory/Disk Visualization: Goal: Inform/Compare. Method: HTML divs styled with Tailwind, dynamically rendered by JS to represent memory and disk blocks. Interaction: The visualization updates in response to user-triggered events in the simulator. Justification: Provides a clear, tangible view of process locations.
+        - Process State Simulator: Goal: Compare/Show Change. Method: A control panel with buttons to create processes and change their state, coupled with the memory/disk visualization and a status list. Interaction: Users create scenarios (e.g., memory pressure, blocked processes). The simulator automatically applies swapping logic. Justification: The core of the SPA. It allows users to experiment and directly observe the cause-and-effect relationship between system state and swapping decisions, solidifying their understanding of the swapper's role.
+        - Event Log: Goal: Inform. Method: A text area updated by JS. Interaction: Read-only. Justification: Crucial for explaining the "why" behind the simulator's actions, such as which process was chosen to be swapped and based on what criteria.
+        - Library/Method: Vanilla JS for all logic and animation. NO Chart.js/Plotly.js needed. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; /* slate-100 */ }
+        .section-card { background-color: white; border-radius: 0.75rem; padding: 1.5rem 2rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); margin-bottom: 2rem; }
+        .area-container { border: 2px solid #e2e8f0; background-color: #f8fafc; padding: 0.5rem; min-height: 20rem; border-radius: 0.5rem; }
+        .proc-block { 
+            padding: 0.5rem; margin: 0.25rem; border-radius: 0.25rem; font-weight: 500; text-align: center;
+            transition: all 0.5s ease-in-out, background-color 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+        .proc-ready { background-color: #3b82f6; color: white; } /* blue-500 */
+        .proc-blocked { background-color: #f97316; color: white; } /* orange-500 */
+        .proc-swapped { background-color: #64748b; color: white; } /* slate-500 */
+        
+        .status-dot { display: inline-block; width: 0.75rem; height: 0.75rem; border-radius: 50%; margin-right: 0.5rem; }
+        .dot-ready { background-color: #3b82f6; }
+        .dot-blocked { background-color: #f97316; }
+        .dot-swapped { background-color: #64748b; }
+
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold text-slate-900">对换 (Swapping)</h1>
+            <p class="mt-4 text-lg text-slate-600">一种在内存与外存间移动进程以管理稀缺内存资源的强大技术。</p>
+        </header>
+
+        <!-- Section 1: Intro Animation -->
+        <section class="section-card">
+            <h2 class="text-2xl font-bold mb-4">核心思想：空间换时间</h2>
+            <p class="mb-6 text-slate-600">当内存不足时，操作系统可以将暂时不运行的进程（如等待I/O的进程）完整地移动到速度较慢但容量巨大的磁盘（对换区）上，这个过程称为“换出”。当内存有空余且该进程需要再次运行时，再将其从磁盘移回内存，称为“换入”。这样就提高了内存的利用率，使得更多进程能参与调度。</p>
+            <div class="flex justify-around items-center p-4 bg-slate-50 rounded-lg">
+                <div class="text-center">
+                    <h3 class="font-bold text-lg">主存储器 (内存)</h3>
+                    <div class="area-container w-48 h-64 mt-2 flex flex-col justify-end" id="intro-mem">
+                        <div class="proc-block proc-ready">P1 (Ready)</div>
+                        <div class="proc-block proc-ready">P2 (Ready)</div>
+                        <div class="proc-block proc-blocked" id="intro-p3">P3 (Blocked)</div>
+                    </div>
+                </div>
+                <div class="text-2xl font-bold text-slate-500 mx-4" id="intro-arrow">↔</div>
+                <div class="text-center">
+                    <h3 class="font-bold text-lg">外存 (对换区)</h3>
+                    <div class="area-container w-48 h-64 mt-2 flex flex-col justify-end" id="intro-disk"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 2: Swapping Simulator -->
+        <section id="simulator" class="section-card">
+            <h2 class="text-3xl font-bold mb-2">交互式对换模拟器</h2>
+            <p class="text-slate-600 mb-6">通过创建进程和改变它们的状态，来观察操作系统的中级调度（对换）是如何工作的。当内存不足时，看看系统会选择哪个进程换出。</p>
+            
+            <div class="grid lg:grid-cols-2 gap-8">
+                <!-- Memory & Disk Visualization -->
+                <div>
+                    <div class="grid grid-cols-2 gap-4">
+                         <div class="text-center">
+                            <h3 class="font-bold">内存 (容量: 4)</h3>
+                            <div id="sim-mem" class="area-container mt-2"></div>
+                        </div>
+                        <div class="text-center">
+                            <h3 class="font-bold">对换区 (磁盘)</h3>
+                            <div id="sim-disk" class="area-container mt-2"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Controls and Info -->
+                <div>
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <h3 class="font-bold text-lg mb-2">进程列表</h3>
+                            <div id="process-list" class="space-y-2"></div>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-lg mb-2">控制面板</h3>
+                            <div class="space-y-3">
+                                <button id="create-proc-btn" class="w-full bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition">创建一个新进程</button>
+                                <div>
+                                    <select id="proc-select" class="w-full rounded-md border-slate-300 shadow-sm"></select>
+                                    <button id="block-proc-btn" class="w-full mt-2 bg-orange-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition">阻塞选中进程</button>
+                                </div>
+                                <button id="reset-btn" class="w-full bg-slate-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-600 transition">重置模拟</button>
+                            </div>
+                        </div>
+                    </div>
+                     <div class="mt-6">
+                        <h3 class="font-bold text-lg mb-2">内核日志</h3>
+                        <div id="log-area" class="h-40 bg-slate-800 text-white font-mono text-sm p-4 rounded-lg overflow-y-auto"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 3: Deeper Dive -->
+        <section class="section-card">
+             <h2 class="text-2xl font-bold mb-4">对换策略深度解析</h2>
+             <div class="space-y-6">
+                <div>
+                    <h3 class="font-bold text-lg">进程换出 (Swap-out) 策略</h3>
+                    <p class="text-slate-600 mt-1">当内存不足时，选择哪个进程换出至关重要。操作系统通常会综合考虑以下几点，选择一个“牺牲者”：</p>
+                    <ul class="list-disc list-inside mt-2 space-y-1">
+                        <li><b class="text-orange-600">进程状态：</b>优先选择处于 <b class="font-mono">阻塞/睡眠</b> 状态的进程，因为它们暂时不参与CPU竞争。</li>
+                        <li><b class="text-slate-600">优先级：</b>在状态相同的情况下，优先选择 <b class="font-mono">优先级最低</b> 的进程。</li>
+                        <li><b class="text-blue-600">驻留时间：</b>有时会考虑进程在内存中待了多久，以避免新调入的进程马上被换出（颠簸）。</li>
+                    </ul>
+                </div>
+                 <div>
+                    <h3 class="font-bold text-lg">进程换入 (Swap-in) 策略</h3>
+                    <p class="text-slate-600 mt-1">当内存有可用空间时，系统会从对换区选择进程换入。选择标准通常是：</p>
+                     <ul class="list-disc list-inside mt-2 space-y-1">
+                        <li><b class="text-green-600">就绪状态：</b>只换入状态为“就绪但已换出”的进程，因为阻塞的进程换入也无法运行。</li>
+                        <li><b class="text-slate-600">等待时间：</b>为保证公平，通常会优先换入在对换区中等待时间最长的进程。</li>
+                    </ul>
+                </div>
+                 <div>
+                    <h3 class="font-bold text-lg">对换区管理</h3>
+                    <p class="text-slate-600 mt-1">对换区位于磁盘上，其管理目标是速度优先。因此，它通常采用连续分配策略来存放换出的进程，这可以大大减少磁盘读写时的寻道时间，从而加快整个对换过程。</p>
+                </div>
+             </div>
+        </section>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // --- INTRO ANIMATION ---
+    const introMem = document.getElementById('intro-mem');
+    const introDisk = document.getElementById('intro-disk');
+    const p3 = document.getElementById('intro-p3');
+    
+    function runIntroAnimation() {
+        setTimeout(() => {
+            introDisk.appendChild(p3);
+            setTimeout(() => {
+                introMem.appendChild(p3);
+            }, 2000);
+        }, 2000);
+    }
+    runIntroAnimation();
+    setInterval(runIntroAnimation, 4000);
+
+    // --- SIMULATOR LOGIC ---
+    const MEMORY_CAPACITY = 4;
+    let processes = [];
+    let nextProcId = 1;
+
+    const simMem = document.getElementById('sim-mem');
+    const simDisk = document.getElementById('sim-disk');
+    const processList = document.getElementById('process-list');
+    const procSelect = document.getElementById('proc-select');
+    const logArea = document.getElementById('log-area');
+
+    const createBtn = document.getElementById('create-proc-btn');
+    const blockBtn = document.getElementById('block-proc-btn');
+    const resetBtn = document.getElementById('reset-btn');
+
+    function log(message) {
+        logArea.innerHTML += `<p class="fade-in">> ${message}</p>`;
+        logArea.scrollTop = logArea.scrollHeight;
+    }
+
+    function render() {
+        simMem.innerHTML = '';
+        simDisk.innerHTML = '';
+        processList.innerHTML = '';
+        procSelect.innerHTML = '';
+
+        let memCount = 0;
+        let hasSwappableProcess = false;
+
+        processes.forEach(p => {
+            // Render process block
+            const block = document.createElement('div');
+            block.className = `proc-block ${p.location === 'mem' ? (p.state === 'ready' ? 'proc-ready' : 'proc-blocked') : 'proc-swapped'}`;
+            block.textContent = `P${p.id}`;
+            block.id = `proc-block-${p.id}`;
+
+            if (p.location === 'mem') {
+                simMem.appendChild(block);
+                memCount++;
+            } else {
+                simDisk.appendChild(block);
+            }
+
+            // Render process list item
+            const listItem = document.createElement('div');
+            listItem.className = 'flex items-center text-sm';
+            const stateClass = p.location === 'mem' ? (p.state === 'ready' ? 'dot-ready' : 'dot-blocked') : 'dot-swapped';
+            const stateText = p.location === 'mem' ? (p.state === 'ready' ? '就绪 (内存中)' : '阻塞 (内存中)') : '已换出 (磁盘上)';
+            listItem.innerHTML = `<span class="status-dot ${stateClass}"></span> P${p.id} (优先级: ${p.priority}) - ${stateText}`;
+            processList.appendChild(listItem);
+            
+            // Populate select dropdown
+            if(p.location === 'mem' && p.state === 'ready') {
+                const option = document.createElement('option');
+                option.value = p.id;
+                option.textContent = `进程 P${p.id}`;
+                procSelect.appendChild(option);
+            }
+        });
+        
+        blockBtn.disabled = procSelect.options.length === 0;
+    }
+
+    async function trySwapOut() {
+        log('<span class="text-yellow-400">内存已满，启动换出协议...</span>');
+        await sleep(500);
+
+        // Swap-out policy:
+        // 1. Find lowest priority blocked process.
+        // 2. If none, find lowest priority ready process.
+        let candidates = processes.filter(p => p.location === 'mem');
+        let blocked = candidates.filter(p => p.state === 'blocked');
+        
+        let victim = null;
+        if (blocked.length > 0) {
+            victim = blocked.reduce((a, b) => a.priority < b.priority ? a : b);
+            log(`发现被阻塞的进程。选择优先级最低的牺牲者：P${victim.id}`);
+        } else {
+            victim = candidates.reduce((a, b) => a.priority < b.priority ? a : b);
+            log(`没有被阻塞的进程。选择优先级最低的就绪进程作为牺牲者：P${victim.id}`);
+        }
+        
+        await sleep(1000);
+        log(`正在换出 P${victim.id}...`);
+        victim.location = 'disk';
+        victim.swappedAt = Date.now();
+        render(); // Visually move to disk
+    }
+
+    async function trySwapIn() {
+        const memCount = processes.filter(p => p.location === 'mem').length;
+        if (memCount >= MEMORY_CAPACITY) return;
+
+        const candidates = processes.filter(p => p.location === 'disk' && p.state === 'ready');
+        if (candidates.length === 0) return;
+
+        // Swap-in policy: oldest swapped process
+        candidates.sort((a,b) => a.swappedAt - b.swappedAt);
+        const chosen = candidates[0];
+
+        log(`<span class="text-green-400">内存有可用空间，正在换入 P${chosen.id}...</span>`);
+        await sleep(1000);
+
+        chosen.location = 'mem';
+        delete chosen.swappedAt;
+        render();
+    }
+
+    async function createProcess() {
+        const newProc = {
+            id: nextProcId++,
+            state: 'ready',
+            location: 'mem',
+            priority: Math.floor(Math.random() * 10) + 1
+        };
+        
+        log(`正在创建新进程 P${newProc.id}，优先级为 ${newProc.priority}。`);
+        processes.push(newProc);
+        
+        const memCount = processes.filter(p => p.location === 'mem').length;
+        if (memCount > MEMORY_CAPACITY) {
+            await trySwapOut();
+        }
+        
+        render();
+        await trySwapIn();
+    }
+
+    function blockProcess() {
+        const selectedId = parseInt(procSelect.value);
+        const proc = processes.find(p => p.id === selectedId);
+        if (proc) {
+            log(`进程 P${proc.id} 已被阻塞（例如，等待I/O）。`);
+            proc.state = 'blocked';
+            render();
+            // Blocking a process might make it a candidate for swapping,
+            // but we don't trigger a swap here, only when new memory is needed.
+        }
+    }
+
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function init() {
+        processes = [];
+        nextProcId = 1;
+        logArea.innerHTML = '';
+        log('模拟器已就绪。');
+        render();
+    }
+
+    createBtn.addEventListener('click', createProcess);
+    blockBtn.addEventListener('click', blockProcess);
+    resetBtn.addEventListener('click', init);
+
+    init();
+});
+
+</script>
+
+</body>
+</html>

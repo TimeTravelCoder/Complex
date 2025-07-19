@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>死锁 - 交互式学习指南</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Critical System (Light Gray, Blue, Orange, Red) -->
+    <!-- Application Structure Plan: The application uses a task-oriented design to guide the user through understanding deadlocks. It's structured in four logical sections: 1. '什么是死锁?' provides a simple definition. 2. '死锁的四个必要条件' is the interactive centerpiece, allowing users to toggle each condition on/off to see how they collectively lead to a potential deadlock, making the core theory tangible. 3. '死锁情景模拟' visualizes the classic two-process, two-resource deadlock scenario step-by-step, showing the theory in action. 4. '如何处理死锁?' summarizes the four main strategies. This structure progresses from definition to cause, then to a practical example, and finally to solutions, creating an effective learning path. -->
+    <!-- Visualization & Content Choices: 1. Four Necessary Conditions: Report Info -> Definitions of the 4 conditions. Goal -> Demonstrate their collective necessity. Viz -> Four interactive toggle switches/cards. Interaction -> Clicking a switch toggles its state (on/off). A central status indicator dynamically updates based on the state of the four switches. Justification -> This interactive panel is far more effective than static text at teaching the core principle that ALL four conditions must be met simultaneously for a deadlock to be possible. 2. Deadlock Simulator: Report Info -> The P1/F1, P2/F2 example. Goal -> Visualize deadlock formation. Viz -> A diagram with process and resource nodes, animated state changes, and a real-time log. Interaction -> A 'Run' button triggers the animation. Justification -> An animation makes the abstract sequence of requests and blocks concrete and easy to follow, clearly showing the formation of a circular wait. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #f3f4f6; }
+        .condition-card { transition: all 0.3s ease; cursor: pointer; }
+        .condition-card.active { border-color: #f97316; background-color: #fff7ed; }
+        .condition-card .toggle {
+            transition: all 0.2s ease-in-out;
+            width: 4rem; height: 2rem; border-radius: 9999px;
+            background-color: #d1d5db; position: relative;
+        }
+        .condition-card.active .toggle { background-color: #16a34a; }
+        .condition-card .toggle-dot {
+            position: absolute; top: 0.25rem; left: 0.25rem;
+            width: 1.5rem; height: 1.5rem; border-radius: 9999px;
+            background-color: white; transition: all 0.2s ease-in-out;
+        }
+        .condition-card.active .toggle-dot { transform: translateX(2rem); }
+        .sim-node { transition: all 0.5s ease-in-out; }
+        .sim-line { position: absolute; background-color: #6b7280; transition: all 0.5s ease-in-out; transform-origin: left center; z-index: 0; }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl font-bold text-gray-900">第 3.5 讲：死锁概述</h1>
+            <p class="mt-2 text-lg text-gray-600">一个关于资源竞争与循环等待的交互式指南</p>
+        </header>
+
+        <main>
+            <!-- Section 1: Definition -->
+            <section id="definition" class="mb-16 bg-white p-8 rounded-lg shadow-md">
+                <h2 class="text-3xl font-bold text-center mb-4 text-gray-900">什么是死锁?</h2>
+                <p class="text-center text-gray-600 max-w-3xl mx-auto">
+                    死锁是指在一组并发进程中，每个进程都在等待仅由该组中其他进程才能释放的资源，从而导致所有进程都陷入**无限期等待**，无法继续向前推进的系统状态。这就像城市交通中的“环形僵局”，每辆车都在等待前方车辆移动，但前方的车也因同样的原因被阻塞。
+                </p>
+            </section>
+            
+            <!-- Section 2: Four Conditions -->
+            <section id="conditions" class="mb-16">
+                <h2 class="text-3xl font-bold text-center mb-8 text-gray-900">死锁的四个必要条件</h2>
+                <p class="text-center text-gray-600 mb-8 max-w-3xl mx-auto">死锁的发生必须**同时满足**以下四个条件。点击下方的卡片可以模拟破坏任意一个条件，观察其对死锁可能性的影响。</p>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                    <div id="cond-1" class="condition-card active border-2 p-4 rounded-lg bg-white shadow" onclick="toggleCondition(1)">
+                        <h4 class="font-bold text-lg">1. 互斥条件</h4><p class="text-sm text-gray-500 mb-2">资源被排他性使用</p><div class="toggle"><div class="toggle-dot"></div></div>
+                    </div>
+                    <div id="cond-2" class="condition-card active border-2 p-4 rounded-lg bg-white shadow" onclick="toggleCondition(2)">
+                        <h4 class="font-bold text-lg">2. 请求和保持</h4><p class="text-sm text-gray-500 mb-2">持有资源并请求新资源</p><div class="toggle"><div class="toggle-dot"></div></div>
+                    </div>
+                    <div id="cond-3" class="condition-card active border-2 p-4 rounded-lg bg-white shadow" onclick="toggleCondition(3)">
+                        <h4 class="font-bold text-lg">3. 不可抢占</h4><p class="text-sm text-gray-500 mb-2">资源不能被强制剥夺</p><div class="toggle"><div class="toggle-dot"></div></div>
+                    </div>
+                    <div id="cond-4" class="condition-card active border-2 p-4 rounded-lg bg-white shadow" onclick="toggleCondition(4)">
+                        <h4 class="font-bold text-lg">4. 循环等待</h4><p class="text-sm text-gray-500 mb-2">形成进程-资源等待环路</p><div class="toggle"><div class="toggle-dot"></div></div>
+                    </div>
+                </div>
+
+                <div id="deadlock-status" class="text-center p-4 rounded-lg text-white font-bold text-xl transition-all duration-300 bg-red-500">
+                    死锁可能发生！
+                </div>
+            </section>
+            
+            <!-- Section 3: Deadlock Simulator -->
+            <section id="simulator" class="mb-16">
+                 <h2 class="text-3xl font-bold text-center mb-8 text-gray-900">死锁情景模拟</h2>
+                 <p class="text-center text-gray-600 mb-8 max-w-3xl mx-auto">模拟两个进程（P1, P2）竞争两个不可抢占资源（R1, R2）的经典场景。观察死锁是如何一步步形成的。</p>
+                 <div class="bg-white rounded-lg shadow-lg p-6">
+                    <div class="text-center mb-6">
+                        <button id="sim-button" onclick="runDeadlockSimulation()" class="py-2 px-5 bg-blue-500 text-white rounded-full font-semibold transition-all duration-300 hover:bg-blue-600">运行模拟</button>
+                    </div>
+                    <div class="flex flex-col md:flex-row gap-8">
+                        <div class="w-full md:w-1/2 h-64 relative" id="sim-canvas">
+                            <!-- Simulation nodes will be injected here -->
+                        </div>
+                        <div class="w-full md:w-1/2">
+                            <h4 class="font-bold text-lg mb-2">事件日志:</h4>
+                            <div id="sim-log" class="h-64 bg-gray-900 text-white font-mono text-sm p-4 rounded-lg overflow-y-auto"></div>
+                        </div>
+                    </div>
+                 </div>
+            </section>
+
+            <!-- Section 4: Solutions -->
+            <section id="solutions">
+                 <h2 class="text-3xl font-bold text-center mb-8 text-gray-900">如何处理死锁?</h2>
+                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div class="bg-white p-6 rounded-lg shadow"><h4 class="font-bold text-lg text-blue-600">预防死锁</h4><p class="text-sm text-gray-600">通过破坏四个必要条件之一来从根本上防止死锁。实现简单，但可能降低资源利用率。</p></div>
+                    <div class="bg-white p-6 rounded-lg shadow"><h4 class="font-bold text-lg text-blue-600">避免死锁</h4><p class="text-sm text-gray-600">在分配资源前进行判断，确保系统不会进入不安全状态。如银行家算法。</p></div>
+                    <div class="bg-white p-6 rounded-lg shadow"><h4 class="font-bold text-lg text-blue-600">检测死锁</h4><p class="text-sm text-gray-600">允许死锁发生，但通过算法定期检测，并采取措施恢复。</p></div>
+                    <div class="bg-white p-6 rounded-lg shadow"><h4 class="font-bold text-lg text-blue-600">解除死锁</h4><p class="text-sm text-gray-600">当检测到死锁后，通过抢占资源或终止进程来打破循环等待。</p></div>
+                 </div>
+            </section>
+        </main>
+    </div>
+
+<script>
+let conditions = { 1: true, 2: true, 3: true, 4: true };
+
+function toggleCondition(id) {
+    conditions[id] = !conditions[id];
+    const card = document.getElementById(`cond-${id}`);
+    card.classList.toggle('active', conditions[id]);
+    updateDeadlockStatus();
+}
+
+function updateDeadlockStatus() {
+    const statusDiv = document.getElementById('deadlock-status');
+    const allActive = Object.values(conditions).every(c => c);
+    
+    if (allActive) {
+        statusDiv.textContent = '死锁可能发生！';
+        statusDiv.className = 'text-center p-4 rounded-lg text-white font-bold text-xl transition-all duration-300 bg-red-500';
+    } else {
+        statusDiv.textContent = '死锁已被预防';
+        statusDiv.className = 'text-center p-4 rounded-lg text-white font-bold text-xl transition-all duration-300 bg-green-500';
+    }
+}
+
+// 新增函数：创建连线
+function createLine(from, to, color = 'gray', dashed = false) {
+    const line = document.createElement('div');
+    line.className = `sim-line`;
+    
+    if (dashed) {
+        line.style.borderTop = '2px dashed';
+    } else {
+        line.style.borderTop = '2px solid';
+    }
+    
+    if (color === 'gray') {
+        line.style.borderColor = '#6b7280';
+    } else if (color === 'red') {
+        line.style.borderColor = '#ef4444';
+    }
+    
+    // 计算连线位置和长度
+    const fromRect = from.getBoundingClientRect();
+    const toRect = to.getBoundingClientRect();
+    const canvasRect = document.getElementById('sim-canvas').getBoundingClientRect();
+    
+    const fromX = fromRect.left + fromRect.width/2 - canvasRect.left;
+    const fromY = fromRect.top + fromRect.height/2 - canvasRect.top;
+    const toX = toRect.left + toRect.width/2 - canvasRect.left;
+    const toY = toRect.top + toRect.height/2 - canvasRect.top;
+    
+    const length = Math.sqrt(Math.pow(toX - fromX, 2) + Math.pow(toY - fromY, 2));
+    const angle = Math.atan2(toY - fromY, toX - fromX) * 180 / Math.PI;
+    
+    line.style.width = `${length}px`;
+    line.style.left = `${fromX}px`;
+    line.style.top = `${fromY}px`;
+    line.style.transform = `rotate(${angle}deg)`;
+    
+    document.getElementById('sim-canvas').appendChild(line);
+    return line;
+}
+
+let isSimulating = false;
+async function runDeadlockSimulation() {
+    if (isSimulating) return;
+    isSimulating = true;
+
+    const canvas = document.getElementById('sim-canvas');
+    const log = document.getElementById('sim-log');
+    const button = document.getElementById('sim-button');
+    button.disabled = true;
+    button.classList.add('opacity-50');
+
+    canvas.innerHTML = '';
+    log.innerHTML = '';
+
+    const createNode = (id, text, top, left, color = 'bg-blue-500') => {
+        const node = document.createElement('div');
+        node.id = id;
+        node.className = `sim-node absolute w-16 h-16 rounded-full flex items-center justify-center text-white font-bold shadow-lg ${color} z-10`;
+        node.style.top = top;
+        node.style.left = left;
+        node.textContent = text;
+        canvas.appendChild(node);
+        return node;
+    };
+    
+    const p1 = createNode('p1', 'P1', '20%', '10%');
+    const p2 = createNode('p2', 'P2', '60%', '80%');
+    const r1 = createNode('r1', 'R1', '20%', '80%', 'bg-orange-500');
+    const r2 = createNode('r2', 'R2', '60%', '10%', 'bg-orange-500');
+
+    const addLog = (text) => {
+        log.innerHTML += `> ${text}<br>`;
+        log.scrollTop = log.scrollHeight;
+    };
+    
+    const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+    const changeState = (node, state) => {
+        if (state === 'waiting') {
+            node.classList.remove('bg-blue-500');
+            node.classList.add('bg-yellow-500');
+        } else if (state === 'deadlocked') {
+            node.classList.remove('bg-yellow-500');
+            node.classList.add('bg-red-600');
+        } else if (state === 'owns') {
+            node.classList.remove('bg-orange-500');
+            node.classList.add('bg-blue-300');
+        }
+    };
+
+    addLog('模拟开始...');
+    await sleep(1000);
+
+    addLog('P1 请求并获得资源 R1');
+    changeState(r1, 'owns');
+    const line1 = createLine(p1, r1); // 创建P1到R1的连线
+    addLog('当前资源占用情况: P1 占用 R1');
+    await sleep(1500);
+
+    addLog('P2 请求并获得资源 R2');
+    changeState(r2, 'owns');
+    const line2 = createLine(p2, r2); // 创建P2到R2的连线
+    addLog('当前资源占用情况: P1 占用 R1, P2 占用 R2');
+    await sleep(1500);
+    
+    addLog('P1 请求资源 R2 (被P2持有)...');
+    changeState(p1, 'waiting');
+    const line3 = createLine(p1, r2, 'gray', true); // 创建P1到R2的虚线连线（等待）
+    addLog('当前资源占用情况: P1 占用 R1, 等待 R2; P2 占用 R2');
+    await sleep(1500);
+
+    addLog('P2 请求资源 R1 (被P1持有)...');
+    changeState(p2, 'waiting');
+    const line4 = createLine(p2, r1, 'gray', true); // 创建P2到R1的虚线连线（等待）
+    addLog('当前资源占用情况: P1 占用 R1, 等待 R2; P2 占用 R2, 等待 R1');
+    await sleep(1500);
+
+    addLog('循环等待条件形成！');
+    changeState(p1, 'deadlocked');
+    changeState(p2, 'deadlocked');
+    // 将所有连线变为红色，表示死锁状态
+    line1.style.borderColor = '#ef4444';
+    line2.style.borderColor = '#ef4444';
+    line3.style.borderColor = '#ef4444';
+    line4.style.borderColor = '#ef4444';
+    addLog('当前资源占用情况: P1 占用 R1, 等待 R2; P2 占用 R2, 等待 R1（死锁状态）');
+    
+    const finalLog = document.createElement('div');
+    finalLog.className = "p-2 mt-2 bg-red-500 text-white rounded-lg text-center font-bold";
+    finalLog.textContent = "检测到死锁！";
+    log.appendChild(finalLog);
+    log.scrollTop = log.scrollHeight;
+
+    isSimulating = false;
+    button.disabled = false;
+    button.classList.remove('opacity-50');
+}
+</script>
+
+</body>
+</html>

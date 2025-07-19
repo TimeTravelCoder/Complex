@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式虚拟存储器学习指南</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chosen Palette: Calm Harmony (Slate background, Amber accent) -->
+    <!-- Application Structure Plan: A thematic, multi-section SPA. 1. Core Concepts (Intro). 2. Implementation (Paging vs. Segmentation). 3. Interactive Algorithm Simulator (Core Engagement). 4. Performance/Optimization (Thrashing/Working Set). This structure guides the user from 'what' and 'why' to 'how' and 'what if', providing a logical learning path superior to a linear report. The interactive simulator is the centerpiece, allowing hands-on learning. -->
+    <!-- Visualization & Content Choices: Concepts -> Styled text/lists with icons. Processes -> Interactive HTML/CSS flow diagrams. Algorithms -> Fully interactive JS/HTML simulator with a dynamic Chart.js comparison bar chart. Performance -> Chart.js line chart for thrashing visualization, interactive cards for solutions. This avoids static images and promotes exploration. All visualizations are Canvas-based. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', 'Helvetica Neue', 'Helvetica', 'Arial', sans-serif;
+        }
+        .nav-button {
+            transition: all 0.3s ease;
+        }
+        .nav-button.active {
+            background-color: #f59e0b;
+            color: white;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .content-section {
+            display: none;
+        }
+        .content-section.active {
+            display: block;
+        }
+        .diagram-box {
+            border: 1px solid #e2e8f0;
+            background-color: #f8fafc;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            text-align: center;
+            box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+        }
+        .arrow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            color: #94a3b8;
+            margin: 0 0.5rem;
+        }
+        .chart-container {
+            position: relative;
+            height: 350px;
+            width: 100%;
+            max-width: 700px;
+            margin: 2rem auto;
+        }
+        .memory-block, .algo-state-block {
+            border: 2px solid #cbd5e1;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            font-weight: bold;
+            margin: 0.25rem;
+            border-radius: 0.25rem;
+            transition: all 0.3s ease;
+            background-color: #f1f5f9;
+            position: relative;
+        }
+        .memory-block.fault-add { animation: fault-add-animation 0.6s ease; }
+        .memory-block.fault-replace { animation: fault-replace-animation 0.6s ease; }
+        .memory-block.hit { animation: hit-animation 0.6s ease; }
+
+        @keyframes fault-add-animation {
+            0% { transform: scale(0.5); background-color: #fecaca; }
+            100% { transform: scale(1); background-color: #f1f5f9; }
+        }
+        @keyframes fault-replace-animation {
+            0% { background-color: #fecaca; transform: scale(1.1); }
+            100% { background-color: #f1f5f9; transform: scale(1); }
+        }
+        @keyframes hit-animation {
+            50% { transform: scale(1.1); background-color: #d9f99d; }
+        }
+        .page-ref-item {
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            margin: 0 0.25rem;
+            background-color: #e2e8f0;
+            transition: all 0.3s ease;
+        }
+        .page-ref-item.current {
+            background-color: #f59e0b;
+            color: white;
+            transform: scale(1.2);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .clock-hand {
+            position: absolute;
+            bottom: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 12px solid #f59e0b;
+            transition: all 0.3s ease;
+        }
+        .access-bit {
+            position: absolute;
+            top: 2px;
+            right: 4px;
+            font-size: 0.7rem;
+            color: #3b82f6;
+            font-weight: bold;
+        }
+        .event-log {
+            height: 150px;
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            padding: 0.5rem;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-slate-900">交互式虚拟存储器学习指南</h1>
+            <p class="text-lg text-slate-600 mt-2">一个将复杂概念可视化的互动学习工具</p>
+        </header>
+
+        <nav class="flex flex-wrap justify-center gap-2 sm:gap-4 mb-8">
+            <button class="nav-button active px-4 py-2 bg-white rounded-md font-semibold shadow-sm" data-target="concepts">核心概念</button>
+            <button class="nav-button px-4 py-2 bg-white rounded-md font-semibold shadow-sm" data-target="implementation">实现机制</button>
+            <button class="nav-button px-4 py-2 bg-white rounded-md font-semibold shadow-sm" data-target="algorithms">页面置换算法</button>
+            <button class="nav-button px-4 py-2 bg-white rounded-md font-semibold shadow-sm" data-target="performance">性能与优化</button>
+        </nav>
+
+        <main>
+            <section id="concepts" class="content-section active">
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-2xl font-bold mb-4">什么是虚拟存储器？</h2>
+                    <p class="mb-4">虚拟存储器是一种存储器管理技术，它能从逻辑上对内存容量进行扩充，让用户感觉到的内存容量远大于实际物理内存。它的出现解决了传统存储管理方式中“一次性”和“驻留性”的限制，使得大程序能在小内存中运行，并能显著提高系统的多道程序度。</p>
+                    <div class="grid md:grid-cols-2 gap-6 mb-6">
+                        <div class="bg-rose-50 p-4 rounded-lg border border-rose-200"><h3 class="font-bold text-rose-800">传统方式的弊端</h3><ul class="list-disc list-inside text-rose-700 mt-2"><li><strong>一次性：</strong>作业必须全部装入内存才能运行，限制了大程序的执行。</li><li><strong>驻留性：</strong>作业一旦装入，就一直占用内存直到结束，造成资源浪费。</li></ul></div>
+                        <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-200"><h3 class="font-bold text-emerald-800">虚拟存储的优势</h3><p class="text-emerald-700 mt-2">基于**局部性原理**（程序在一段时间内只访问部分数据和指令），虚拟存储器只在需要时才调入相应部分，实现了高效、灵活的内存使用。</p></div>
+                    </div>
+                    <h3 class="text-xl font-bold mb-3">三大核心特征</h3>
+                    <div class="grid md:grid-cols-3 gap-4">
+                        <div class="text-center p-4 bg-slate-100 rounded-lg"><span class="text-4xl">🔁</span><h4 class="font-bold mt-2">多次性</h4><p class="text-sm text-slate-600">作业分多次调入内存，按需加载。</p></div>
+                        <div class="text-center p-4 bg-slate-100 rounded-lg"><span class="text-4xl">🔄</span><h4 class="font-bold mt-2">对换性</h4><p class="text-sm text-slate-600">允许作业在运行中换入换出。</p></div>
+                        <div class="text-center p-4 bg-slate-100 rounded-lg"><span class="text-4xl">🪄</span><h4 class="font-bold mt-2">虚拟性</h4><p class="text-sm text-slate-600">逻辑上扩充内存容量。</p></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="implementation" class="content-section">
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-2xl font-bold mb-4">虚拟存储器的实现机制</h2>
+                    <p class="mb-6">虚拟存储器的实现建立在离散分配的基础上，主要通过请求分页和请求分段两种方式。其中，请求分页因其管理开销小而最为常用。两者都需要硬件的紧密配合才能高效运行。</p>
+                    <h3 class="text-xl font-bold mb-3">请求分页地址变换过程</h3>
+                    <p class="mb-4">当CPU访问一个逻辑地址时，系统会经历一个复杂的查找和判断过程。如果页面不在内存中，就会触发一次“缺页中断”。</p>
+                    <div class="flex flex-col md:flex-row items-center justify-center space-y-4 md:space-y-0 md:space-x-4 flex-wrap"><div class="diagram-box">访问逻辑地址</div><div class="arrow">→</div><div class="diagram-box bg-amber-100">查快表(TLB)</div><div class="arrow">→</div><div class="diagram-box">查页表</div><div class="arrow">→</div><div class="diagram-box bg-red-100">缺页中断?</div><div class="arrow">→</div><div class="diagram-box">页面置换</div><div class="arrow">→</div><div class="diagram-box bg-green-100">访问物理地址</div></div>
+                    <h3 class="text-xl font-bold mt-8 mb-3">关键硬件支持</h3>
+                    <div class="grid md:grid-cols-3 gap-4">
+                        <div class="p-4 bg-slate-100 rounded-lg"><h4 class="font-bold">请求页表/段表</h4><p class="text-sm text-slate-600">在基本页/段表基础上增加状态位(P)、访问位(A)、修改位(M)和外存地址等，用于支持调页和置换。</p></div>
+                        <div class="p-4 bg-slate-100 rounded-lg"><h4 class="font-bold">缺页/缺段中断机构</h4><p class="text-sm text-slate-600">当访问的页/段不在内存时，能产生中断信号，通知操作系统介入处理。</p></div>
+                        <div class="p-4 bg-slate-100 rounded-lg"><h4 class="font-bold">地址变换机构</h4><p class="text-sm text-slate-600">在硬件层面支持从逻辑地址到物理地址的转换，并能处理缺页/缺段的异常情况。</p></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="algorithms" class="content-section">
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-2xl font-bold mb-4">高级页面置换算法模拟器</h2>
+                    <p class="mb-4">当发生缺页中断且内存已满时，操作系统必须选择一个页面将其换出。本模拟器让您可以自定义参数，深入探索不同算法的效率和行为。</p>
+                    
+                    <div class="grid md:grid-cols-2 gap-6 bg-slate-100 p-4 rounded-lg mb-6">
+                        <div>
+                            <label for="page-string-input" class="font-semibold block mb-1">页面引用串 (用逗号或空格分隔):</label>
+                            <input type="text" id="page-string-input" class="w-full p-2 border border-slate-300 rounded-md" value="7,0,1,2,0,3,0,4,2,3,0,3,2,1,2,0,1,7,0,1">
+                        </div>
+                        <div>
+                            <label for="memory-size-slider" class="font-semibold block mb-1">物理块数量: <span id="memory-size-value" class="font-bold text-amber-600">4</span></label>
+                            <input type="range" id="memory-size-slider" min="1" max="7" value="4" class="w-full">
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap items-center justify-between gap-4 mb-6 bg-slate-100 p-4 rounded-lg">
+                        <div class="flex items-center gap-2">
+                            <span class="font-semibold">算法:</span>
+                            <div class="flex gap-2 flex-wrap">
+                                 <input type="radio" id="algo-fifo" name="algorithm" value="FIFO" class="hidden peer/fifo"><label for="algo-fifo" class="px-3 py-1 text-sm rounded-md cursor-pointer border-2 border-slate-300 peer-checked/fifo:bg-amber-500 peer-checked/fifo:text-white peer-checked/fifo:border-amber-500">FIFO</label>
+                                 <input type="radio" id="algo-lru" name="algorithm" value="LRU" class="hidden peer/lru" checked><label for="algo-lru" class="px-3 py-1 text-sm rounded-md cursor-pointer border-2 border-slate-300 peer-checked/lru:bg-amber-500 peer-checked/lru:text-white peer-checked/lru:border-amber-500">LRU</label>
+                                 <input type="radio" id="algo-opt" name="algorithm" value="OPT" class="hidden peer/opt"><label for="algo-opt" class="px-3 py-1 text-sm rounded-md cursor-pointer border-2 border-slate-300 peer-checked/opt:bg-amber-500 peer-checked/opt:text-white peer-checked/opt:border-amber-500">OPT</label>
+                                 <input type="radio" id="algo-clock" name="algorithm" value="CLOCK" class="hidden peer/clock"><label for="algo-clock" class="px-3 py-1 text-sm rounded-md cursor-pointer border-2 border-slate-300 peer-checked/clock:bg-amber-500 peer-checked/clock:text-white peer-checked/clock:border-amber-500">Clock</label>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-4">
+                             <button id="play-pause-button" class="px-4 py-2 bg-slate-600 text-white font-semibold rounded-md hover:bg-slate-700 transition w-20">暂停</button>
+                             <button id="reset-button" class="px-4 py-2 bg-rose-600 text-white font-semibold rounded-md hover:bg-rose-700 transition">重置</button>
+                        </div>
+                    </div>
+                    
+                    <div id="page-reference-string" class="flex flex-wrap p-2 bg-slate-100 rounded-md mb-4 justify-center"></div>
+
+                    <div class="grid lg:grid-cols-3 gap-6">
+                        <div class="lg:col-span-2">
+                             <h3 class="text-lg font-semibold mb-2 text-center">内存状态</h3>
+                             <div id="memory-view" class="flex flex-wrap justify-center mb-4 min-h-[66px]"></div>
+                             <div id="algo-state-container">
+                                <h3 id="algo-state-title" class="text-lg font-semibold mb-2 text-center"></h3>
+                                <div id="algo-state-view" class="flex flex-wrap justify-center min-h-[66px] bg-slate-50 p-2 rounded-md border"></div>
+                             </div>
+                        </div>
+                        <div class="lg:col-span-1">
+                            <h3 class="text-lg font-semibold mb-2">统计信息</h3>
+                            <div class="space-y-2 text-center bg-slate-50 p-2 rounded-md border">
+                                <p class="text-lg font-bold">缺页次数: <span id="fault-count" class="text-red-500">0</span></p>
+                                <p class="text-lg font-bold">命中率: <span id="hit-rate" class="text-green-500">0.00%</span></p>
+                            </div>
+                            <h3 class="text-lg font-semibold my-2">事件日志</h3>
+                            <div id="event-log" class="event-log rounded-md"></div>
+                        </div>
+                    </div>
+                     <div class="chart-container">
+                        <canvas id="algorithm-comparison-chart"></canvas>
+                    </div>
+                </div>
+            </section>
+            
+            <section id="performance" class="content-section">
+                 <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-2xl font-bold mb-4">性能问题：“抖动”与工作集</h2>
+                    <p class="mb-4">如果系统中的多道程序度过高，会导致每个进程分配到的物理块过少，使得进程在运行中频繁发生缺页，大部分时间都用于页面换入换出，几乎无法执行有效工作，这种现象称为 **“抖动” (Thrashing)**。</p>
+                    <div class="chart-container"><canvas id="thrashing-chart"></canvas></div>
+                    <p class="text-center text-sm text-slate-500 -mt-6 mb-8">CPU利用率与多道程序度的关系</p>
+                    <h3 class="text-xl font-bold mb-3">“抖动”的预防方法</h3>
+                    <p class="mb-4">预防“抖动”的核心思想是合理控制多道程序度，确保每个运行的进程都能获得足够的内存资源来容纳其“工作集”。**工作集**是指一个进程在某段时间内实际访问的页面集合。</p>
+                    <div class="space-y-4">
+                        <details class="bg-slate-100 p-4 rounded-lg cursor-pointer"><summary class="font-semibold">采取局部置换策略</summary><p class="mt-2 text-slate-700">当进程缺页时，只能从分配给它自己的物理块中进行置换。这能将“抖动”的影响限制在单个进程内部，防止其影响其他进程。</p></details>
+                        <details class="bg-slate-100 p-4 rounded-lg cursor-pointer"><summary class="font-semibold">融入工作集算法</summary><p class="mt-2 text-slate-700">在调入新进程前，检查内存是否足以容纳所有现有进程的工作集。如果不足，则暂停调入新进程，甚至需要换出某些进程以释放内存。</p></details>
+                        <details class="bg-slate-100 p-4 rounded-lg cursor-pointer"><summary class="font-semibold">利用"L=S"准则</summary><p class="mt-2 text-slate-700">通过监控**平均缺页间隔时间(L)**和**平均缺页服务时间(S)**的关系来动态调节多道程序度。当L接近S时，系统吞吐量最高；当L小于S时，则表明可能发生“抖动”。</p></details>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            let timeoutId = null; 
+
+            const navButtons = document.querySelectorAll('.nav-button');
+            const contentSections = document.querySelectorAll('.content-section');
+
+            navButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    if (timeoutId) {
+                        clearTimeout(timeoutId);
+                        timeoutId = null;
+                    }
+
+                    navButtons.forEach(btn => btn.classList.remove('active'));
+                    button.classList.add('active');
+                    const targetId = button.dataset.target;
+                    contentSections.forEach(section => {
+                        section.classList.toggle('active', section.id === targetId);
+                    });
+
+                    if (targetId === 'algorithms') {
+                        initSimulator();
+                    }
+                });
+            });
+            
+            const thrashingCtx = document.getElementById('thrashing-chart').getContext('2d');
+            new Chart(thrashingCtx, {
+                type: 'line',
+                data: { labels: ['0', 'N1', 'Nmax', 'N2', 'N3 (抖动区)'], datasets: [{ label: 'CPU 利用率', data: [0, 85, 95, 80, 20], borderColor: '#f59e0b', backgroundColor: '#fef3c7', fill: true, tension: 0.4 }] },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: 100, ticks: { callback: value => value + '%' } }, x: { title: { display: true, text: '多道程序度 (N)' } } }, plugins: { title: { display: true, text: 'CPU利用率与多道程序度的关系', font: { size: 16 } }, legend: { display: false } } }
+            });
+
+            const pageStringInput = document.getElementById('page-string-input');
+            const memorySizeSlider = document.getElementById('memory-size-slider');
+            const memorySizeValue = document.getElementById('memory-size-value');
+            const pageRefContainer = document.getElementById('page-reference-string');
+            const memoryView = document.getElementById('memory-view');
+            const algoStateContainer = document.getElementById('algo-state-container');
+            const algoStateTitle = document.getElementById('algo-state-title');
+            const algoStateView = document.getElementById('algo-state-view');
+            const faultCountEl = document.getElementById('fault-count');
+            const hitRateEl = document.getElementById('hit-rate');
+            const resetButton = document.getElementById('reset-button');
+            const playPauseButton = document.getElementById('play-pause-button');
+            const eventLog = document.getElementById('event-log');
+            const algoRadios = document.querySelectorAll('input[name="algorithm"]');
+
+            let pageReferenceString = [];
+            let memorySize = 4;
+            let memory = [];
+            let algoState = {};
+            let pageFaults = 0;
+            let currentStep = -1;
+            let hitCount = 0;
+            let isPaused = false;
+            let simulationSpeed = 1500;
+
+            function logEvent(message, type = 'info') {
+                const p = document.createElement('p');
+                const stepText = currentStep >= 0 ? `[${currentStep+1}]` : '[Init]';
+                p.textContent = `${stepText} ${message}`;
+                if (type === 'fault') p.className = 'text-red-500';
+                if (type === 'hit') p.className = 'text-green-600';
+                if (type === 'replace') p.className = 'text-amber-600';
+                eventLog.appendChild(p);
+                eventLog.scrollTop = eventLog.scrollHeight;
+            }
+
+            function parsePageString() {
+                return pageStringInput.value.trim().split(/[\s,]+/).map(Number).filter(n => !isNaN(n) && n >= 0);
+            }
+
+            function runHeadlessSimulation(algo, pages, memSize) {
+                let faults = 0;
+                let localMemory = [];
+                let localAlgoState = {};
+
+                if (algo === 'FIFO') localAlgoState.queue = [];
+                if (algo === 'LRU') localAlgoState.stack = [];
+                if (algo === 'CLOCK') {
+                    localAlgoState.ram = [];
+                    localAlgoState.pointer = 0;
+                }
+
+                for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+                    const page = pages[pageIndex];
+                    if (!localMemory.includes(page)) {
+                        faults++;
+                        if (localMemory.length < memSize) {
+                            localMemory.push(page);
+                            if (algo === 'FIFO') localAlgoState.queue.push(page);
+                            if (algo === 'LRU') localAlgoState.stack.push(page);
+                            if (algo === 'CLOCK') localAlgoState.ram.push({ page: page, accessed: 1 });
+                        } else {
+                            let victim;
+                            if (algo === 'FIFO') {
+                                victim = localAlgoState.queue.shift();
+                                localAlgoState.queue.push(page);
+                            } else if (algo === 'LRU') {
+                                victim = localAlgoState.stack.shift();
+                                localAlgoState.stack.push(page);
+                            } else if (algo === 'OPT') {
+                                let futureUses = {};
+                                localMemory.forEach(p => futureUses[p] = Infinity);
+                                for (let i = pageIndex + 1; i < pages.length; i++) {
+                                    if (localMemory.includes(pages[i]) && futureUses[pages[i]] === Infinity) {
+                                        futureUses[pages[i]] = i;
+                                    }
+                                }
+                                let maxDistance = -1;
+                                localMemory.forEach(p => {
+                                    if (futureUses[p] > maxDistance) {
+                                        maxDistance = futureUses[p];
+                                        victim = p;
+                                    }
+                                });
+                            } else if (algo === 'CLOCK') {
+                                while (true) {
+                                    if (localAlgoState.ram[localAlgoState.pointer].accessed === 0) {
+                                        victim = localAlgoState.ram[localAlgoState.pointer].page;
+                                        localAlgoState.ram[localAlgoState.pointer] = { page: page, accessed: 1 };
+                                        localAlgoState.pointer = (localAlgoState.pointer + 1) % memSize;
+                                        break;
+                                    } else {
+                                        localAlgoState.ram[localAlgoState.pointer].accessed = 0;
+                                        localAlgoState.pointer = (localAlgoState.pointer + 1) % memSize;
+                                    }
+                                }
+                            }
+                            const victimIndex = localMemory.indexOf(victim);
+                            if(victimIndex !== -1) localMemory[victimIndex] = page;
+                        }
+                    } else {
+                         if (algo === 'LRU') {
+                             localAlgoState.stack.splice(localAlgoState.stack.indexOf(page), 1);
+                             localAlgoState.stack.push(page);
+                         }
+                         if (algo === 'CLOCK') {
+                            const clockPage = localAlgoState.ram.find(p => p.page === page);
+                            if(clockPage) clockPage.accessed = 1;
+                         }
+                    }
+                }
+                return faults;
+            }
+
+            function updateComparisonChart() {
+                const pages = parsePageString();
+                const memSize = parseInt(memorySizeSlider.value);
+                if (pages.length === 0) return;
+                const faultData = {
+                    FIFO: runHeadlessSimulation('FIFO', pages, memSize),
+                    LRU: runHeadlessSimulation('LRU', pages, memSize),
+                    OPT: runHeadlessSimulation('OPT', pages, memSize),
+                    CLOCK: runHeadlessSimulation('CLOCK', pages, memSize)
+                };
+                comparisonChart.data.datasets[0].data = [faultData.FIFO, faultData.LRU, faultData.OPT, faultData.CLOCK];
+                comparisonChart.update();
+            }
+
+            function initSimulator() {
+                if (timeoutId) clearTimeout(timeoutId);
+                isPaused = false;
+                playPauseButton.textContent = "暂停";
+                playPauseButton.disabled = false;
+                
+                pageReferenceString = parsePageString();
+                memorySize = parseInt(memorySizeSlider.value);
+                memorySizeValue.textContent = memorySize;
+                
+                memory = [];
+                pageFaults = 0;
+                currentStep = -1;
+                hitCount = 0;
+                eventLog.innerHTML = '';
+                
+                const selectedAlgorithm = document.querySelector('input[name="algorithm"]:checked').value;
+                algoState = {};
+                if (selectedAlgorithm === 'FIFO') algoState.queue = [];
+                if (selectedAlgorithm === 'LRU') algoState.stack = [];
+                if (selectedAlgorithm === 'CLOCK') {
+                    algoState.ram = [];
+                    algoState.pointer = 0;
+                }
+
+                pageRefContainer.innerHTML = '';
+                pageReferenceString.forEach((page, index) => {
+                    const pageEl = document.createElement('div');
+                    pageEl.textContent = page;
+                    pageEl.className = 'page-ref-item';
+                    pageEl.id = `page-ref-${index}`;
+                    pageRefContainer.appendChild(pageEl);
+                });
+
+                updateMemoryView();
+                updateAlgoStateView();
+                updateStats();
+                updateComparisonChart();
+                
+                logEvent("模拟开始...");
+                scheduleNextStep();
+            }
+            
+            function updateMemoryView() {
+                memoryView.innerHTML = '';
+                for (let i = 0; i < memorySize; i++) {
+                    const block = document.createElement('div');
+                    block.className = 'memory-block';
+                    block.id = `mem-block-${i}`;
+                    block.textContent = memory[i] !== undefined ? memory[i] : '-';
+                    memoryView.appendChild(block);
+                }
+            }
+
+            function updateAlgoStateView() {
+                algoStateView.innerHTML = '';
+                const selectedAlgorithm = document.querySelector('input[name="algorithm"]:checked').value;
+                let title = "";
+
+                if (selectedAlgorithm === 'FIFO') {
+                    title = "FIFO 队列 (头 → 尾)";
+                    algoState.queue.forEach(p => {
+                        const block = document.createElement('div');
+                        block.className = 'algo-state-block';
+                        block.textContent = p;
+                        algoStateView.appendChild(block);
+                    });
+                } else if (selectedAlgorithm === 'LRU') {
+                    title = "LRU 堆栈 (最近 → 最久)";
+                    [...algoState.stack].reverse().forEach(p => {
+                        const block = document.createElement('div');
+                        block.className = 'algo-state-block';
+                        block.textContent = p;
+                        algoStateView.appendChild(block);
+                    });
+                } else if (selectedAlgorithm === 'CLOCK') {
+                    title = "Clock 循环队列";
+                    // Ensure the visual order matches the memory array for consistency
+                    memory.forEach((memPage) => {
+                         const pInRam = algoState.ram.find(p => p.page === memPage);
+                         if(!pInRam) return;
+
+                        const block = document.createElement('div');
+                        block.className = 'algo-state-block';
+                        block.textContent = pInRam.page;
+                        const bit = document.createElement('span');
+                        bit.className = 'access-bit';
+                        bit.textContent = pInRam.accessed;
+                        block.appendChild(bit);
+                        
+                        const pointerIndexInMemory = algoState.ram.findIndex(p => p.page === memory[algoState.pointer]);
+                        if (pInRam.page === memory[algoState.pointer]) {
+                            const hand = document.createElement('div');
+                            hand.className = 'clock-hand';
+                            block.appendChild(hand);
+                        }
+                        algoStateView.appendChild(block);
+                    });
+                }
+                algoStateTitle.textContent = title;
+                algoStateContainer.style.display = title ? 'block' : 'none';
+            }
+            
+            function updateStats() {
+                faultCountEl.textContent = pageFaults;
+                const totalAccesses = currentStep + 1;
+                const hitRate = totalAccesses > 0 ? (hitCount / totalAccesses) * 100 : 0;
+                hitRateEl.textContent = hitRate.toFixed(2) + '%';
+            }
+
+            function step() {
+                if (currentStep >= pageReferenceString.length - 1) {
+                    logEvent("模拟结束！", "info");
+                    playPauseButton.textContent = "完成";
+                    playPauseButton.disabled = true;
+                    if (timeoutId) clearTimeout(timeoutId);
+                    return;
+                }
+                currentStep++;
+
+                document.querySelectorAll('.page-ref-item').forEach(el => el.classList.remove('current'));
+                if (document.getElementById(`page-ref-${currentStep}`)) {
+                    document.getElementById(`page-ref-${currentStep}`).classList.add('current');
+                }
+
+                const pageToAccess = pageReferenceString[currentStep];
+                const selectedAlgorithm = document.querySelector('input[name="algorithm"]:checked').value;
+                const isHit = memory.includes(pageToAccess);
+                let victim = -1;
+                let victimIndex = -1;
+                let isReplacement = false;
+
+                if (isHit) {
+                    hitCount++;
+                    logEvent(`访问页面 ${pageToAccess}: 命中`, 'hit');
+                    if (selectedAlgorithm === 'LRU') {
+                        algoState.stack.splice(algoState.stack.indexOf(pageToAccess), 1);
+                        algoState.stack.push(pageToAccess);
+                    }
+                    if (selectedAlgorithm === 'CLOCK') {
+                        const clockPage = algoState.ram.find(p => p.page === pageToAccess);
+                        if(clockPage) clockPage.accessed = 1;
+                    }
+                } else {
+                    pageFaults++;
+                    logEvent(`访问页面 ${pageToAccess}: 缺页`, 'fault');
+                    isReplacement = memory.length >= memorySize;
+
+                    if (isReplacement) {
+                        if (selectedAlgorithm === 'FIFO') {
+                            victim = algoState.queue.shift();
+                        } else if (selectedAlgorithm === 'LRU') {
+                            victim = algoState.stack.shift();
+                        } else if (selectedAlgorithm === 'OPT') {
+                            let futureUses = {};
+                            memory.forEach(p => futureUses[p] = Infinity);
+                            for (let i = currentStep + 1; i < pageReferenceString.length; i++) {
+                                let futurePage = pageReferenceString[i];
+                                if (memory.includes(futurePage) && futureUses[futurePage] === Infinity) {
+                                    futureUses[futurePage] = i;
+                                }
+                            }
+                            let maxDistance = -1;
+                            memory.forEach(p => {
+                                if (futureUses[p] > maxDistance) {
+                                    maxDistance = futureUses[p];
+                                    victim = p;
+                                }
+                            });
+                        } else if (selectedAlgorithm === 'CLOCK') {
+                             while (true) {
+                                let currentRamPage = algoState.ram.find(p => p.page === memory[algoState.pointer]);
+                                if (currentRamPage.accessed === 0) {
+                                    victim = currentRamPage.page;
+                                    logEvent(`Clock指针在位置 ${algoState.pointer}, 发现页面 ${victim} (A=0), 将其替换`, 'replace');
+                                    break;
+                                } else {
+                                    logEvent(`Clock指针在位置 ${algoState.pointer}, 页面 ${currentRamPage.page} (A=1), 置A=0`, 'info');
+                                    currentRamPage.accessed = 0;
+                                    algoState.pointer = (algoState.pointer + 1) % memory.length;
+                                }
+                            }
+                        }
+                        victimIndex = memory.indexOf(victim);
+                        if(victimIndex !== -1) {
+                            memory[victimIndex] = pageToAccess;
+                            logEvent(`换出页面 ${victim}, 装入页面 ${pageToAccess}`, 'replace');
+                        }
+                    } else {
+                        memory.push(pageToAccess);
+                        logEvent(`页面 ${pageToAccess} 已装入空闲块`, 'info');
+                    }
+
+                    if (selectedAlgorithm === 'FIFO') algoState.queue.push(pageToAccess);
+                    if (selectedAlgorithm === 'LRU') algoState.stack.push(pageToAccess);
+                    if (selectedAlgorithm === 'CLOCK') {
+                        if(isReplacement) {
+                            const ramVictimIndex = algoState.ram.findIndex(p => p.page === victim);
+                            if(ramVictimIndex !== -1) {
+                                algoState.ram[ramVictimIndex] = { page: pageToAccess, accessed: 1 };
+                                algoState.pointer = (memory.indexOf(pageToAccess) + 1) % memory.length;
+                            }
+                        } else {
+                            algoState.ram.push({ page: pageToAccess, accessed: 1 });
+                        }
+                    }
+                }
+                
+                updateStats();
+                updateMemoryView();
+                updateAlgoStateView();
+                
+                const targetIndex = memory.indexOf(pageToAccess);
+                if (targetIndex !== -1) {
+                    const block = document.getElementById(`mem-block-${targetIndex}`);
+                    if (isHit) {
+                        block.classList.add('hit');
+                        setTimeout(() => block.classList.remove('hit'), 600);
+                    } else if (isReplacement) {
+                        block.classList.add('fault-replace');
+                        setTimeout(() => block.classList.remove('fault-replace'), 600);
+                    } else {
+                        block.classList.add('fault-add');
+                        setTimeout(() => block.classList.remove('fault-add'), 600);
+                    }
+                }
+                
+                scheduleNextStep();
+            }
+            
+            function scheduleNextStep() {
+                if (!isPaused && currentStep < pageReferenceString.length - 1) {
+                    timeoutId = setTimeout(step, simulationSpeed);
+                }
+            }
+
+            playPauseButton.addEventListener('click', () => {
+                isPaused = !isPaused;
+                playPauseButton.textContent = isPaused ? "播放" : "暂停";
+                if (!isPaused) {
+                    scheduleNextStep();
+                } else {
+                    if (timeoutId) clearTimeout(timeoutId);
+                }
+            });
+
+            resetButton.addEventListener('click', initSimulator);
+            algoRadios.forEach(radio => radio.addEventListener('change', initSimulator));
+            memorySizeSlider.addEventListener('input', () => {
+                memorySizeValue.textContent = memorySizeSlider.value;
+            });
+            memorySizeSlider.addEventListener('change', initSimulator);
+            pageStringInput.addEventListener('change', initSimulator);
+
+            const comparisonCtx = document.getElementById('algorithm-comparison-chart').getContext('2d');
+            const comparisonChart = new Chart(comparisonCtx, {
+                 type: 'bar',
+                 data: {
+                     labels: ['FIFO', 'LRU', 'OPT', 'Clock'],
+                     datasets: [{
+                         label: '总缺页次数',
+                         data: [0, 0, 0, 0],
+                         backgroundColor: ['rgba(255, 99, 132, 0.5)', 'rgba(54, 162, 235, 0.5)', 'rgba(75, 192, 192, 0.5)', 'rgba(153, 102, 255, 0.5)'],
+                         borderColor: ['rgb(255, 99, 132)', 'rgb(54, 162, 235)', 'rgb(75, 192, 192)', 'rgb(153, 102, 255)'],
+                         borderWidth: 1
+                     }]
+                 },
+                 options: {
+                     responsive: true, maintainAspectRatio: false,
+                     scales: { y: { beginAtZero: true, title: { display: true, text: '缺页次数' }, ticks: { stepSize: 1 } } },
+                     plugins: { title: { display: true, text: '不同置换算法性能对比', font: { size: 16 } }, legend: { display: false } }
+                 }
+            });
+
+            if (document.querySelector('#algorithms').classList.contains('active')) {
+                initSimulator();
+            }
+        });
+    </script>
+</body>
+</html>

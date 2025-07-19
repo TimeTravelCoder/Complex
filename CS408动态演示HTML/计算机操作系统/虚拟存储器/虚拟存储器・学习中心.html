@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>虚拟存储器交互式学习中心</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chosen Palette: Slate Gray and Teal -->
+    <!-- Application Structure Plan: 本应用采用一个统一的、主题驱动的单页布局。通过顶部导航，用户可以平滑滚动到不同主题区域：1. “核心问题与对策”：对比常规管理与虚拟存储。2. “两大实现路径”：使用Tab切换，并列展示请求分页和请求分段的硬件与流程。3. “算法模拟竞技场”：这是应用的核心，一个功能完备的交互式模拟器，用户可自定义参数，分步执行并可视化FIFO/LRU/OPT算法的全过程。4. “专题探索”：包含独立的交互模块，用于演示Belady异常和讲解分段保护机制。这种结构将所有笔记内容融合成一个连贯的学习路径，从宏观概念到微观实现，再到算法实践，最后是专题深化，为用户提供一个全面的、探索式的学习环境。 -->
+    <!-- Visualization & Content Choices: 1. 对比图: (Goal: Compare) 使用HTML/CSS双栏卡片，直观展示新旧技术的优劣。 2. 实现路径: (Goal: Organize/Inform) 使用Tab组件，内嵌交互式图表（点击字段显示解释）和简化的流程图，高效对比两种虚拟内存实现。3. 算法模拟器: (Goal: Simulate/Compare) 这是最核心的交互部分，使用HTML/CSS/JS构建一个包含CPU/TLB/页表/内存/磁盘的完整系统视图，用户通过分步执行来观察数据流动和状态变化，将抽象算法具象化。4. Belady异常模块: (Goal: Explain) 一个预设场景的小型模拟器，通过按钮切换物理块数，用数据和高亮文本清晰展示此反直觉现象。5. 分段保护: (Goal: Inform) 使用清晰的HTML/CSS图示解释环保护机制。未使用Chart.js。 -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        .nav-link.active, .nav-link:hover { color: #0d9488; border-bottom-color: #0d9488; }
+        .tab.active { border-color: #0d9488; color: #0d9488; background-color: #f0fdfa; }
+        .accordion-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out; }
+        .sim-component { transition: all 0.3s ease-in-out; border: 2px solid #cbd5e1; }
+        .sim-component.active { border-color: #0d9488; box-shadow: 0 0 15px rgba(13, 148, 136, 0.4); transform: scale(1.02); }
+        .sim-frame { transition: all 0.4s ease; border: 2px solid; text-align: center; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+        .sim-frame.empty { border-color: #e2e8f0; color: #94a3b8; }
+        .sim-frame.filled { border-color: #60a5fa; background-color: #eff6ff; color: #1d4ed8; }
+        .sim-frame.fault { animation: fault-shake 0.5s; border-color: #f87171; background-color: #fee2e2; color: #b91c1c; }
+        .sim-frame.victim { animation: victim-fade-out 0.5s forwards; border-color: #f97316; background-color: #fff7ed; color: #9a3412; }
+        .sim-frame.hit { animation: hit-pulse 0.4s; border-color: #4ade80; background-color: #f0fdfa; color: #166534; }
+        .tlb-entry.hit, .pt-entry.hit { background-color: #dcfce7 !important; }
+        .pt-entry.fault-check { background-color: #fee2e2 !important; }
+
+        @keyframes fault-shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+        @keyframes victim-fade-out { to { opacity: 0; transform: scale(0.8); } }
+        @keyframes hit-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <header class="bg-white/90 backdrop-blur-md sticky top-0 z-50 shadow-sm">
+        <nav class="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <h1 class="text-xl font-bold text-teal-700">虚拟存储器・学习中心</h1>
+                <div class="hidden md:flex space-x-6">
+                    <a href="#intro" class="nav-link border-b-2 border-transparent pb-1">核心问题</a>
+                    <a href="#implementation" class="nav-link border-b-2 border-transparent pb-1">实现路径</a>
+                    <a href="#simulator" class="nav-link border-b-2 border-transparent pb-1">算法模拟</a>
+                    <a href="#explorer" class="nav-link border-b-2 border-transparent pb-1">专题探索</a>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+        <section id="intro" class="text-center mb-16 scroll-mt-20">
+            <h2 class="text-4xl md:text-5xl font-extrabold mb-4 tracking-tight">从“物理”到“虚拟”的飞跃</h2>
+            <p class="max-w-3xl mx-auto text-lg text-slate-600">虚拟存储器是现代操作系统的基石。它通过逻辑扩容，解决了“程序太大，内存太小”的根本矛盾。本中心将带您深入探索其工作原理、核心实现与关键算法。</p>
+            <div class="mt-12 grid md:grid-cols-2 gap-8 text-left">
+                <div class="bg-white p-6 rounded-lg shadow-md border-l-4 border-red-500">
+                    <h3 class="text-xl font-semibold mb-3 text-red-700">传统存储管理的“两大枷锁”</h3>
+                    <p><strong>1. 一次性：</strong>作业必须全部装入内存才能运行，限制了大程序的执行。</p>
+                    <p class="mt-2"><strong>2. 驻留性：</strong>作业全程占用内存，即便部分代码长期不用，也造成巨大浪费。</p>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-md border-l-4 border-green-500">
+                    <h3 class="text-xl font-semibold mb-3 text-green-700">虚拟存储的“三大法宝”</h3>
+                    <p><strong>1. 多次性：</strong>允许作业分批调入内存，按需加载。</p>
+                    <p class="mt-2"><strong>2. 对换性：</strong>允许暂不用的部分换出到外存，动态调整内存占用。</p>
+                    <p class="mt-2"><strong>3. 虚拟性：</strong>基于前两者，实现逻辑上的内存扩容，是最终目标。</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="implementation" class="mb-20 scroll-mt-20">
+            <h2 class="text-3xl font-bold text-center mb-12">两大实现路径：分页 vs 分段</h2>
+            <div class="max-w-4xl mx-auto">
+                <div class="flex justify-center border-b-2 border-slate-200 mb-6">
+                    <button id="tab-paging" class="tab py-2 px-6 font-semibold text-slate-600 border-b-2 -mb-0.5 active">请求分页</button>
+                    <button id="tab-segmentation" class="tab py-2 px-6 font-semibold text-slate-600 border-b-2 -mb-0.5">请求分段</button>
+                </div>
+                <div id="content-paging" class="tab-content bg-white p-6 rounded-lg shadow-md">
+                    <h3 class="text-2xl font-semibold mb-4">请求分页系统</h3>
+                    <p class="text-slate-600 mb-4">以大小固定的**页**为单位进行管理和置换。实现相对简单，是目前最主流的方式。</p>
+                    <h4 class="font-bold mt-4 mb-2">关键硬件：请求页表</h4>
+                    <p class="text-sm text-slate-500">在基础页表上增加状态位(P)、访问位(A)、修改位(M)等关键字段。</p>
+                    <h4 class="font-bold mt-4 mb-2">核心挑战：缺页中断处理</h4>
+                    <p class="text-sm text-slate-500">当访问的页不在内存中（P=0），触发中断，由OS进行页面调入和置换。</p>
+                </div>
+                <div id="content-segmentation" class="tab-content hidden bg-white p-6 rounded-lg shadow-md">
+                     <h3 class="text-2xl font-semibold mb-4">请求分段系统</h3>
+                    <p class="text-slate-600 mb-4">以逻辑意义上的**段**（大小可变）为单位进行管理。天然支持共享和保护，但内存管理更复杂。</p>
+                     <h4 class="font-bold mt-4 mb-2">关键硬件：请求段表</h4>
+                    <p class="text-sm text-slate-500">除类似字段外，还增加了存取方式、增补位等，以支持分段的逻辑特性。</p>
+                    <h4 class="font-bold mt-4 mb-2">核心挑战：缺段中断处理</h4>
+                    <p class="text-sm text-slate-500">由于段大小可变，缺段时需在内存中寻找大小合适的连续空闲区，可能需要进行内存紧凑，开销巨大。</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="simulator" class="mb-20 scroll-mt-20">
+            <h2 class="text-3xl font-bold text-center mb-12">算法模拟竞技场</h2>
+            <div class="bg-white p-6 rounded-lg shadow-lg">
+                <div class="grid lg:grid-cols-3 gap-6 mb-6">
+                     <div>
+                        <label for="ref-string" class="block font-medium mb-1">页面访问序列 (逗号分隔)</label>
+                        <input type="text" id="ref-string" class="w-full p-2 border border-slate-300 rounded-md" value="7,0,1,2,0,3,0,4,2,3,0,3,2">
+                    </div>
+                    <div>
+                        <label for="frame-count" class="block font-medium mb-1">物理块数 (2-5)</label>
+                        <input type="number" id="frame-count" class="w-full p-2 border border-slate-300 rounded-md" value="3" min="2" max="5">
+                    </div>
+                    <div>
+                        <label for="algorithm" class="block font-medium mb-1">选择算法</label>
+                        <select id="algorithm" class="w-full p-2 border border-slate-300 rounded-md bg-white">
+                            <option value="FIFO">FIFO (先进先出)</option>
+                            <option value="LRU">LRU (最近最久未使用)</option>
+                            <option value="OPT">OPT (最佳置换)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex justify-center gap-4 mb-6">
+                    <button id="start-sim-btn" class="bg-teal-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-teal-700 transition">开始/重置模拟</button>
+                    <button id="next-step-btn" class="bg-slate-700 text-white px-6 py-2 rounded-lg font-semibold hover:bg-slate-800 transition" disabled>下一步</button>
+                </div>
+
+                <div class="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
+                    <div class="xl:col-span-1 space-y-4">
+                        <div id="sim-cpu" class="sim-component p-4 rounded-lg text-center">
+                            <h3 class="font-bold">CPU</h3>
+                            <p class="text-sm text-slate-500 mt-1">请求: <span id="cpu-request" class="font-mono font-bold">-</span></p>
+                        </div>
+                        <div id="sim-tlb" class="sim-component p-2 rounded-lg">
+                            <h3 class="font-bold text-center text-sm mb-1">TLB (快表)</h3>
+                            <div id="tlb-entries" class="space-y-1"></div>
+                        </div>
+                    </div>
+                    <div class="xl:col-span-2">
+                        <div id="sim-pt" class="sim-component p-2 rounded-lg">
+                            <h3 class="font-bold text-center mb-2">页表</h3>
+                            <div id="page-table-entries" class="space-y-1 text-xs md:text-sm"></div>
+                        </div>
+                    </div>
+                    <div class="xl:col-span-2 space-y-4">
+                         <div id="sim-mem" class="sim-component p-4 rounded-lg">
+                            <h3 class="font-bold text-center mb-2">物理内存</h3>
+                            <div id="memory-frames" class="grid grid-cols-2 lg:grid-cols-3 gap-2"></div>
+                        </div>
+                        <div id="sim-disk" class="sim-component p-4 rounded-lg">
+                            <h3 class="font-bold text-center mb-2">外存 (磁盘)</h3>
+                            <div id="disk-pages" class="grid grid-cols-4 md:grid-cols-6 gap-2"></div>
+                        </div>
+                    </div>
+                </div>
+                 <div class="mt-4 bg-slate-100 p-4 rounded-lg">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                        <div><p class="text-sm text-slate-500">TLB 命中</p><p id="tlb-hits" class="font-bold text-lg text-green-600">0</p></div>
+                        <div><p class="text-sm text-slate-500">内存命中</p><p id="mem-hits" class="font-bold text-lg text-green-600">0</p></div>
+                        <div><p class="text-sm text-slate-500">页面缺页</p><p id="fault-count" class="font-bold text-lg text-red-600">0</p></div>
+                        <div><p class="text-sm text-slate-500">缺页率</p><p id="fault-rate" class="font-bold text-lg">0.0%</p></div>
+                    </div>
+                    <p id="explanation" class="mt-4 text-center font-medium text-lg h-8"></p>
+                </div>
+            </div>
+        </section>
+
+        <section id="explorer" class="scroll-mt-20">
+            <h2 class="text-3xl font-bold text-center mb-12">专题探索</h2>
+            <div class="grid md:grid-cols-2 gap-8">
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <h3 class="text-2xl font-bold text-center mb-4">Belady 异常演示</h3>
+                    <p class="text-center text-slate-600 mb-4">对于FIFO算法，增加物理块数有时反而导致缺页率上升。亲自验证这一反直觉现象。</p>
+                    <div class="text-center">
+                        <p class="mb-4">访问序列: <code class="bg-slate-100 p-1 rounded">4,3,2,1,4,3,5,4,3,2,1,5</code></p>
+                        <div class="flex justify-center gap-4 mb-4">
+                            <button id="belady-3-frames" class="bg-teal-600 text-white px-4 py-2 rounded-lg">模拟3个物理块</button>
+                            <button id="belady-4-frames" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg">模拟4个物理块</button>
+                        </div>
+                        <div id="belady-result" class="text-xl font-bold h-12 flex items-center justify-center"></div>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <h3 class="text-2xl font-bold text-center mb-4">分段保护：环保护机构</h3>
+                    <div class="relative w-full aspect-square max-w-xs mx-auto">
+                        <div class="absolute inset-0 border-8 border-red-300 rounded-full flex items-center justify-center">
+                            <div class="w-2/3 h-2/3 border-8 border-yellow-300 rounded-full flex items-center justify-center">
+                                <div class="w-1/3 h-1/3 border-8 border-green-300 rounded-full flex items-center justify-center">
+                                    <span class="font-bold text-green-800">Ring 0</span>
+                                </div>
+                                <span class="absolute font-bold text-yellow-800" style="top: 50%; left: 10%; transform: translateY(-50%);">Ring 1</span>
+                            </div>
+                            <span class="absolute font-bold text-red-800" style="top: 50%; left: 2%; transform: translateY(-50%);">Ring 2</span>
+                        </div>
+                    </div>
+                     <p class="text-sm text-slate-600 mt-4"><strong>规则：</strong>程序只能访问同级或更外环（数字更大）的数据，只能调用同级或更内环（数字更小）的服务。这构成了现代操作系统的基本安全模型。</p>
+                </div>
+            </div>
+        </section>
+    </main>
+    <script>
+    // All JS code is self-contained in this block for single-file compliance.
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- Navigation ---
+        const navLinks = document.querySelectorAll('.nav-link');
+        navLinks.forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                document.querySelector(link.getAttribute('href')).scrollIntoView({
+                    behavior: 'smooth'
+                });
+            });
+        });
+        
+        // --- Tabs ---
+        const tabs = { paging: document.getElementById('tab-paging'), segmentation: document.getElementById('tab-segmentation') };
+        const contents = { paging: document.getElementById('content-paging'), segmentation: document.getElementById('content-segmentation') };
+        function switchTab(activeTab) {
+            Object.keys(tabs).forEach(key => {
+                const isActive = key === activeTab;
+                tabs[key].classList.toggle('active', isActive);
+                contents[key].classList.toggle('hidden', !isActive);
+            });
+        }
+        tabs.paging.addEventListener('click', () => switchTab('paging'));
+        tabs.segmentation.addEventListener('click', () => switchTab('segmentation'));
+
+        // --- Simulator Logic ---
+        const simState = {
+            refString: [], frameCount: 0, tlbSize: 2, algorithm: 'FIFO',
+            memory: [], pageTable: [], tlb: [], disk: [],
+            accessIndex: -1, subStep: 0,
+            stats: { tlbHits: 0, memHits: 0, faults: 0, accesses: 0 },
+            lruQueue: [], fifoQueue: [],
+        };
+        const simElements = {
+            refString: document.getElementById('ref-string'), frameCount: document.getElementById('frame-count'),
+            algorithm: document.getElementById('algorithm'), startBtn: document.getElementById('start-sim-btn'),
+            nextBtn: document.getElementById('next-step-btn'), explanation: document.getElementById('explanation'),
+            cpuRequest: document.getElementById('cpu-request'), tlbEntries: document.getElementById('tlb-entries'),
+            ptEntries: document.getElementById('page-table-entries'), memFrames: document.getElementById('memory-frames'),
+            diskPages: document.getElementById('disk-pages'), tlbHits: document.getElementById('tlb-hits'),
+            memHits: document.getElementById('mem-hits'), faultCount: document.getElementById('fault-count'),
+            faultRate: document.getElementById('fault-rate'),
+            components: { cpu: document.getElementById('sim-cpu'), tlb: document.getElementById('sim-tlb'), pt: document.getElementById('sim-pt'), mem: document.getElementById('sim-mem'), disk: document.getElementById('sim-disk') }
+        };
+
+        function resetSimulator() {
+            simState.refString = simElements.refString.value.split(',').map(s => s.trim()).filter(Boolean).map(Number);
+            const allPages = [...new Set(simState.refString)].sort((a, b) => a - b);
+            simState.frameCount = parseInt(simElements.frameCount.value, 10);
+            simState.algorithm = simElements.algorithm.value;
+            simState.memory = Array(simState.frameCount).fill(null);
+            simState.pageTable = allPages.map(p => ({ page: p, valid: 0, frame: null }));
+            simState.tlb = [];
+            simState.disk = [...allPages];
+            simState.accessIndex = -1;
+            simState.subStep = 0;
+            simState.stats = { tlbHits: 0, memHits: 0, faults: 0, accesses: 0 };
+            simState.lruQueue = [];
+            simState.fifoQueue = [];
+            simElements.nextBtn.disabled = simState.refString.length === 0;
+            simElements.explanation.textContent = '点击“开始/重置模拟”以初始化。';
+            updateUI();
+        }
+
+        function updateUI() {
+            simElements.cpuRequest.textContent = simState.accessIndex > -1 ? simState.refString[simState.accessIndex] : '-';
+            simElements.tlbHits.textContent = simState.stats.tlbHits;
+            simElements.memHits.textContent = simState.stats.memHits;
+            simElements.faultCount.textContent = simState.stats.faults;
+            simElements.faultRate.textContent = simState.stats.accesses > 0 ? `${((simState.stats.faults / simState.stats.accesses) * 100).toFixed(1)}%` : '0.0%';
+            
+            simElements.tlbEntries.innerHTML = `<div class="grid grid-cols-2 text-center text-xs font-semibold"><p>页</p><p>框</p></div>` + Array(simState.tlbSize).fill(0).map((_, i) => {
+                const entry = simState.tlb[i];
+                return `<div id="tlb-entry-${i}" class="tlb-entry grid grid-cols-2 text-center text-sm font-mono p-1 bg-slate-100 rounded-sm">${entry ? `<span>${entry.page}</span><span>${entry.frame}</span>` : `<span>-</span><span>-</span>`}</div>`;
+            }).join('');
+
+            simElements.ptEntries.innerHTML = `<div class="grid grid-cols-3 text-center text-xs font-semibold"><p>页</p><p>有效</p><p>框</p></div>` + simState.pageTable.map(entry => {
+                return `<div id="pt-entry-${entry.page}" class="pt-entry grid grid-cols-3 text-center p-1 rounded-sm ${entry.valid ? 'bg-green-50' : 'bg-red-50'}"><span>${entry.page}</span><span class="${entry.valid ? 'text-green-600' : 'text-red-600'}">${entry.valid}</span><span>${entry.frame !== null ? entry.frame : '-'}</span></div>`;
+            }).join('');
+
+            simElements.memFrames.innerHTML = simState.memory.map((page, i) => `<div id="frame-${i}" class="sim-frame h-16 rounded-lg ${page !== null ? 'filled' : 'empty'}">${page !== null ? page : '空'}</div>`).join('');
+            simElements.diskPages.innerHTML = simState.disk.map(page => `<div class="sim-frame h-10 text-sm rounded-lg filled bg-slate-200 border-slate-300 text-slate-500">${page}</div>`).join('');
+        }
+
+        function highlight(component) {
+             Object.values(simElements.components).forEach(c => c.classList.remove('active'));
+             if(component) simElements.components[component].classList.add('active');
+        }
+
+        function runNextStep() {
+            if (simState.subStep === 0) {
+                simState.accessIndex++;
+                if (simState.accessIndex >= simState.refString.length) {
+                    simElements.nextBtn.disabled = true;
+                    simElements.explanation.textContent = "模拟结束！";
+                    highlight(null);
+                    return;
+                }
+                simState.stats.accesses++;
+                simState.subStep = 1;
+                updateUI();
+            }
+
+            const currentPage = simState.refString[simState.accessIndex];
+            document.querySelectorAll('.hit, .fault-check').forEach(el => el.classList.remove('hit', 'fault-check'));
+
+            if (simState.subStep === 1) {
+                simElements.explanation.textContent = `1. CPU请求页面 ${currentPage}，查询TLB。`;
+                highlight('cpu');
+                setTimeout(() => highlight('tlb'), 300);
+                const tlbHit = simState.tlb.find(e => e.page === currentPage);
+                if (tlbHit) {
+                    simElements.explanation.textContent += ` TLB命中！`;
+                    simState.stats.tlbHits++;
+                    if(simState.algorithm === 'LRU') { // Update LRU for TLB hit
+                        simState.lruQueue = simState.lruQueue.filter(p => p !== currentPage);
+                        simState.lruQueue.push(currentPage);
+                    }
+                    simState.subStep = 0;
+                } else {
+                    simElements.explanation.textContent += ` TLB未命中。`;
+                    simState.subStep = 2;
+                }
+            } else if (simState.subStep === 2) {
+                simElements.explanation.textContent = `2. 查询页表获取页面 ${currentPage} 的信息。`;
+                highlight('pt');
+                const ptEntryEl = document.getElementById(`pt-entry-${currentPage}`);
+                const ptEntry = simState.pageTable.find(e => e.page === currentPage);
+                ptEntryEl.classList.add('hit');
+                if (ptEntry && ptEntry.valid) {
+                    simElements.explanation.textContent += ` 页表命中！`;
+                    simState.stats.memHits++;
+                    if(simState.algorithm === 'LRU') {
+                        simState.lruQueue = simState.lruQueue.filter(p => p !== currentPage);
+                        simState.lruQueue.push(currentPage);
+                    }
+                    const newTlbEntry = { page: currentPage, frame: ptEntry.frame };
+                    if (simState.tlb.length >= simState.tlbSize) simState.tlb.shift();
+                    simState.tlb.push(newTlbEntry);
+                    simState.subStep = 0;
+                } else {
+                    simElements.explanation.textContent += ` 缺页中断！`;
+                    ptEntryEl.classList.add('fault-check');
+                    simState.stats.faults++;
+                    simState.subStep = 3;
+                }
+            } else if (simState.subStep === 3) {
+                simElements.explanation.textContent = `3. OS介入，从磁盘加载页面 ${currentPage}。`;
+                highlight('disk');
+                const emptyIndex = simState.memory.indexOf(null);
+                if (emptyIndex !== -1) {
+                    simState.memory[emptyIndex] = currentPage;
+                    const ptEntry = simState.pageTable.find(e => e.page === currentPage);
+                    ptEntry.valid = 1;
+                    ptEntry.frame = emptyIndex;
+                    simState.disk = simState.disk.filter(p => p !== currentPage);
+                    if(simState.algorithm === 'FIFO') simState.fifoQueue.push(currentPage);
+                    if(simState.algorithm === 'LRU') simState.lruQueue.push(currentPage);
+                    simState.subStep = 0;
+                } else {
+                    simElements.explanation.textContent += ` 内存已满，执行置换。`;
+                    simState.subStep = 4;
+                }
+            } else if (simState.subStep === 4) {
+                let victimPage;
+                if (simState.algorithm === 'FIFO') victimPage = simState.fifoQueue.shift();
+                else if (simState.algorithm === 'LRU') victimPage = simState.lruQueue.shift();
+                else {
+                    const future = simState.refString.slice(simState.accessIndex + 1);
+                    let furthest = -1, victim = -1;
+                    simState.memory.forEach(p => {
+                        let dist = future.indexOf(p);
+                        if(dist === -1) { victim = p; return; }
+                        if(dist > furthest) { furthest = dist; victim = p; }
+                    });
+                    victimPage = victim;
+                }
+                simElements.explanation.textContent = `4. ${simState.algorithm}算法选择页面 ${victimPage} 换出。`;
+                const victimIndex = simState.memory.indexOf(victimPage);
+                const victimPtEntry = simState.pageTable.find(e => e.page === victimPage);
+                victimPtEntry.valid = 0;
+                victimPtEntry.frame = null;
+                simState.disk.push(victimPage);
+                simState.disk.sort((a, b) => a - b);
+                
+                simState.memory[victimIndex] = currentPage;
+                const newPtEntry = simState.pageTable.find(e => e.page === currentPage);
+                newPtEntry.valid = 1;
+                newPtEntry.frame = victimIndex;
+                simState.disk = simState.disk.filter(p => p !== currentPage);
+
+                if(simState.algorithm === 'FIFO') simState.fifoQueue.push(currentPage);
+                if(simState.algorithm === 'LRU') simState.lruQueue.push(currentPage);
+                simState.tlb = simState.tlb.filter(e => e.page !== victimPage);
+
+                simState.subStep = 0;
+            }
+            updateUI();
+        }
+
+        simElements.startBtn.addEventListener('click', resetSimulator);
+        simElements.nextBtn.addEventListener('click', runNextStep);
+        resetSimulator();
+
+        // --- Belady's Anomaly Logic ---
+        const beladyResultEl = document.getElementById('belady-result');
+        function runBeladySim(frameCount) {
+            const refString = [4, 3, 2, 1, 4, 3, 5, 4, 3, 2, 1, 5];
+            let memory = Array(frameCount).fill(null), fifoQueue = [], faults = 0;
+            refString.forEach(page => {
+                if (!memory.includes(page)) {
+                    faults++;
+                    const emptyIndex = memory.indexOf(null);
+                    if (emptyIndex !== -1) memory[emptyIndex] = page;
+                    else {
+                        const victim = fifoQueue.shift();
+                        memory[memory.indexOf(victim)] = page;
+                    }
+                    fifoQueue.push(page);
+                }
+            });
+            return faults;
+        }
+        document.getElementById('belady-3-frames').addEventListener('click', () => {
+            const faults = runBeladySim(3);
+            beladyResultEl.innerHTML = `使用3个物理块，发生 <strong class="text-red-600">${faults}</strong> 次缺页。`;
+        });
+        document.getElementById('belady-4-frames').addEventListener('click', () => {
+             const faults = runBeladySim(4);
+             const note = faults > 9 ? " (缺页反而增多了!)" : "";
+             beladyResultEl.innerHTML = `使用4个物理块，发生 <strong class="text-red-600">${faults}</strong> 次缺页。<strong class="text-amber-600">${note}</strong>`;
+        });
+    });
+    </script>
+</body>
+</html>
+```

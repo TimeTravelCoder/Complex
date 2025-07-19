@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>作业与作业调度 - 交互式学习指南</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutrals (Linen background, Slate accent, Dark Gray text) -->
+    <!-- Application Structure Plan: The application is structured into three logical, thematic sections to facilitate learning: 1. '基础概念', which introduces core definitions (Job, JCB, States) using interactive cards for better engagement. 2. '调度算法详解', which uses a tabbed interface to present the four main algorithms (FCFS, SJF, PSA, HRRN), allowing users to compare their principles, advantages, and disadvantages side-by-side. 3. '交互式调度模拟器', the core interactive component. This section transforms the static example from the report into a dynamic simulation. Users select an algorithm, and the application visually constructs a Gantt chart step-by-step, simultaneously populating a results table. This design transforms passive reading into an active, exploratory learning experience, making the abstract concepts of scheduling tangible and easier to grasp. -->
+    <!-- Visualization & Content Choices: 1. Job States: Report Info -> Three stages of job execution. Goal -> Inform. Viz/Presentation -> HTML/CSS flow diagram. Interaction -> Hover to see details. Justification -> Visualizes the lifecycle process clearly. 2. Algorithm Details: Report Info -> Four scheduling algorithms. Goal -> Compare & Organize. Viz/Presentation -> Tabbed content panels. Interaction -> Click to switch between algorithms. Justification -> Standard UI for segmenting and comparing related information blocks. 3. Scheduling Simulation: Report Info -> The detailed FCFS/SJF/HRRN calculation example. Goal -> Demonstrate & Compare. Viz/Presentation -> Dynamic Gantt chart (built with styled divs) and a results table. Interaction -> User clicks a button to trigger the simulation for a specific algorithm; the Gantt chart animates the scheduling process. Justification -> A dynamic Gantt chart provides a powerful, time-based visualization that makes the consequences of each algorithm's decisions immediately obvious, far surpassing a static table for educational impact. Library -> Vanilla JS for all logic; Chart.js is not used as a Gantt chart can be more flexibly built with HTML/CSS. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #FAF0E6; /* Linen */
+        }
+        .tab-button.active {
+            background-color: #708090; /* Slate Gray */
+            color: white;
+            border-color: #708090;
+        }
+        .sim-button.active {
+            background-color: #4682B4; /* Steel Blue */
+            color: white;
+            transform: scale(1.05);
+        }
+        .gantt-bar {
+            transition: width 0.5s ease-in-out;
+        }
+        .job-card {
+            transition: all 0.3s ease;
+        }
+        .job-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl font-bold text-gray-900">第 3.2 讲：作业与作业调度</h1>
+            <p class="mt-2 text-lg text-gray-600">一个交互式的学习与模拟工具</p>
+        </header>
+
+        <main>
+            <!-- Section 1: Fundamentals -->
+            <section id="fundamentals" class="mb-16">
+                <h2 class="text-3xl font-bold text-center mb-8 text-gray-900">核心基础概念</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div class="job-card bg-white p-6 rounded-lg shadow-lg">
+                        <h3 class="font-bold text-xl text-slate-800 mb-2">作业与作业步</h3>
+                        <p class="text-gray-600"><strong>作业(Job)</strong> 是用户提交给系统的任务集合，包含程序、数据和作业说明书。<strong>作业步(Job Step)</strong> 是作业中一个相对独立的处理步骤，如编译、链接、运行。</p>
+                    </div>
+                    <div class="job-card bg-white p-6 rounded-lg shadow-lg">
+                        <h3 class="font-bold text-xl text-slate-800 mb-2">作业控制块 (JCB)</h3>
+                        <p class="text-gray-600">JCB是作业在系统中的唯一标志，记录了作业ID、状态、优先级、资源需求等所有管理和调度所需的信息。</p>
+                    </div>
+                    <div class="job-card bg-white p-6 rounded-lg shadow-lg">
+                        <h3 class="font-bold text-xl text-slate-800 mb-2">作业的三个阶段</h3>
+                        <div class="flex items-center justify-between mt-4 text-center">
+                            <span class="font-semibold text-sm">收容<br>(后备状态)</span>
+                            <span class="text-2xl text-slate-400 font-mono">&rarr;</span>
+                            <span class="font-semibold text-sm">运行<br>(运行状态)</span>
+                            <span class="text-2xl text-slate-400 font-mono">&rarr;</span>
+                             <span class="font-semibold text-sm">完成<br>(完成状态)</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 2: Scheduling Algorithms -->
+            <section id="algorithms" class="mb-16">
+                <h2 class="text-3xl font-bold text-center mb-8 text-gray-900">常用作业调度算法</h2>
+                 <div class="bg-white rounded-lg shadow-lg p-6">
+                    <div id="algo-tabs" class="flex flex-wrap border-b mb-6 justify-center">
+                        <button data-target="fcfs" class="tab-button active py-2 px-6 font-semibold border-b-2 m-1">先来先服务 (FCFS)</button>
+                        <button data-target="sjf" class="tab-button py-2 px-6 font-semibold border-b-2 m-1">短作业优先 (SJF)</button>
+                        <button data-target="psa" class="tab-button py-2 px-6 font-semibold border-b-2 m-1">优先级调度 (PSA)</button>
+                        <button data-target="hrrn" class="tab-button py-2 px-6 font-semibold border-b-2 m-1">高响应比优先 (HRRN)</button>
+                    </div>
+                    <div id="algo-content" class="min-h-[200px]">
+                        <div id="content-fcfs" class="content-panel active"><h4 class="font-bold text-lg">算法思想</h4><p class="text-gray-600">最简单的调度算法，按作业到达的先后顺序进行调度。谁先来，谁先被服务。</p><h4 class="font-bold text-lg mt-2">优缺点</h4><ul class="list-disc list-inside text-gray-600"><li><span class="font-semibold text-green-600">优点:</span> 公平、简单，不会产生饥饿。</li><li><span class="font-semibold text-red-600">缺点:</span> 效率低下，对短作业极其不利，平均周转时间长。</li></ul></div>
+                        <div id="content-sjf" class="content-panel"><h4 class="font-bold text-lg">算法思想</h4><p class="text-gray-600">选择估计运行时间最短的作业优先执行，以期获得最短的平均周转时间。</p><h4 class="font-bold text-lg mt-2">优缺点</h4><ul class="list-disc list-inside text-gray-600"><li><span class="font-semibold text-green-600">优点:</span> 平均等待和周转时间最短。</li><li><span class="font-semibold text-red-600">缺点:</span> 对长作业不利，可能导致“饥饿”；需要预知运行时间。</li></ul></div>
+                        <div id="content-psa" class="content-panel"><h4 class="font-bold text-lg">算法思想</h4><p class="text-gray-600">为每个作业指定一个优先级，每次调度时选择优先级最高的作业。</p><h4 class="font-bold text-lg mt-2">优缺点</h4><ul class="list-disc list-inside text-gray-600"><li><span class="font-semibold text-green-600">优点:</span> 灵活，能满足紧迫作业的需求。</li><li><span class="font-semibold text-red-600">缺点:</span> 若优先级固定，可能导致低优先级作业“饥饿”。</li></ul></div>
+                        <div id="content-hrrn" class="content-panel"><h4 class="font-bold text-lg">算法思想</h4><p class="text-gray-600">动态计算作业的响应比（(等待时间+服务时间)/服务时间），选择响应比最高的作业，是SJF和FCFS的折中。</p><h4 class="font-bold text-lg mt-2">优缺点</h4><ul class="list-disc list-inside text-gray-600"><li><span class="font-semibold text-green-600">优点:</span> 兼顾了等待时间和运行时间，既照顾了短作业，又避免了长作业饥饿。</li><li><span class="font-semibold text-red-600">缺点:</span> 每次调度都需要计算，系统开销较大。</li></ul></div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Section 3: Interactive Simulator -->
+            <section id="simulator">
+                <h2 class="text-3xl font-bold text-center mb-2 text-gray-900">交互式调度模拟器</h2>
+                <p class="text-center text-gray-600 mb-8 max-w-3xl mx-auto">基于笔记中的例题，选择一个调度算法，观察作业的执行流程和性能指标。这是一个非抢占式的单道处理系统模拟。</p>
+
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <div class="mb-6 flex flex-wrap justify-center gap-3">
+                        <button onclick="runSimulation('FCFS')" class="sim-button py-2 px-5 bg-gray-200 rounded-full font-semibold transition-all duration-300 hover:bg-slate-500 hover:text-white">运行 FCFS</button>
+                        <button onclick="runSimulation('SJF')" class="sim-button py-2 px-5 bg-gray-200 rounded-full font-semibold transition-all duration-300 hover:bg-slate-500 hover:text-white">运行 SJF</button>
+                        <button onclick="runSimulation('HRRN')" class="sim-button py-2 px-5 bg-gray-200 rounded-full font-semibold transition-all duration-300 hover:bg-slate-500 hover:text-white">运行 HRRN</button>
+                    </div>
+
+                    <div id="gantt-container" class="mb-6 p-4 border rounded-lg bg-gray-50">
+                        <h4 class="font-bold text-lg mb-4 text-center">调度过程 (时空图)</h4>
+                        <div id="gantt-chart" class="space-y-2">
+                            <!-- Spacetime chart rows will be injected here -->
+                        </div>
+                        <div id="gantt-labels" class="relative h-6 mt-2 flex justify-between text-xs font-mono pr-4 pl-16">
+                            <!-- Time labels will be injected here -->
+                        </div>
+                    </div>
+
+                    <div id="results-container">
+                        <h4 class="font-bold text-lg mb-4 text-center">性能指标分析</h4>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full bg-white border">
+                                <thead class="bg-slate-100">
+                                    <tr>
+                                        <th class="py-2 px-4 border-b">作业</th>
+                                        <th class="py-2 px-4 border-b">到达时间</th>
+                                        <th class="py-2 px-4 border-b">服务时间</th>
+                                        <th class="py-2 px-4 border-b">完成时间</th>
+                                        <th class="py-2 px-4 border-b">周转时间</th>
+                                        <th class="py-2 px-4 border-b">带权周转时间</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="results-table-body" class="text-center">
+                                    <!-- Results rows will be injected here -->
+                                </tbody>
+                                <tfoot id="results-table-foot" class="font-bold bg-slate-200">
+                                    <!-- Averages will be injected here -->
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const tabsContainer = document.getElementById('algo-tabs');
+    const contentContainer = document.getElementById('algo-content');
+    tabsContainer.addEventListener('click', e => {
+        const button = e.target.closest('.tab-button');
+        if (!button) return;
+        
+        tabsContainer.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+        button.classList.add('active');
+
+        contentContainer.querySelectorAll('.content-panel').forEach(p => p.classList.remove('active'));
+        document.getElementById(`content-${button.dataset.target}`).classList.add('active');
+    });
+
+    const initialJobs = [
+        { id: 1, arrival: 0, service: 7, color: 'bg-sky-500' },
+        { id: 2, arrival: 2, service: 4, color: 'bg-emerald-500' },
+        { id: 3, arrival: 4, service: 1, color: 'bg-amber-500' },
+        { id: 4, arrival: 5, service: 4, color: 'bg-rose-500' }
+    ];
+    
+    renderInitialState(initialJobs);
+});
+
+function renderInitialState(jobs) {
+    const resultsTableBody = document.getElementById('results-table-body');
+    resultsTableBody.innerHTML = jobs.map(job => `
+        <tr>
+            <td class="py-2 px-4 border-b">${job.id}</td>
+            <td class="py-2 px-4 border-b">${job.arrival}</td>
+            <td class="py-2 px-4 border-b">${job.service}</td>
+            <td class="py-2 px-4 border-b">-</td>
+            <td class="py-2 px-4 border-b">-</td>
+            <td class="py-2 px-4 border-b">-</td>
+        </tr>
+    `).join('');
+    document.getElementById('results-table-foot').innerHTML = '';
+    document.getElementById('gantt-chart').innerHTML = '<p class="text-center text-gray-400">请选择一个算法以开始模拟</p>';
+    document.getElementById('gantt-labels').innerHTML = '';
+}
+
+function runSimulation(algorithm) {
+    document.querySelectorAll('.sim-button').forEach(b => b.classList.remove('active'));
+    document.querySelector(`.sim-button[onclick="runSimulation('${algorithm}')"]`).classList.add('active');
+
+    const jobs = JSON.parse(JSON.stringify([
+        { id: 1, arrival: 0, service: 7, color: 'bg-sky-500' },
+        { id: 2, arrival: 2, service: 4, color: 'bg-emerald-500' },
+        { id: 3, arrival: 4, service: 1, color: 'bg-amber-500' },
+        { id: 4, arrival: 5, service: 4, color: 'bg-rose-500' }
+    ]));
+
+    let schedule = [];
+    let currentTime = 0;
+    let remainingJobs = [...jobs];
+
+    if (algorithm === 'FCFS') {
+        remainingJobs.sort((a, b) => a.arrival - b.arrival);
+        for(const job of remainingJobs) {
+            const startTime = Math.max(currentTime, job.arrival);
+            const completionTime = startTime + job.service;
+            schedule.push({ ...job, startTime, completionTime });
+            currentTime = completionTime;
+        }
+    } else if (algorithm === 'SJF') {
+        while (remainingJobs.length > 0) {
+            let availableJobs = remainingJobs.filter(j => j.arrival <= currentTime);
+            if (availableJobs.length === 0) {
+                const nextArrivalTime = Math.min(...remainingJobs.map(j => j.arrival));
+                currentTime = nextArrivalTime;
+                availableJobs = remainingJobs.filter(j => j.arrival <= currentTime);
+            }
+            availableJobs.sort((a, b) => a.service - b.service || a.arrival - b.arrival);
+            const nextJob = availableJobs[0];
+            
+            const startTime = Math.max(currentTime, nextJob.arrival);
+            const completionTime = startTime + nextJob.service;
+            schedule.push({ ...nextJob, startTime, completionTime });
+            currentTime = completionTime;
+            remainingJobs = remainingJobs.filter(j => j.id !== nextJob.id);
+        }
+    } else if (algorithm === 'HRRN') {
+        while (remainingJobs.length > 0) {
+            let availableJobs = remainingJobs.filter(j => j.arrival <= currentTime);
+             if (availableJobs.length === 0) {
+                const nextArrivalTime = Math.min(...remainingJobs.map(j => j.arrival));
+                currentTime = nextArrivalTime;
+                availableJobs = remainingJobs.filter(j => j.arrival <= currentTime);
+            }
+            availableJobs.forEach(j => {
+                const waitingTime = currentTime - j.arrival;
+                j.responseRatio = (waitingTime + j.service) / j.service;
+            });
+            availableJobs.sort((a, b) => b.responseRatio - a.responseRatio);
+            const nextJob = availableJobs[0];
+
+            const startTime = Math.max(currentTime, nextJob.arrival);
+            const completionTime = startTime + nextJob.service;
+            schedule.push({ ...nextJob, startTime, completionTime });
+            currentTime = completionTime;
+            remainingJobs = remainingJobs.filter(j => j.id !== nextJob.id);
+        }
+    }
+    
+    renderResults(schedule);
+    animateSpacetimeChart(jobs, schedule);
+}
+
+function renderResults(schedule) {
+    const resultsTableBody = document.getElementById('results-table-body');
+    const resultsTableFoot = document.getElementById('results-table-foot');
+    let totalTurnaround = 0;
+    let totalWeightedTurnaround = 0;
+
+    // We need to sort the final schedule by job ID for consistent table display
+    const displaySchedule = [...schedule].sort((a, b) => a.id - b.id);
+
+    const resultsHtml = displaySchedule.map(job => {
+        const turnaround = job.completionTime - job.arrival;
+        const weightedTurnaround = (turnaround / job.service).toFixed(2);
+        totalTurnaround += turnaround;
+        totalWeightedTurnaround += parseFloat(weightedTurnaround);
+        return `
+            <tr>
+                <td class="py-2 px-4 border-b">${job.id}</td>
+                <td class="py-2 px-4 border-b">${job.arrival}</td>
+                <td class="py-2 px-4 border-b">${job.service}</td>
+                <td class="py-2 px-4 border-b">${job.completionTime}</td>
+                <td class="py-2 px-4 border-b">${turnaround}</td>
+                <td class="py-2 px-4 border-b">${weightedTurnaround}</td>
+            </tr>
+        `;
+    }).join('');
+    resultsTableBody.innerHTML = resultsHtml;
+
+    const avgTurnaround = (totalTurnaround / schedule.length).toFixed(2);
+    const avgWeightedTurnaround = (totalWeightedTurnaround / schedule.length).toFixed(2);
+    resultsTableFoot.innerHTML = `
+        <tr>
+            <td colspan="4" class="py-2 px-4 border-b text-right">平均值</td>
+            <td class="py-2 px-4 border-b">${avgTurnaround}</td>
+            <td class="py-2 px-4 border-b">${avgWeightedTurnaround}</td>
+        </tr>
+    `;
+}
+
+function animateSpacetimeChart(initialJobs, schedule) {
+    const ganttChart = document.getElementById('gantt-chart');
+    const ganttLabels = document.getElementById('gantt-labels');
+    ganttChart.innerHTML = '';
+    ganttLabels.innerHTML = '';
+
+    const totalDuration = Math.max(...schedule.map(j => j.completionTime));
+
+    ganttLabels.innerHTML = `
+        <span>0</span>
+        <span>${Math.round(totalDuration / 2)}</span>
+        <span>${totalDuration}</span>
+    `;
+
+    initialJobs.forEach((initialJob, index) => {
+        const scheduledJob = schedule.find(s => s.id === initialJob.id);
+        if (!scheduledJob) return;
+
+        const waitingDuration = scheduledJob.startTime - scheduledJob.arrival;
+
+        const row = document.createElement('div');
+        row.className = 'flex items-center';
+        
+        const label = document.createElement('span');
+        label.className = 'w-16 font-semibold text-sm text-right pr-2';
+        label.textContent = `作业 ${initialJob.id}:`;
+        
+        const timeline = document.createElement('div');
+        timeline.className = 'flex-1 h-8 bg-gray-200 rounded relative overflow-hidden';
+
+        // Waiting bar
+        if (waitingDuration > 0) {
+            const waitingBar = document.createElement('div');
+            waitingBar.className = 'gantt-bar absolute h-full flex items-center justify-center text-xs text-gray-600 bg-gray-300';
+            waitingBar.style.left = `${(scheduledJob.arrival / totalDuration) * 100}%`;
+            waitingBar.style.width = '0%';
+            waitingBar.textContent = '等待';
+            timeline.appendChild(waitingBar);
+            setTimeout(() => {
+                waitingBar.style.width = `${(waitingDuration / totalDuration) * 100}%`;
+            }, 100 + index * 100);
+        }
+
+        // Running bar
+        const runningBar = document.createElement('div');
+        runningBar.className = `gantt-bar absolute h-full flex items-center justify-center text-white font-bold ${scheduledJob.color}`;
+        runningBar.style.left = `${(scheduledJob.startTime / totalDuration) * 100}%`;
+        runningBar.style.width = '0%';
+        runningBar.textContent = '运行';
+        timeline.appendChild(runningBar);
+        setTimeout(() => {
+            runningBar.style.width = `${(scheduledJob.service / totalDuration) * 100}%`;
+        }, 150 + index * 100 + (waitingDuration > 0 ? 500 : 0));
+        
+        row.appendChild(label);
+        row.appendChild(timeline);
+        ganttChart.appendChild(row);
+    });
+}
+
+</script>
+</body>
+</html>

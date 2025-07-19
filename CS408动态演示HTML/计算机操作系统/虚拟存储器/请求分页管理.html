@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式学习：请求分页存储管理</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chosen Palette: Warm Neutrals (Stone, Teal) -->
+    <!-- Application Structure Plan: 本应用采用主题式探索结构。首先，通过“核心硬件”部分，用交互式图表具象化请求页表项并补充中断机制的特点。接着，以一个大型的、可视化的“虚拟页-页表-物理页框”变换动画作为核心，用户通过点击“下一步”驱动整个流程，该动画已升级为包含CPU和磁盘的完整架构图。随后，利用折叠面板清晰地对比“内存管理策略”。最后，设计一个“性能分析计算器”，并在其前增加了影响缺页率的因素分析。此结构旨在引导用户从静态的硬件认知，到动态的过程理解，再到策略的比较和性能的量化分析，层层深入。 -->
+    <!-- Visualization & Content Choices: 1. 请求页表机制: 目标(Inform), 方法(HTML/CSS/JS交互式图表)。 2. 地址变换流程: 目标(Show Process), 方法(大型HTML/CSS/JS联动动画视图，包含CPU、页表、内存、磁盘), 交互(点击“下一步”驱动动画和状态变化), 理由(将核心、复杂的动态过程完全可视化，用动画代替纯文字，直观展示完整计算机体系结构中的数据流，是理解本章知识的关键)。 3. 内存管理策略: 目标(Compare/Organize), 方法(卡片式布局和Accordion组件)。 4. 缺页率与性能: 目标(Explore Relationships), 方法(HTML表单 + Chart.js图表)。 -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif; }
+        .nav-link.active { color: #0d9488; border-bottom-color: #0d9488; }
+        .accordion-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out; }
+        .page-table-field { cursor: pointer; transition: background-color 0.2s; }
+        .page-table-field:hover { background-color: #f0fdfa; }
+        .chart-container { position: relative; height: 300px; max-height: 40vh; width: 100%; max-width: 600px; margin: auto; }
+        
+        .anim-component { border: 2px solid #e5e7eb; transition: all 0.3s ease-in-out; }
+        .anim-component.active { border-color: #3b82f6; box-shadow: 0 0 15px rgba(59, 130, 246, 0.3); }
+        .anim-component.fault { border-color: #ef4444; box-shadow: 0 0 15px rgba(239, 68, 68, 0.3); }
+        .anim-component.victim { border-color: #f97316; }
+        .anim-component.loaded { border-color: #22c55e; }
+
+        .page-item { border: 2px solid #e5e7eb; transition: all 0.3s ease-in-out; }
+        .page-item.active { border-color: #3b82f6; background-color: #eff6ff; transform: scale(1.05); }
+        .page-item.fault { border-color: #ef4444; background-color: #fee2e2; }
+        .page-item.victim { border-color: #f97316; background-color: #fff7ed; animation: blink 0.5s 2; }
+        .page-item.loaded { border-color: #22c55e; background-color: #f0fdfa; animation: pop-in 0.3s ease-out; }
+        
+        @keyframes blink { 50% { opacity: 0.5; } }
+        @keyframes pop-in { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    </style>
+</head>
+<body class="bg-stone-50 text-stone-800">
+
+    <header class="bg-white/90 backdrop-blur-md sticky top-0 z-50 shadow-sm">
+        <nav class="container mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
+            <h1 class="text-xl font-bold text-teal-700">请求分页存储管理</h1>
+            <div class="hidden md:flex space-x-8">
+                <a href="#hardware" class="nav-link border-b-2 border-transparent pb-1">核心硬件</a>
+                <a href="#workflow" class="nav-link border-b-2 border-transparent pb-1">工作流程</a>
+                <a href="#strategies" class="nav-link border-b-2 border-transparent pb-1">管理策略</a>
+                <a href="#performance" class="nav-link border-b-2 border-transparent pb-1">性能分析</a>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+
+        <section id="hardware" class="mb-20 scroll-mt-20">
+            <h2 class="text-3xl font-bold text-center mb-4">核心硬件支持</h2>
+            <p class="text-center text-stone-600 mb-12 max-w-2xl mx-auto">请求分页的实现离不开特定的硬件支持，主要包括请求页表、缺页中断机构和地址变换机构。</p>
+            <div class="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md mb-8">
+                <h3 class="text-2xl font-semibold mb-4 text-center">1. 请求页表项 (Page Table Entry)</h3>
+                <p class="text-center text-stone-600 mb-4">它比基本分页的页表多了几个重要的状态控制字段。点击下方表头，查看各字段的作用。</p>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-center border-collapse">
+                        <thead>
+                            <tr class="bg-stone-100">
+                                <th class="page-table-field p-3 border" data-info="页号：逻辑地址的高位部分，用于索引页表。">页号</th>
+                                <th class="page-table-field p-3 border" data-info="物理块号：页面在物理内存中对应的帧号。仅当页在内存中时有效。">物理块号</th>
+                                <th class="page-table-field p-3 border bg-teal-100" data-info="状态位 (P)：1表示页在内存中，0表示不在。这是产生缺页中断的直接依据。">状态位 P</th>
+                                <th class="page-table-field p-3 border bg-teal-100" data-info="访问字段 (A)：记录页面近期是否被访问过，供页面置换算法（如LRU）参考。">访问字段 A</th>
+                                <th class="page-table-field p-3 border bg-teal-100" data-info="修改位 (M)：记录页面调入内存后是否被修改过。若为1，换出时必须写回磁盘。">修改位 M</th>
+                                <th class="page-table-field p-3 border bg-teal-100" data-info="外存地址：页面在磁盘上的存放位置，用于缺页时将其调入内存。">外存地址</th>
+                            </tr>
+                        </thead>
+                    </table>
+                </div>
+                <div id="field-info-panel" class="mt-4 p-4 bg-teal-50 rounded-md text-teal-800 min-h-[4rem]">
+                    点击上方高亮区域的表头以查看详细说明。
+                </div>
+            </div>
+            <div class="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-2xl font-semibold mb-4 text-center">2. 缺页中断机构</h3>
+                <p class="text-stone-600">缺页中断是一种特殊的中断，与一般中断有两个显著区别：</p>
+                <ul class="list-disc list-inside mt-2 space-y-2 text-stone-700">
+                    <li><strong class="font-semibold">在指令执行期间产生：</strong>常规中断在指令执行完后检查，而缺页中断在指令执行过程中，一旦发现所需数据或指令不在内存，便立即产生。</li>
+                    <li><strong class="font-semibold">一条指令可产生多次中断：</strong>如果一条指令跨越多个页面，或其操作数跨越多个页面，执行它就可能引发多次缺页中断。</li>
+                </ul>
+            </div>
+        </section>
+
+        <section id="workflow" class="mb-20 scroll-mt-20">
+            <h2 class="text-3xl font-bold text-center mb-4">动画演示：地址变换全流程</h2>
+            <p class="text-center text-stone-600 mb-12 max-w-3xl mx-auto">本动画模拟一个拥有4个虚拟页、但只有2个物理页框的进程。点击“下一步”，观察当CPU请求访问不同虚拟页时，系统各组件如何协同工作。</p>
+            <div class="bg-white p-6 rounded-lg shadow-lg">
+                <div class="grid lg:grid-cols-5 gap-4" id="animation-container">
+                    <!-- Column 1: CPU -->
+                    <div class="lg:col-span-1 flex flex-col items-center justify-center">
+                        <div id="anim-cpu" class="anim-component p-4 rounded-lg w-full text-center">
+                            <h3 class="font-bold">CPU</h3>
+                            <p class="text-sm text-stone-500">请求发起者</p>
+                        </div>
+                    </div>
+                    <!-- Column 2: Virtual Space & Page Table -->
+                    <div class="lg:col-span-2 space-y-4">
+                        <div id="anim-vspace" class="anim-component p-4 rounded-lg">
+                            <h3 class="font-bold text-center mb-2">虚拟地址空间</h3>
+                            <div id="virtual-space" class="space-y-2"></div>
+                        </div>
+                        <div id="anim-ptable" class="anim-component p-4 rounded-lg">
+                            <h3 class="font-bold text-center mb-2">页表</h3>
+                            <div id="page-table" class="space-y-1"></div>
+                        </div>
+                    </div>
+                    <!-- Column 3: Physical Memory & Disk -->
+                    <div class="lg:col-span-2 space-y-4">
+                        <div id="anim-pmem" class="anim-component p-4 rounded-lg">
+                            <h3 class="font-bold text-center mb-2">物理内存</h3>
+                            <div id="physical-memory" class="space-y-2"></div>
+                        </div>
+                        <div id="anim-disk" class="anim-component p-4 rounded-lg">
+                            <h3 class="font-bold text-center mb-2">磁盘 (外存)</h3>
+                            <div id="disk-space" class="grid grid-cols-4 gap-2"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-6 border-t pt-4">
+                    <p id="flow-explanation" class="text-center text-stone-700 font-medium h-12 flex items-center justify-center text-lg"></p>
+                    <div class="mt-4 flex justify-center gap-4">
+                         <button id="flow-next-btn" class="bg-teal-600 text-white px-8 py-3 rounded-lg text-lg font-semibold hover:bg-teal-700 transition-transform hover:scale-105">开始</button>
+                         <button id="flow-reset-btn" class="bg-stone-500 text-white px-6 py-2 rounded-lg hover:bg-stone-600 transition">重置</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="strategies" class="mb-20 scroll-mt-20">
+            <h2 class="text-3xl font-bold text-center mb-12">内存管理策略</h2>
+            <div class="grid md:grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h3 class="text-xl font-semibold mb-4 border-b pb-2">内存分配</h3>
+                    <h4 class="font-bold text-teal-700">最小物理块数</h4>
+                    <p class="text-stone-600 mt-1 mb-3">指能保证进程正常运行所需的最小物理块数，若少于此值进程将无法运行。它取决于计算机的<strong class="font-semibold">指令格式和寻址方式</strong>，例如复杂指令可能需要多达6个块来存放指令本身和操作数。</p>
+                    <h4 class="font-bold text-teal-700">物理块分配算法</h4>
+                    <ul class="list-disc list-inside mt-1 space-y-1 text-stone-600">
+                        <li><strong>平均分配：</strong>将可用物理块平均分给各进程，简单但不公平。</li>
+                        <li><strong>按比例分配：</strong>根据进程大小按比例分配，更为合理。</li>
+                        <li><strong>优先权分配：</strong>为重要、紧迫的进程分配更多物理块。</li>
+                    </ul>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h3 class="text-xl font-semibold mb-4 border-b pb-2">页面调入</h3>
+                     <h4 class="font-bold text-teal-700">何时调入页面？</h4>
+                    <ul class="list-disc list-inside mt-1 mb-3 space-y-1 text-stone-600">
+                        <li><strong>请求调页 (Demand Paging)：</strong>当访问发生时才调入页面，是目前的主流方式，实现简单，开销可控。</li>
+                        <li><strong>预调页 (Prepaging)：</strong>预测程序行为，提前调入可能用到的页面。若预测准确则效率高，反之则浪费。</li>
+                    </ul>
+                    <h4 class="font-bold text-teal-700">从何处调入页面？</h4>
+                     <p class="text-stone-600 mt-1">通常从速度更快的<strong class="font-semibold">对换区</strong>调入。对于不修改的数据（如代码），也可直接从文件区调入。</p>
+                </div>
+            </div>
+            <div id="accordion-container" class="max-w-4xl mx-auto space-y-3 mt-8">
+                <h3 class="text-xl font-semibold mb-4 text-center">分配与置换组合策略</h3>
+                <div class="accordion-item bg-white rounded-lg shadow-md overflow-hidden">
+                    <button class="accordion-header w-full text-left p-4 font-semibold text-lg flex justify-between items-center">
+                        <span>固定分配，局部置换</span><span class="transform transition-transform">▼</span>
+                    </button>
+                    <div class="accordion-content"><div class="p-4 border-t text-stone-600"><p>为进程分配固定数量的页框，缺页时只能在这些页框内进行置换。简单但缺乏灵活性。</p></div></div>
+                </div>
+                <div class="accordion-item bg-white rounded-lg shadow-md overflow-hidden">
+                    <button class="accordion-header w-full text-left p-4 font-semibold text-lg flex justify-between items-center">
+                        <span>可变分配，全局置换</span><span class="transform transition-transform">▼</span>
+                    </button>
+                    <div class="accordion-content"><div class="p-4 border-t text-stone-600"><p>进程的页框数可变，缺页时从系统中所有进程的页框中选择一个进行置换。灵活但可能导致进程间相互干扰。</p></div></div>
+                </div>
+                <div class="accordion-item bg-white rounded-lg shadow-md overflow-hidden">
+                    <button class="accordion-header w-full text-left p-4 font-semibold text-lg flex justify-between items-center">
+                        <span>可变分配，局部置换</span><span class="transform transition-transform">▼</span>
+                    </button>
+                    <div class="accordion-content"><div class="p-4 border-t text-stone-600"><p>进程的页框数可变，但缺页时只在自己的页框内置换。若缺页率高，系统可为其增加页框。是较为理想的策略。</p></div></div>
+                </div>
+            </div>
+        </section>
+
+        <section id="performance" class="scroll-mt-20">
+            <h2 class="text-3xl font-bold text-center mb-4">性能分析：缺页率的影响</h2>
+            <div class="max-w-3xl mx-auto bg-white p-6 rounded-lg shadow-md mb-8">
+                <h3 class="text-xl font-semibold mb-2 text-center">影响缺页率的因素</h3>
+                <ul class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 list-disc list-inside text-stone-700">
+                    <li>页面大小</li>
+                    <li>分配给进程的物理块数</li>
+                    <li>页面置换算法的优劣</li>
+                    <li>程序自身的局部性特征</li>
+                </ul>
+            </div>
+            <p class="text-center text-stone-600 mb-12 max-w-3xl mx-auto">一个缺页中断所需的时间可能比一次正常的内存访问慢几十万倍。使用下面的计算器，直观感受缺页率对系统有效访问时间（EAT）的巨大影响。</p>
+            <div class="grid lg:grid-cols-2 gap-8 items-center bg-white p-6 rounded-lg shadow-md">
+                <div>
+                    <h3 class="text-xl font-semibold mb-4">参数调整</h3>
+                    <div class="space-y-6">
+                        <div>
+                            <label for="mem-access-time" class="font-medium">内存访问时间 (t): <span id="mem-access-time-value">100</span> ns</label>
+                            <input id="mem-access-time" type="range" min="50" max="200" value="100" class="w-full h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        <div>
+                            <label for="page-fault-rate" class="font-medium">缺页率 (f): <span id="page-fault-rate-value">0.001</span> %</label>
+                            <input id="page-fault-rate" type="range" min="0" max="1000" value="1" class="w-full h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        <div>
+                            <label for="fault-service-time" class="font-medium">缺页处理时间 (φ): <span id="fault-service-time-value">8</span> ms</label>
+                            <input id="fault-service-time" type="range" min="1" max="20" value="8" class="w-full h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    </div>
+                    <div class="mt-8 text-center bg-teal-50 p-4 rounded-lg">
+                        <p class="text-stone-600">有效访问时间 (EAT):</p>
+                        <p id="eat-result" class="text-3xl font-bold text-teal-700 mt-1">80.1 μs</p>
+                        <p class="text-xs text-stone-500 mt-2">EAT = (1-f) × t + f × φ</p>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="eat-chart"></canvas>
+                </div>
+            </div>
+        </section>
+
+    </main>
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // Section: Hardware Support
+        const fields = document.querySelectorAll('.page-table-field');
+        const infoPanel = document.getElementById('field-info-panel');
+        fields.forEach(field => {
+            field.addEventListener('click', () => {
+                infoPanel.textContent = field.dataset.info;
+            });
+        });
+
+        // Section: Workflow Animation v3
+        const animState = {
+            virtualPages: 4,
+            physicalFrames: 2,
+            pageTable: [],
+            physicalMemory: [],
+            disk: [],
+            accessQueue: [0, 1, 2, 3, 0],
+            currentStep: -1,
+            subStep: 0,
+            fifoQueue: [],
+        };
+
+        const vSpace = document.getElementById('virtual-space');
+        const pTable = document.getElementById('page-table');
+        const pMemory = document.getElementById('physical-memory');
+        const diskSpace = document.getElementById('disk-space');
+        const explanation = document.getElementById('flow-explanation');
+        const nextBtn = document.getElementById('flow-next-btn');
+        const resetBtn = document.getElementById('flow-reset-btn');
+        const animComps = {
+            cpu: document.getElementById('anim-cpu'),
+            vspace: document.getElementById('anim-vspace'),
+            ptable: document.getElementById('anim-ptable'),
+            pmem: document.getElementById('anim-pmem'),
+            disk: document.getElementById('anim-disk'),
+        };
+
+        function resetAnimation() {
+            animState.currentStep = -1;
+            animState.subStep = 0;
+            animState.fifoQueue = [];
+            animState.pageTable = Array.from({ length: animState.virtualPages }, (_, i) => ({ valid: 0, frame: -1 }));
+            animState.physicalMemory = Array.from({ length: animState.physicalFrames }, () => ({ page: -1 }));
+            animState.disk = Array.from({ length: animState.virtualPages }, (_, i) => ({ page: i }));
+            nextBtn.disabled = false;
+            nextBtn.textContent = '开始';
+            resetBtn.style.display = 'none';
+            explanation.textContent = '准备就绪。点击“开始”以模拟第一次内存访问。';
+            renderAnimation();
+        }
+
+        function renderAnimation() {
+            vSpace.innerHTML = '';
+            for (let i = 0; i < animState.virtualPages; i++) {
+                vSpace.innerHTML += `<div id="v-page-${i}" class="page-item p-2 rounded-md text-center">虚拟页 ${i}</div>`;
+            }
+
+            pTable.innerHTML = `<div class="grid grid-cols-3 gap-1 text-center font-semibold text-sm mb-1"><span class="col-span-1">虚拟页</span><span>有效位</span><span>页框</span></div>`;
+            animState.pageTable.forEach((entry, i) => {
+                pTable.innerHTML += `
+                    <div id="pt-entry-${i}" class="page-item grid grid-cols-3 gap-1 text-center p-1 rounded-md">
+                        <span class="font-mono">${i}</span>
+                        <span class="font-mono ${entry.valid ? 'text-green-600' : 'text-red-600'}">${entry.valid}</span>
+                        <span class="font-mono">${entry.frame === -1 ? '-' : entry.frame}</span>
+                    </div>`;
+            });
+
+            pMemory.innerHTML = '';
+            animState.physicalMemory.forEach((frame, i) => {
+                pMemory.innerHTML += `
+                    <div id="p-frame-${i}" class="page-item p-3 rounded-md text-center h-16 flex items-center justify-center">
+                        页框 ${i}: ${frame.page === -1 ? '(空闲)' : `(含虚拟页 ${frame.page})`}
+                    </div>`;
+            });
+            
+            diskSpace.innerHTML = '';
+            animState.disk.forEach((d) => {
+                if (d) {
+                    diskSpace.innerHTML += `<div id="disk-page-${d.page}" class="page-item p-2 rounded-md text-center bg-stone-200">页 ${d.page}</div>`;
+                }
+            });
+
+            Object.values(animComps).forEach(c => c.classList.remove('active', 'fault'));
+            document.querySelectorAll('.page-item').forEach(el => el.classList.remove('active', 'fault', 'victim', 'loaded'));
+        }
+
+        function runAnimationStep() {
+            const { subStep } = animState;
+            
+            if (subStep === 0) {
+                animState.currentStep++;
+                if (animState.currentStep >= animState.accessQueue.length) {
+                    explanation.textContent = '所有访问请求已处理完毕。';
+                    nextBtn.disabled = true;
+                    return;
+                }
+                nextBtn.textContent = '下一步';
+                resetBtn.style.display = 'inline-block';
+            }
+
+            renderAnimation();
+
+            const pageToAccess = animState.accessQueue[animState.currentStep];
+            const ptEntry = animState.pageTable[pageToAccess];
+            const vPageEl = document.getElementById(`v-page-${pageToAccess}`);
+            const ptEntryEl = document.getElementById(`pt-entry-${pageToAccess}`);
+
+            if (subStep === 0) {
+                explanation.textContent = `1. CPU 请求访问虚拟页 ${pageToAccess}。`;
+                animComps.cpu.classList.add('active');
+                vPageEl.classList.add('active');
+                animState.subStep++;
+            } else if (subStep === 1) {
+                explanation.textContent = `2. MMU 检查页表，寻找虚拟页 ${pageToAccess} 的条目。`;
+                animComps.ptable.classList.add('active');
+                vPageEl.classList.add('active');
+                ptEntryEl.classList.add('active');
+                animState.subStep++;
+            } else if (subStep === 2) {
+                animComps.ptable.classList.add('active');
+                vPageEl.classList.add('active');
+                ptEntryEl.classList.add('active');
+                if (ptEntry.valid) {
+                    explanation.textContent = `3. 命中！页面已在物理页框 ${ptEntry.frame} 中。`;
+                    animComps.pmem.classList.add('active');
+                    document.getElementById(`p-frame-${ptEntry.frame}`).classList.add('active');
+                    animState.subStep = 0;
+                } else {
+                    explanation.textContent = `3. 缺页中断！页面不在内存中。`;
+                    ptEntryEl.classList.add('fault');
+                    animComps.ptable.classList.add('fault');
+                    animState.subStep++;
+                }
+            } else if (subStep === 3) {
+                explanation.textContent = `4. OS 接管，准备从磁盘调入页面。`;
+                animComps.disk.classList.add('active');
+                document.getElementById(`disk-page-${pageToAccess}`).classList.add('active');
+                animState.subStep++;
+            } else if (subStep === 4) {
+                const freeFrameIndex = animState.physicalMemory.findIndex(f => f.page === -1);
+                if (freeFrameIndex !== -1) {
+                    explanation.textContent = `5. 找到空闲物理页框 ${freeFrameIndex}，将页面从磁盘调入。`;
+                    animComps.pmem.classList.add('active');
+                    document.getElementById(`p-frame-${freeFrameIndex}`).classList.add('loaded');
+                    animState.physicalMemory[freeFrameIndex].page = pageToAccess;
+                    animState.disk[pageToAccess] = null;
+                    ptEntry.valid = 1;
+                    ptEntry.frame = freeFrameIndex;
+                    animState.fifoQueue.push(pageToAccess);
+                    animState.subStep = 7; // Skip to final update
+                } else {
+                    const victimPage = animState.fifoQueue[0];
+                    explanation.textContent = `5. 内存已满！根据FIFO，选择虚拟页 ${victimPage} 进行置换。`;
+                    animComps.pmem.classList.add('active');
+                    const victimFrameIndex = animState.pageTable[victimPage].frame;
+                    document.getElementById(`pt-entry-${victimPage}`).classList.add('victim');
+                    document.getElementById(`p-frame-${victimFrameIndex}`).classList.add('victim');
+                    animState.subStep++;
+                }
+            } else if (subStep === 5) {
+                const victimPage = animState.fifoQueue.shift();
+                const victimFrameIndex = animState.pageTable[victimPage].frame;
+                explanation.textContent = `6. 将牺牲页 ${victimPage} 写回磁盘，并更新其页表项。`;
+                animState.pageTable[victimPage].valid = 0;
+                animState.pageTable[victimPage].frame = -1;
+                animState.physicalMemory[victimFrameIndex].page = -1;
+                animState.disk[victimPage] = { page: victimPage };
+                animState.subStep++;
+            } else if (subStep === 6) {
+                const freeFrameIndex = animState.physicalMemory.findIndex(f => f.page === -1);
+                explanation.textContent = `7. 将请求的虚拟页 ${pageToAccess} 调入腾出的页框 ${freeFrameIndex}。`;
+                animState.physicalMemory[freeFrameIndex].page = pageToAccess;
+                animState.disk[pageToAccess] = null;
+                ptEntry.valid = 1;
+                ptEntry.frame = freeFrameIndex;
+                animState.fifoQueue.push(pageToAccess);
+                animState.subStep++;
+            } else if (subStep === 7) {
+                explanation.textContent = `8. 更新页表，访问完成！`;
+                renderAnimation();
+                document.getElementById(`pt-entry-${pageToAccess}`).classList.add('loaded');
+                document.getElementById(`p-frame-${ptEntry.frame}`).classList.add('loaded');
+                animState.subStep = 0;
+            }
+        }
+
+        nextBtn.addEventListener('click', runAnimationStep);
+        resetBtn.addEventListener('click', resetAnimation);
+        resetAnimation();
+
+        // Section: Accordion
+        const accordionItems = document.querySelectorAll('.accordion-item');
+        accordionItems.forEach(item => {
+            const header = item.querySelector('.accordion-header');
+            const content = item.querySelector('.accordion-content');
+            const icon = header.querySelector('span:last-child');
+            header.addEventListener('click', () => {
+                const is_open = content.style.maxHeight;
+                document.querySelectorAll('.accordion-content').forEach(c => c.style.maxHeight = null);
+                document.querySelectorAll('.accordion-header span:last-child').forEach(i => i.style.transform = 'rotate(0deg)');
+                if (!is_open) {
+                    content.style.maxHeight = content.scrollHeight + "px";
+                    icon.style.transform = 'rotate(180deg)';
+                }
+            });
+        });
+
+        // Section: Performance
+        const memTimeSlider = document.getElementById('mem-access-time');
+        const faultRateSlider = document.getElementById('page-fault-rate');
+        const serviceTimeSlider = document.getElementById('fault-service-time');
+        const memTimeValue = document.getElementById('mem-access-time-value');
+        const faultRateValue = document.getElementById('page-fault-rate-value');
+        const serviceTimeValue = document.getElementById('fault-service-time-value');
+        const eatResult = document.getElementById('eat-result');
+        const ctx = document.getElementById('eat-chart').getContext('2d');
+        let eatChart;
+
+        function calculateEAT() {
+            const t_ns = parseFloat(memTimeSlider.value);
+            const f_raw = parseFloat(faultRateSlider.value);
+            const phi_ms = parseFloat(serviceTimeSlider.value);
+            const f = f_raw / 100000;
+            const phi_ns = phi_ms * 1_000_000;
+            memTimeValue.textContent = t_ns.toFixed(0);
+            faultRateValue.textContent = (f * 100).toPrecision(3);
+            serviceTimeValue.textContent = phi_ms.toFixed(0);
+            const eat_ns = (1 - f) * t_ns + f * phi_ns;
+            if (eat_ns > 1_000_000) eatResult.textContent = (eat_ns / 1_000_000).toFixed(2) + ' ms';
+            else if (eat_ns > 1000) eatResult.textContent = (eat_ns / 1000).toFixed(2) + ' µs';
+            else eatResult.textContent = eat_ns.toFixed(2) + ' ns';
+            return { t_ns, phi_ns };
+        }
+        
+        function updateChart(t_ns, phi_ns) {
+            const labels = [];
+            const data = [];
+            for (let i = 0; i <= 10; i++) {
+                const f = (i * 0.1) / 100;
+                labels.push((f * 100).toFixed(2) + '%');
+                const eat = (1-f)*t_ns + f*phi_ns;
+                data.push(eat / 1000);
+            }
+            eatChart.data.labels = labels;
+            eatChart.data.datasets[0].data = data;
+            eatChart.update();
+        }
+
+        function setupChart() {
+            eatChart = new Chart(ctx, {
+                type: 'line',
+                data: { labels: [], datasets: [{ label: '有效访问时间 (µs)', data: [], borderColor: '#0d9488', backgroundColor: 'rgba(13, 148, 136, 0.1)', fill: true, tension: 0.1 }] },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, title: { display: true, text: '时间 (µs)' } }, x: { title: { display: true, text: '缺页率 (f)'} } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `EAT: ${c.parsed.y.toFixed(2)} µs` } } } }
+            });
+        }
+        
+        function onPerformanceChange() {
+            const { t_ns, phi_ns } = calculateEAT();
+            updateChart(t_ns, phi_ns);
+        }
+
+        [memTimeSlider, faultRateSlider, serviceTimeSlider].forEach(s => s.addEventListener('input', onPerformanceChange));
+        setupChart();
+        onPerformanceChange();
+        
+        // Nav link active state on scroll
+        const sections = document.querySelectorAll('section[id]');
+        const navLinks = document.querySelectorAll('.nav-link');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    navLinks.forEach(link => {
+                        link.classList.remove('active');
+                        if (link.getAttribute('href').substring(1) === entry.target.id) link.classList.add('active', 'border-b-2', 'border-teal-500');
+                    });
+                }
+            });
+        }, { rootMargin: "-40% 0px -60% 0px" });
+        sections.forEach(section => observer.observe(section));
+    });
+    </script>
+</body>
+</html>

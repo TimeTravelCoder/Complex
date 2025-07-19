@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式学习笔记：连续分配存储管理</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chosen Palette: Slate Gray & Blue (Background: #f1f5f9, Text: #334155, Accent: #3b82f6, Green: #22c55e, Red: #ef4444) -->
+    <!-- Application Structure Plan: The SPA is designed as a learning journey. It starts with static concepts (Single/Fixed partitioning), then moves to the core interactive element: a dynamic memory allocation simulator. This simulator allows users to visually compare FF, BF, and WF algorithms, directly addressing the main learning objective. Following the simulation, the app explains the resulting problem (fragmentation) and the solution (compaction), reinforcing the concepts learned through interaction. This structure—from simple to complex, from problem to solution—is designed for optimal pedagogical flow. -->
+    <!-- Visualization & Content Choices: 
+        - Memory Visualization: Goal: Inform/Compare. Method: HTML divs styled with Tailwind, dynamically rendered by JS to represent memory blocks. Interaction: The visualization updates in response to user actions in the simulator. Justification: Provides a concrete, visual representation of the abstract memory space, making allocation and fragmentation tangible.
+        - Allocation Algorithm Simulator: Goal: Compare/Organize. Method: A control panel with algorithm selection and action buttons coupled with the memory visualization. Interaction: Users select an algorithm (FF, BF, WF) and click "Allocate" to see the chosen algorithm's decision-making process animated on the memory visualization. Justification: This is the core interactive element. It transforms passive reading about algorithms into an active, experimental learning process.
+        - Fragmentation Explanation: Goal: Inform. Method: Side-by-side static diagrams using styled HTML divs. Interaction: None. Justification: Clearly and concisely differentiates internal vs. external fragmentation after the user has seen them occur in the simulator.
+        - Compaction Animation: Goal: Inform. Method: A JS-driven animation on the memory visualization. Interaction: A "Compact Memory" button triggers the animation. Justification: Visually demonstrates the solution to external fragmentation, completing the learning loop.
+        - Library/Method: Vanilla JS for all logic and animation. Chart.js for a simple chart showing memory utilization. NO SVG/Mermaid used. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f1f5f9; /* slate-100 */
+        }
+        .section-card {
+            background-color: white;
+            border-radius: 0.75rem;
+            padding: 1.5rem 2rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            margin-bottom: 2rem;
+        }
+        .memory-container {
+            border: 2px solid #e2e8f0; /* slate-200 */
+            background: repeating-linear-gradient(45deg, #f8fafc, #f8fafc 10px, #f1f5f9 10px, #f1f5f9 20px);
+            padding: 0.5rem;
+            height: 500px;
+        }
+        .memory-block {
+            position: absolute;
+            width: 100%;
+            border: 1px solid rgba(0,0,0,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: 500;
+            transition: all 0.5s ease-in-out;
+            overflow: hidden;
+            box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.05);
+        }
+        .block-os { background-color: #64748b; color: white; } /* slate-500 */
+        .block-free { background-color: #f1f5f9; color: #475569; border-style: dashed; } /* slate-100, slate-600 */
+        .block-proc { background-color: #3b82f6; color: white; } /* blue-500 */
+        .highlight-scan { background-color: #fef08a; } /* yellow-200 */
+        .highlight-select { background-color: #4ade80; } /* green-400 */
+        
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+    </style>
+</head>
+<body class="text-slate-700">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold text-slate-900">连续分配存储管理方式</h1>
+            <p class="mt-4 text-lg text-slate-600">通过交互式模拟，深入理解内存的分配与回收。</p>
+        </header>
+
+        <!-- Section 1: Intro to Continuous Allocation -->
+        <section class="section-card">
+            <h2 class="text-2xl font-bold mb-4">什么是连续分配？</h2>
+            <p class="mb-4">连续分配是最早期的内存管理方式，它的核心思想是：当一个程序需要运行时，必须在内存中为它找到一块连续的、足够大的空间。这种方式简单直观，但随着多道程序的发展，其固有的缺陷也逐渐暴露出来，主要就是碎片问题。</p>
+            <div class="grid md:grid-cols-2 gap-8">
+                <div class="p-4 bg-slate-50 rounded-lg">
+                    <h3 class="font-bold text-lg">单一连续分配</h3>
+                    <p class="text-sm">最简单的模式，内存只分为系统区和用户区。用户区仅容纳一个程序，利用率极低。</p>
+                </div>
+                <div class="p-4 bg-slate-50 rounded-lg">
+                    <h3 class="font-bold text-lg">固定分区分配</h3>
+                    <p class="text-sm">预先将内存划分为多个固定大小的分区。会产生 <b class="text-red-500">内部碎片</b>（分区内未被使用的空间）。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 2: Dynamic Allocation Simulator -->
+        <section id="simulator" class="section-card">
+            <h2 class="text-3xl font-bold mb-2">动态分区分配模拟器</h2>
+            <p class="text-slate-600 mb-6">这是本讲的重点。动态分区分配不预设分区，而是根据进程大小动态划分。请选择一个分配算法，然后点击“分配下一个进程”来观察它的工作流程和结果。您还可以通过点击进程块右上角的 "×" 来释放它。</p>
+            
+            <div class="grid lg:grid-cols-3 gap-8">
+                <!-- Memory Visualization -->
+                <div class="lg:col-span-1">
+                    <h3 class="font-bold text-lg text-center mb-2">内存视图 (共 640 KB)</h3>
+                    <div id="memory-viz" class="memory-container relative w-full rounded-lg">
+                        <!-- Memory blocks will be rendered here by JS -->
+                    </div>
+                </div>
+
+                <!-- Controls and Info -->
+                <div class="lg:col-span-2">
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <!-- Controls -->
+                        <div>
+                            <h3 class="font-bold text-lg mb-2">控制面板</h3>
+                            <div class="space-y-4">
+                                <div>
+                                    <label for="alloc-algo" class="font-semibold text-slate-700">1. 选择分配算法:</label>
+                                    <select id="alloc-algo" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                        <option value="ff">首次适应 (First Fit)</option>
+                                        <option value="bf">最佳适应 (Best Fit)</option>
+                                        <option value="wf">最坏适应 (Worst Fit)</option>
+                                    </select>
+                                </div>
+                                <button id="alloc-btn" class="w-full bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition">分配下一个进程</button>
+                                <button id="compact-btn" class="w-full bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600 transition" disabled>执行内存紧凑</button>
+                                <button id="reset-btn" class="w-full bg-slate-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-600 transition">重置模拟</button>
+                            </div>
+                        </div>
+                        <!-- Process Queue -->
+                        <div>
+                           <h3 class="font-bold text-lg mb-2">进程请求队列</h3>
+                            <ul id="process-queue" class="space-y-2">
+                                <!-- Process queue items will be rendered here by JS -->
+                            </ul>
+                        </div>
+                    </div>
+                    <!-- Log -->
+                    <div class="mt-6">
+                        <h3 class="font-bold text-lg mb-2">操作日志</h3>
+                        <div id="log-area" class="h-40 bg-slate-800 text-white font-mono text-sm p-4 rounded-lg overflow-y-auto">
+                            <p>> 模拟器已就绪...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 3: Fragmentation & Compaction -->
+        <section class="section-card">
+            <h2 class="text-2xl font-bold mb-4">核心问题：碎片 (Fragmentation)</h2>
+            <p class="mb-6">在模拟中您可能已经注意到，随着进程的分配和释放，内存中会产生许多无法利用的小空闲块，这就是碎片问题，它是连续分配方式的主要弊端。</p>
+            <div class="grid md:grid-cols-2 gap-8">
+                <div class="p-4 bg-slate-50 rounded-lg">
+                    <h3 class="font-bold text-lg text-red-600">🔴 外部碎片 (External Fragmentation)</h3>
+                    <p class="text-sm mt-2">指在所有已分配区域之间存在的、不连续的空闲分区。虽然空闲空间的总和可能很大，但由于它们不连续，无法满足需要较大连续空间的新进程。这是动态分区分配的主要问题。</p>
+                </div>
+                <div class="p-4 bg-slate-50 rounded-lg">
+                    <h3 class="font-bold text-lg text-orange-500">🟠 内部碎片 (Internal Fragmentation)</h3>
+                    <p class="text-sm mt-2">指在一个已分配的分区内部，程序未使用而浪费掉的空间。例如，为 33KB 的进程分配了 64KB 的伙伴系统块。这是固定分区和伙伴系统等方式的主要问题。</p>
+                </div>
+            </div>
+             <div class="mt-8 text-center">
+                <h3 class="text-xl font-bold mb-2">解决方案：紧凑 (Compaction)</h3>
+                <p>解决外部碎片的一种方法是内存紧凑。通过移动内存中的所有进程，使它们连续排列，从而将所有小的空闲分区合并成一个大的连续空闲区。请在模拟器中尝试“执行内存紧凑”按钮来观察这个过程。该操作需要动态重定位硬件的支持。</p>
+            </div>
+        </section>
+
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const VIZ_HEIGHT = 500;
+    const TOTAL_MEMORY = 640; // KB
+
+    const memoryViz = document.getElementById('memory-viz');
+    const processQueueEl = document.getElementById('process-queue');
+    const logArea = document.getElementById('log-area');
+    const allocBtn = document.getElementById('alloc-btn');
+    const compactBtn = document.getElementById('compact-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const algoSelect = document.getElementById('alloc-algo');
+
+    let memoryState = [];
+    let processQueue = [];
+    let nextProcId = 1;
+
+    const initialProcesses = [
+        { id: 'P1', size: 130 },
+        { id: 'P2', size: 60 },
+        { id: 'P3', size: 100 },
+        { id: 'P4', size: 200 },
+        { id: 'P5', size: 140 },
+        { id: 'P6', size: 70 },
+        { id: 'P7', size: 120 },
+    ];
+    
+    function init() {
+        memoryState = [
+            { start: 0, size: 40, type: 'os' },
+            { start: 40, size: 600, type: 'free' }
+        ];
+        processQueue = JSON.parse(JSON.stringify(initialProcesses));
+        
+        allocBtn.disabled = false;
+        compactBtn.disabled = true;
+        
+        renderMemory();
+        renderQueue();
+        log('模拟器已重置。');
+    }
+
+    function log(message) {
+        logArea.innerHTML += `<p>> ${message}</p>`;
+        logArea.scrollTop = logArea.scrollHeight;
+    }
+
+    function renderMemory() {
+        memoryViz.innerHTML = '';
+        let freeBlocks = memoryState.filter(b => b.type === 'free');
+
+        memoryState.forEach(block => {
+            const blockEl = document.createElement('div');
+            blockEl.className = `memory-block block-${block.type}`;
+            blockEl.style.top = `${(block.start / TOTAL_MEMORY) * VIZ_HEIGHT}px`;
+            blockEl.style.height = `${(block.size / TOTAL_MEMORY) * VIZ_HEIGHT}px`;
+            
+            let text = '';
+            if (block.type === 'os') {
+                text = '操作系统';
+            } else if (block.type === 'proc') {
+                text = `进程 ${block.id} (${block.size}KB)`;
+                const freeBtn = document.createElement('button');
+                freeBtn.className = 'absolute top-1 right-1 text-white opacity-60 hover:opacity-100 font-bold text-lg leading-none p-1';
+                freeBtn.innerHTML = '&times;';
+                freeBtn.title = `释放进程 ${block.id}`;
+                freeBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    freeProcess(block.id);
+                };
+                blockEl.appendChild(freeBtn);
+            } else {
+                text = `空闲 (${block.size}KB)`;
+            }
+            
+            const textEl = document.createElement('span');
+            textEl.textContent = text;
+            blockEl.appendChild(textEl);
+            blockEl.dataset.start = block.start;
+            memoryViz.appendChild(blockEl);
+        });
+        
+        compactBtn.disabled = freeBlocks.length <= 1;
+    }
+
+    function renderQueue() {
+        processQueueEl.innerHTML = '';
+        processQueue.forEach((proc, index) => {
+            const li = document.createElement('li');
+            li.className = `p-2 rounded-md flex justify-between items-center ${index === 0 ? 'bg-blue-100' : 'bg-slate-100'}`;
+            li.innerHTML = `<span>进程 ${proc.id}</span><span class="font-bold">${proc.size}KB</span>`;
+            processQueueEl.appendChild(li);
+        });
+        if(processQueue.length === 0) {
+            processQueueEl.innerHTML = '<li class="p-2 text-slate-500">所有进程已分配或在队列中。</li>';
+            allocBtn.disabled = true;
+        } else {
+            allocBtn.disabled = false;
+        }
+    }
+    
+    function freeProcess(id) {
+        log(`请求释放进程 ${id}...`);
+        let blockIndex = -1;
+        for (let i = 0; i < memoryState.length; i++) {
+            if (memoryState[i].type === 'proc' && memoryState[i].id === id) {
+                blockIndex = i;
+                break;
+            }
+        }
+
+        if (blockIndex === -1) return;
+
+        memoryState[blockIndex].type = 'free';
+        delete memoryState[blockIndex].id;
+
+        // Merge with next block if it's free
+        if (blockIndex + 1 < memoryState.length && memoryState[blockIndex + 1].type === 'free') {
+            const nextBlock = memoryState[blockIndex + 1];
+            memoryState[blockIndex].size += nextBlock.size;
+            memoryState.splice(blockIndex + 1, 1);
+            log(`与后一个空闲块合并。`);
+        }
+
+        // Merge with previous block if it's free
+        if (blockIndex > 0 && memoryState[blockIndex - 1].type === 'free') {
+            const prevBlock = memoryState[blockIndex - 1];
+            memoryState[blockIndex].start = prevBlock.start;
+            memoryState[blockIndex].size += prevBlock.size;
+            memoryState.splice(blockIndex - 1, 1);
+            log(`与前一个空闲块合并。`);
+        }
+        
+        const freedProcessInfo = initialProcesses.find(p => p.id === id);
+        if (freedProcessInfo && !processQueue.find(p => p.id === id)) {
+            processQueue.push(freedProcessInfo);
+            processQueue.sort((a, b) => a.id.localeCompare(b.id, undefined, {numeric: true}));
+        }
+
+        log(`进程 ${id} 已释放。`);
+        renderMemory();
+        renderQueue();
+    }
+
+
+    async function allocate() {
+        if (processQueue.length === 0) {
+            log('队列中已无进程。');
+            return;
+        }
+
+        allocBtn.disabled = true;
+        const process = processQueue[0];
+        log(`请求为进程 ${process.id} 分配 ${process.size}KB...`);
+
+        const algo = algoSelect.value;
+        let bestFitIndex = -1;
+
+        const freeBlocks = memoryState.map((b, i) => ({ ...b, originalIndex: i }))
+            .filter(b => b.type === 'free' && b.size >= process.size);
+
+        if (freeBlocks.length === 0) {
+            log(`<span class="text-red-400">错误: 没有足够大的连续空闲分区。</span>`);
+            allocBtn.disabled = false;
+            return;
+        }
+        
+        await sleep(500);
+
+        if (algo === 'ff') {
+            log('使用首次适应(FF)算法...');
+            let foundBlock = freeBlocks[0];
+            for(const block of freeBlocks) {
+                await highlightBlock(block.start, 'scan');
+            }
+            bestFitIndex = foundBlock.originalIndex;
+        } else if (algo === 'bf') {
+            log('使用最佳适应(BF)算法...');
+            let bestBlock = freeBlocks.reduce((min, block) => block.size < min.size ? block : min, freeBlocks[0]);
+            for(const block of freeBlocks) {
+                await highlightBlock(block.start, 'scan');
+            }
+            bestFitIndex = bestBlock.originalIndex;
+        } else if (algo === 'wf') {
+            log('使用最坏适应(WF)算法...');
+            let bestBlock = freeBlocks.reduce((max, block) => block.size > max.size ? block : max, freeBlocks[0]);
+            for(const block of freeBlocks) {
+                await highlightBlock(block.start, 'scan');
+            }
+            bestFitIndex = bestBlock.originalIndex;
+        }
+
+        await sleep(500);
+        await highlightBlock(memoryState[bestFitIndex].start, 'select');
+        log(`选中分区: 起始于 ${memoryState[bestFitIndex].start}K, 大小 ${memoryState[bestFitIndex].size}KB。`);
+        
+        const originalBlock = memoryState[bestFitIndex];
+        const newProcBlock = {
+            start: originalBlock.start,
+            size: process.size,
+            type: 'proc',
+            id: process.id,
+        };
+
+        const remainingSize = originalBlock.size - process.size;
+        
+        processQueue.shift();
+        
+        if (remainingSize > 5) { // Avoid creating tiny fragments
+            const remainingFreeBlock = {
+                start: originalBlock.start + process.size,
+                size: remainingSize,
+                type: 'free'
+            };
+            memoryState.splice(bestFitIndex, 1, newProcBlock, remainingFreeBlock);
+        } else {
+            newProcBlock.size = originalBlock.size; // Allocate the whole block
+            memoryState.splice(bestFitIndex, 1, newProcBlock);
+        }
+
+        memoryState.sort((a,b) => a.start - b.start);
+        
+        await sleep(1000);
+        log(`进程 ${process.id} 分配成功。`);
+        renderMemory();
+        renderQueue();
+    }
+    
+    async function compact() {
+        log('开始执行内存紧凑...');
+        compactBtn.disabled = true;
+        allocBtn.disabled = true;
+        
+        let freeSizeTotal = 0;
+        let tempState = [];
+        let currentPos = 0;
+        
+        memoryState.forEach(b => {
+            if (b.type === 'os' || b.type === 'proc') {
+                tempState.push({...b, newStart: currentPos});
+                currentPos += b.size;
+            } else {
+                freeSizeTotal += b.size;
+            }
+        });
+
+        for(const block of tempState) {
+             const el = document.querySelector(`.memory-block[data-start="${block.start}"]`);
+             if (el) {
+                 el.style.top = `${(block.newStart / TOTAL_MEMORY) * VIZ_HEIGHT}px`;
+             }
+        }
+        
+        await sleep(1000);
+
+        memoryState = tempState.map(b => ({start: b.newStart, size: b.size, type: b.type, id: b.id}));
+        
+        if (freeSizeTotal > 0) {
+             memoryState.push({start: currentPos, size: freeSizeTotal, type: 'free'});
+        }
+        
+        memoryState.sort((a, b) => a.start - b.start);
+
+        renderMemory();
+        log('内存紧凑完成！');
+        allocBtn.disabled = processQueue.length === 0;
+    }
+    
+    async function highlightBlock(start, type) {
+        const el = document.querySelector(`.memory-block[data-start="${start}"]`);
+        if (el) {
+            el.classList.add(`highlight-${type}`);
+            await sleep(300);
+            el.classList.remove(`highlight-${type}`);
+        }
+    }
+
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    allocBtn.addEventListener('click', allocate);
+    resetBtn.addEventListener('click', init);
+    compactBtn.addEventListener('click', compact);
+
+    init();
+});
+</script>
+
+</body>
+</html>

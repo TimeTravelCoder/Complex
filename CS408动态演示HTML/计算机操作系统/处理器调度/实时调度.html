@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实时调度 - 交互式学习指南</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Tech Slate (Cool Grays, Blues, and Greens) -->
+    <!-- Application Structure Plan: The application is logically structured into three parts for a guided learning path. 1) '实时调度基础': Introduces core concepts (HRT/SRT, scheduling conditions) using clear, digestible cards. 2) '核心算法模拟器': This is the main interactive section. It uses a tabbed interface to separate the two key dynamic algorithms, EDF and LLF, allowing for focused study and comparison. Each tab contains a full simulation environment based on the textbook's examples, including controls, a spacetime diagram, a CPU status indicator, and a real-time event log. This transforms passive reading into active exploration. 3) '优先级倒置问题': A dedicated section to explain this critical concurrency issue. It uses a side-by-side animated diagram to visually contrast the problem scenario with its solution (Priority Inheritance), making the abstract concept easy to understand. -->
+    <!-- Visualization & Content Choices: 1. Real-time Concepts: Report Info -> Definitions of HRT/SRT and scheduling conditions. Goal -> Inform. Viz -> Styled HTML cards. Interaction -> None needed, direct presentation is effective. 2. EDF/LLF Simulators: Report Info -> Detailed scheduling examples for EDF and LLF. Goal -> Demonstrate & Compare. Viz -> Spacetime diagram (HTML/CSS), CPU status box, event log. Interaction -> 'Run Simulation' button triggers a full, animated playback. Justification -> A spacetime diagram with deadline markers is the ideal way to visualize real-time constraints. The synchronized CPU status and log provide a multi-modal explanation of the scheduling decisions at each time step. 3. Priority Inversion Animation: Report Info -> The P1, P2, P3 resource conflict scenario. Goal -> Explain & Contrast. Viz -> Two parallel animated sequence diagrams. Interaction -> Buttons to play 'Problem' and 'Solution' animations. Justification -> A side-by-side animated comparison is extremely effective at showing how Priority Inheritance directly solves the blocking problem caused by priority inversion. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #f0f4f8; }
+        .tab-button.active { background-color: #3b82f6; color: white; border-color: #3b82f6; }
+        .sim-button.active { background-color: #10b981; color: white; transform: scale(1.05); }
+        .content-panel { display: none; }
+        .content-panel.active { display: block; }
+        .timeline-bar { transition: all 0.3s ease-in-out; }
+        .task-token, .mutex-token { transition: all 1s ease-in-out; position: absolute; }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl font-bold text-gray-900">第 3.4 讲：实时调度</h1>
+            <p class="mt-2 text-lg text-gray-600">一个交互式算法模拟与分析工具</p>
+        </header>
+
+        <main>
+            <!-- Section 1: Fundamentals -->
+            <section id="fundamentals" class="mb-16">
+                <h2 class="text-3xl font-bold text-center mb-8 text-gray-900">实时调度基础</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div class="bg-white p-6 rounded-lg shadow-md"><h4 class="font-bold text-lg text-blue-600">硬实时 (HRT)</h4><p class="text-sm text-gray-600">必须严格满足截止时间，任何延迟都可能导致系统性失败。</p></div>
+                    <div class="bg-white p-6 rounded-lg shadow-md"><h4 class="font-bold text-lg text-green-600">软实时 (SRT)</h4><p class="text-sm text-gray-600">期望满足截止时间，偶尔错过只会降低服务质量。</p></div>
+                    <div class="bg-white p-6 rounded-lg shadow-md"><h4 class="font-bold text-lg text-slate-700">可调度性</h4><p class="text-sm text-gray-600">系统处理能力必须大于或等于所有任务的总需求。($\sum (C_i/P_i) \le N$)</p></div>
+                    <div class="bg-white p-6 rounded-lg shadow-md"><h4 class="font-bold text-lg text-slate-700">抢占与快速切换</h4><p class="text-sm text-gray-600">必须采用抢占机制，并具备低延迟的任务切换能力。</p></div>
+                </div>
+            </section>
+
+            <!-- Section 2: Core Algorithm Simulators -->
+            <section id="simulators" class="mb-16">
+                <h2 class="text-3xl font-bold text-center mb-8 text-gray-900">核心算法模拟器</h2>
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <div id="algo-tabs" class="flex flex-wrap border-b mb-6 justify-center">
+                        <button data-target="edf" class="tab-button active py-2 px-6 font-semibold border-b-2 m-1">最早截止时间优先 (EDF)</button>
+                        <button data-target="llf" class="tab-button py-2 px-6 font-semibold border-b-2 m-1">最低松弛度优先 (LLF)</button>
+                    </div>
+                    <div id="algo-content">
+                        <!-- EDF Simulator -->
+                        <div id="content-edf" class="content-panel active">
+                            <p class="text-center text-gray-600 mb-6">EDF 算法根据任务的截止时间动态调整优先级。点击按钮，观察两个周期任务 A 和 B 的调度过程。</p>
+                            <div class="text-center mb-6">
+                                <button id="edf-play-button" onclick="runSimulation('EDF')" class="py-2 px-5 bg-blue-500 text-white rounded-full font-semibold transition-all duration-300 hover:bg-blue-600">运行 EDF 模拟</button>
+                            </div>
+                            <div class="p-4 border rounded-lg bg-gray-50">
+                                <div id="edf-spacetime-chart" class="space-y-3"></div>
+                                <div id="edf-timeline-labels" class="relative h-6 mt-2 flex justify-between text-xs font-mono pr-4 pl-16"></div>
+                                <div class="mt-4 pt-4 border-t flex items-center justify-center gap-4">
+                                    <span class="font-bold text-lg">CPU:</span>
+                                    <div id="edf-cpu" class="w-24 h-10 rounded bg-gray-200 flex items-center justify-center font-bold text-gray-500">空闲</div>
+                                    <div id="edf-log" class="flex-1 text-center font-mono text-sm text-slate-600 h-6"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- LLF Simulator -->
+                        <div id="content-llf" class="content-panel">
+                             <p class="text-center text-gray-600 mb-6">LLF 算法根据任务的松弛度（紧急程度）动态调整优先级。点击按钮，观察调度决策。</p>
+                            <div class="text-center mb-6">
+                                <button id="llf-play-button" onclick="runSimulation('LLF')" class="py-2 px-5 bg-blue-500 text-white rounded-full font-semibold transition-all duration-300 hover:bg-blue-600">运行 LLF 模拟</button>
+                            </div>
+                            <div class="p-4 border rounded-lg bg-gray-50">
+                                <div id="llf-spacetime-chart" class="space-y-3"></div>
+                                <div id="llf-timeline-labels" class="relative h-6 mt-2 flex justify-between text-xs font-mono pr-4 pl-16"></div>
+                                <div class="mt-4 pt-4 border-t flex items-center justify-center gap-4">
+                                    <span class="font-bold text-lg">CPU:</span>
+                                    <div id="llf-cpu" class="w-24 h-10 rounded bg-gray-200 flex items-center justify-center font-bold text-gray-500">空闲</div>
+                                    <div id="llf-log" class="flex-1 text-center font-mono text-sm text-slate-600 h-6"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Section 3: Priority Inversion -->
+            <section id="priority-inversion">
+                <h2 class="text-3xl font-bold text-center mb-8 text-gray-900">优先级倒置问题</h2>
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                     <p class="text-center text-gray-600 mb-6">当高、中、低三个优先级的任务共享资源时，可能发生高优先级任务被中优先级任务间接阻塞的现象。通过动画对比问题与解决方案。</p>
+                     <div class="mb-6 flex flex-wrap justify-center gap-3">
+                        <button onclick="playInversionAnimation(false)" class="sim-button py-2 px-5 bg-red-500 text-white rounded-full font-semibold">演示问题</button>
+                        <button onclick="playInversionAnimation(true)" class="sim-button py-2 px-5 bg-green-500 text-white rounded-full font-semibold">演示解决方案</button>
+                    </div>
+                    <div id="inversion-container" class="relative p-4 border rounded-lg bg-gray-50 min-h-[250px] overflow-hidden">
+                        <div id="pi-log" class="text-center font-mono text-sm text-slate-600 h-6 mb-4"></div>
+                        <div class="space-y-4">
+                            <div class="h-10 flex items-center"><span class="w-24 text-right font-bold pr-4">P1 (高)</span><div id="p1-timeline" class="h-full flex-1 bg-gray-200 rounded relative"></div></div>
+                            <div class="h-10 flex items-center"><span class="w-24 text-right font-bold pr-4">P2 (中)</span><div id="p2-timeline" class="h-full flex-1 bg-gray-200 rounded relative"></div></div>
+                            <div class="h-10 flex items-center"><span class="w-24 text-right font-bold pr-4">P3 (低)</span><div id="p3-timeline" class="h-full flex-1 bg-gray-200 rounded relative"></div></div>
+                            <div class="h-10 flex items-center"><span class="w-24 text-right font-bold pr-4">Mutex R</span><div id="r-timeline" class="h-full flex-1 bg-gray-200 rounded relative"></div></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+<script>
+const tasks = {
+    A: { name: 'A', period: 20, exec: 10, color: 'bg-green-500' },
+    B: { name: 'B', period: 50, exec: 25, color: 'bg-blue-500' }
+};
+
+let animationTimeout;
+function runSimulation(type) {
+    clearTimeout(animationTimeout);
+    const chart = document.getElementById(`${type.toLowerCase()}-spacetime-chart`);
+    const labels = document.getElementById(`${type.toLowerCase()}-timeline-labels`);
+    const cpu = document.getElementById(`${type.toLowerCase()}-cpu`);
+    const log = document.getElementById(`${type.toLowerCase()}-log`);
+    const button = document.getElementById(`${type.toLowerCase()}-play-button`);
+    
+    button.disabled = true;
+    button.classList.add('opacity-50');
+
+    chart.innerHTML = '';
+    labels.innerHTML = '';
+    log.textContent = '正在计算调度序列...';
+    setCpuStatus(cpu, null);
+
+    // --- Simulation Logic ---
+    let schedule = [];
+    let readyQueue = [];
+    let currentTime = 0;
+    const maxTime = 100;
+    let taskInstances = {};
+
+    for (let t = 0; t <= maxTime; t++) {
+        // Add new task instances
+        Object.values(tasks).forEach(task => {
+            if (t % task.period === 0) {
+                const instanceId = `${task.name}${t / task.period + 1}`;
+                readyQueue.push({ 
+                    id: instanceId,
+                    name: task.name,
+                    deadline: t + task.period,
+                    remaining: task.exec,
+                    color: task.color
+                });
+                taskInstances[instanceId] = { arrival: t, deadline: t + task.period, status: 'ready' };
+            }
+        });
+
+        if (readyQueue.length > 0) {
+            // Decision making
+            let nextTask;
+            if (type === 'EDF') {
+                readyQueue.sort((a, b) => a.deadline - b.deadline);
+            } else { // LLF
+                readyQueue.forEach(task => {
+                    task.laxity = task.deadline - task.remaining - t;
+                });
+                readyQueue.sort((a, b) => a.laxity - b.laxity);
+            }
+            nextTask = readyQueue[0];
+            
+            // Execute task for 1ms
+            nextTask.remaining--;
+            schedule.push({ time: t, task: nextTask.id, color: nextTask.color, name: nextTask.name });
+
+            if (nextTask.remaining === 0) {
+                readyQueue.shift();
+                taskInstances[nextTask.id].status = 'done';
+            }
+        } else {
+            schedule.push({ time: t, task: null });
+        }
+    }
+    
+    // --- Render and Animate ---
+    renderSpacetime(chart, labels, taskInstances, maxTime);
+    animatePlayback(schedule, cpu, log, button, maxTime);
+}
+
+function renderSpacetime(chart, labels, instances, maxTime) {
+    chart.innerHTML = '';
+    labels.innerHTML = `<span>0</span><span>${maxTime / 2}</span><span>${maxTime}</span>`;
+
+    Object.values(tasks).forEach(task => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center h-8';
+        row.innerHTML = `<span class="w-16 font-semibold text-sm text-right pr-2">任务 ${task.name}:</span>
+                         <div id="timeline-${task.name}" class="flex-1 h-full bg-gray-200 rounded relative"></div>`;
+        chart.appendChild(row);
+        
+        const timeline = document.getElementById(`timeline-${task.name}`);
+        for (let t = 0; t <= maxTime; t += task.period) {
+            const deadlineMarker = document.createElement('div');
+            deadlineMarker.className = 'absolute top-0 bottom-0 border-l-2 border-dashed border-red-400';
+            deadlineMarker.style.left = `${((t + task.period) / maxTime) * 100}%`;
+            deadlineMarker.title = `Deadline for ${task.name}${t/task.period + 1} at ${t+task.period}`;
+            timeline.appendChild(deadlineMarker);
+        }
+    });
+}
+
+function animatePlayback(schedule, cpu, log, button, maxTime) {
+    let i = 0;
+    const playbackSpeed = 50;
+    function tick() {
+        if (i > maxTime) {
+            log.textContent = '模拟完成';
+            setCpuStatus(cpu, null);
+            button.disabled = false;
+            button.classList.remove('opacity-50');
+            return;
+        }
+        
+        const event = schedule[i];
+        log.textContent = `时刻 ${event.time}: ${event.task ? 'CPU运行 ' + event.task : 'CPU空闲'}`;
+        setCpuStatus(cpu, event.task ? { textContent: event.name, classList: [null, null, event.color] } : null);
+
+        if (event.task) {
+            const timeline = document.getElementById(`timeline-${event.name}`);
+            const bar = document.createElement('div');
+            bar.className = `timeline-bar absolute h-full ${event.color}`;
+            bar.style.left = `${(event.time / maxTime) * 100}%`;
+            bar.style.width = `${(1 / maxTime) * 100}%`;
+            timeline.appendChild(bar);
+        }
+        
+        i++;
+        animationTimeout = setTimeout(tick, playbackSpeed);
+    }
+    tick();
+}
+
+function setCpuStatus(cpuElement, process) {
+    if (process) {
+        cpuElement.textContent = process.textContent;
+        cpuElement.className = `w-24 h-10 rounded flex items-center justify-center font-bold text-white ${process.classList[2]}`;
+    } else {
+        cpuElement.textContent = '空闲';
+        cpuElement.className = 'w-24 h-10 rounded bg-gray-200 flex items-center justify-center font-bold text-gray-500';
+    }
+}
+
+// --- Priority Inversion Animation ---
+let isPiAnimating = false;
+async function playInversionAnimation(useInheritance) {
+    if (isPiAnimating) return;
+    isPiAnimating = true;
+
+    const p1 = document.getElementById('p1-timeline');
+    const p2 = document.getElementById('p2-timeline');
+    const p3 = document.getElementById('p3-timeline');
+    const r = document.getElementById('r-timeline');
+    const log = document.getElementById('pi-log');
+    [p1, p2, p3, r].forEach(el => el.innerHTML = '');
+
+    const sleep = ms => new Promise(res => setTimeout(res, ms));
+    const setLog = async (text, delay = 1500) => { log.textContent = text; await sleep(delay); };
+
+    const p3Token = createToken('P3', 'bg-red-500');
+    const p1Token = createToken('P1', 'bg-blue-600');
+    const p2Token = createToken('P2', 'bg-green-500');
+    const mutex = createToken('R', 'bg-yellow-500', 'mutex-token');
+
+    await setLog('t=0: 低优先级 P3 运行', 1000);
+    p3.appendChild(p3Token);
+    
+    await setLog('t=1: P3 请求并获得锁 R');
+    p3.appendChild(mutex);
+    p3Token.style.left = '20%';
+    mutex.style.left = '20%';
+
+    await setLog('t=2: 高优先级 P1 到达，抢占 P3');
+    p1.appendChild(p1Token);
+    p3Token.style.left = '25%'; // P3 paused
+    mutex.style.left = '25%';
+    
+    await setLog('t=3: P1 尝试获取锁 R，但被 P3 持有');
+    p1Token.style.left = '20%';
+    
+    const block = createToken('B', 'bg-gray-500');
+    block.textContent = '阻塞';
+    p1.appendChild(block);
+    block.style.left = '20%';
+    await setLog('P1 被阻塞');
+    
+    if (!useInheritance) {
+        // Problem Scenario
+        await setLog('t=4: 中优先级 P2 到达，抢占 P3');
+        p2.appendChild(p2Token);
+        p3Token.style.left = '30%'; // P3 remains paused
+        mutex.style.left = '30%';
+
+        await setLog('P2 正在运行...');
+        p2Token.style.left = '80%';
+        await sleep(2000);
+        
+        await setLog('t=5: P2 完成，P3 恢复运行');
+        p2Token.remove();
+        p3Token.style.left = '80%';
+        mutex.style.left = '80%';
+        
+        await setLog('t=6: P3 释放锁 R');
+        mutex.remove();
+        
+        await setLog('t=7: P1 获得锁 R，解除阻塞');
+        p1.appendChild(mutex);
+        mutex.style.left = '25%';
+        block.remove();
+        p1Token.style.left = '80%';
+        await setLog('P1 终于可以运行了');
+
+    } else {
+        // Solution Scenario
+        await setLog('t=4: P3 继承 P1 的高优先级');
+        p3Token.classList.remove('bg-red-500');
+        p3Token.classList.add('bg-blue-600');
+        
+        await setLog('t=5: 中优先级 P2 到达，但无法抢占');
+        p2.appendChild(p2Token);
+        
+        await setLog('P3 因高优先级继续运行...');
+        p3Token.style.left = '80%';
+        mutex.style.left = '80%';
+        await sleep(2000);
+
+        await setLog('t=6: P3 释放锁 R，恢复原优先级');
+        mutex.remove();
+        p3Token.classList.remove('bg-blue-600');
+        p3Token.classList.add('bg-red-500');
+
+        await setLog('t=7: P1 获得锁 R，解除阻塞并抢占');
+        block.remove();
+        p1.appendChild(mutex);
+        mutex.style.left = '25%';
+        p1Token.style.left = '80%';
+        await setLog('P1 立即开始运行');
+    }
+
+    await setLog('模拟结束', 1000);
+    isPiAnimating = false;
+}
+
+function createToken(text, color, extraClass = 'task-token') {
+    const token = document.createElement('div');
+    token.className = `w-12 h-8 ${color} rounded flex items-center justify-center text-white font-bold text-sm shadow-lg ${extraClass}`;
+    token.textContent = text;
+    return token;
+}
+
+</script>
+</body>
+</html>
+```

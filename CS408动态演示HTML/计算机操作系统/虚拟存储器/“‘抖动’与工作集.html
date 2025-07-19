@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式学习笔记：“抖动”与工作集</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Calm Harmony (Beige, Slate Gray, Muted Teal) -->
+    <!-- Application Structure Plan: A single-page, vertical-scrolling application divided into four logical sections: 1. Introduction to Thrashing with an interactive CPU utilization chart. 2. Deep dive into the Working Set model with a step-by-step interactive calculator. 3. Visualizing the relationship between Frames and Page Fault Rate. 4. An organized overview of prevention methods using a tabbed interface. This structure follows a problem-analysis-solution flow, which is more intuitive for learning than a linear text dump, transforming passive reading into active exploration. -->
+    <!-- Visualization & Content Choices: 1. CPU Util vs. Multiprogramming (Fig 5.9) -> Goal: Explain thrashing visually -> Viz: Interactive Line Chart (Chart.js) -> Interaction: Slider controls multiprogramming degree, updates chart and descriptive text -> Justification: Shows the direct impact of overloading the system. 2. Working Set Calculation (Fig 5.11) -> Goal: Teach the calculation method -> Viz: HTML/CSS step-by-step display -> Interaction: User controls inputs (string, Δ) and steps through the calculation -> Justification: Actively engages the user in the core concept. 3. Fault Rate vs. Frames (Fig 5.10) -> Goal: Show the benefit of the working set model -> Viz: Interactive Line Chart (Chart.js) -> Interaction: Slider controls frame allocation -> Justification: Reinforces why keeping the working set in memory is crucial. 4. Prevention Methods -> Goal: Organize strategies -> Viz: Tabbed HTML/CSS layout with icons -> Interaction: Click to reveal -> Justification: Cleanly presents distinct solutions without clutter. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <script>
+      MathJax = {
+        tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']]
+        }
+      };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <style>
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #fdfbf6;
+            color: #374151;
+        }
+        .section-card {
+            background-color: #ffffff;
+            border-radius: 1rem;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            border: 1px solid #f3f4f6;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+            max-height: 40vh;
+            width: 100%;
+            max-width: 700px;
+            margin: 1rem auto;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 400px;
+            }
+        }
+        .slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 8px;
+            border-radius: 5px;
+            background: #e5e7eb;
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+        }
+        .slider:hover {
+            opacity: 1;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #0d9488;
+            cursor: pointer;
+        }
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #0d9488;
+            cursor: pointer;
+        }
+        .tab-button {
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+        }
+        .tab-button.active {
+            color: #0d9488;
+            border-bottom-color: #0d9488;
+        }
+        .page-ref {
+            display: inline-block;
+            width: 2.5rem;
+            height: 2.5rem;
+            line-height: 2.5rem;
+            text-align: center;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            margin: 0.25rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        .page-ref.current {
+            background-color: #0d9488;
+            color: white;
+            border-color: #0d9488;
+            transform: scale(1.1);
+        }
+        .page-ref.in-window {
+            background-color: #ccfbf1;
+            border-color: #14b8a6;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto px-4 py-8 md:py-12">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-800">第 5.4 讲 “‘抖动’与工作集”</h1>
+            <p class="mt-4 text-lg text-gray-600">一份交互式学习笔记</p>
+        </header>
+
+        <main>
+            <!-- Section 1: Thrashing -->
+            <section id="thrashing" class="section-card">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">1. 多道程序度与“抖动”</h2>
+                <p class="text-gray-600 mb-6">
+                    在虚拟存储器系统中，提高多道程序度（即同时运行的进程数）可以提升系统效率，但这并非没有上限。当进程数过多，分配给每个进程的物理内存过少时，系统会花费大量时间在页面换入换出上，导致CPU利用率急剧下降，这种现象称为“抖动”(Thrashing)。下面的图表和滑块将直观地展示这一过程。
+                </p>
+                <div class="chart-container">
+                    <canvas id="thrashingChart"></canvas>
+                </div>
+                <div class="mt-6 max-w-2xl mx-auto">
+                    <label for="multiprogrammingSlider" class="block text-center font-medium text-gray-700">拖动滑块以调整多道程序度: <span id="sliderValue" class="font-bold text-teal-600">10</span></label>
+                    <input id="multiprogrammingSlider" type="range" min="1" max="100" value="10" class="slider mt-2">
+                    <div id="thrashingStatus" class="mt-4 text-center p-4 rounded-lg bg-gray-100 text-gray-700 transition-all duration-300">
+                        调整滑块，观察CPU利用率和系统状态的变化。
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 2: Working Set -->
+            <section id="working-set" class="section-card">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">2. “工作集”模型与交互式计算</h2>
+                <p class="text-gray-600 mb-6">
+                    为了预防“抖动”，我们需要理解进程的内存使用行为。“工作集”模型基于程序的局部性原理，它指出程序在任何时刻都只会访问一小部分页面。一个进程的工作集是指在最近的时间窗口 $\Delta$ 内，它所访问过的页面的集合。为进程分配足以容纳其工作集的内存，是避免抖动的关键。
+                </p>
+                <div class="bg-gray-50 p-6 rounded-lg">
+                    <div class="grid md:grid-cols-2 gap-6 mb-4">
+                        <div>
+                            <label for="pageRefInput" class="block text-sm font-medium text-gray-700">页面引用序列 (以逗号分隔)</label>
+                            <input type="text" id="pageRefInput" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500" value="24,15,18,23,24,17,18,24,15,17,18,24,17">
+                        </div>
+                        <div>
+                            <label for="windowSizeSlider" class="block text-sm font-medium text-gray-700">窗口大小 $\Delta$: <span id="windowSizeValue" class="font-bold text-teal-600">4</span></label>
+                            <input id="windowSizeSlider" type="range" min="1" max="10" value="4" class="slider mt-2">
+                        </div>
+                    </div>
+                     <div class="flex items-center justify-center space-x-4 mb-6">
+                        <button id="resetWsBtn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">重置</button>
+                        <button id="prevStepBtn" class="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 disabled:bg-gray-300" disabled>上一步</button>
+                        <button id="nextStepBtn" class="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700">下一步</button>
+                    </div>
+                    <div class="mb-4">
+                        <h3 class="font-medium text-gray-800">页面引用序列可视化:</h3>
+                        <div id="pageRefVisual" class="mt-2 p-4 bg-white rounded-lg border flex flex-wrap justify-center"></div>
+                    </div>
+                    <div>
+                        <h3 class="font-medium text-gray-800">当前工作集:</h3>
+                        <div id="workingSetResult" class="mt-2 p-4 bg-white rounded-lg border min-h-[4rem] text-center text-lg font-mono tracking-widest">
+                            点击 "下一步" 开始计算
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+             <!-- Section 3: Page Fault Rate -->
+            <section id="page-fault-rate" class="section-card">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">3. 缺页率与物理块数的关系</h2>
+                <p class="text-gray-600 mb-6">
+                    为进程分配的物理块（内存页帧）数量直接影响其缺页率。当分配的物理块数小于进程的工作集大小时，缺页率会非常高。随着物理块数的增加并超过工作集大小，缺页率会显著下降，但继续增加物理块带来的收益会递减。
+                </p>
+                <div class="chart-container">
+                    <canvas id="pageFaultChart"></canvas>
+                </div>
+                <div class="mt-6 max-w-2xl mx-auto">
+                    <label for="framesSlider" class="block text-center font-medium text-gray-700">分配给进程的物理块数: <span id="framesValue" class="font-bold text-teal-600">10</span></label>
+                    <input id="framesSlider" type="range" min="1" max="50" value="10" class="slider mt-2">
+                </div>
+            </section>
+
+            <!-- Section 4: Prevention Methods -->
+            <section id="prevention" class="section-card">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">4. 如何预防“抖动”？</h2>
+                <p class="text-gray-600 mb-6">
+                    预防抖动的核心思想是有效控制多道程序度，确保活跃进程能获得足够的内存资源。以下是几种常用的策略。
+                </p>
+                <div>
+                    <div class="border-b border-gray-200">
+                        <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                            <button id="tab-local" class="tab-button active whitespace-nowrap py-4 px-1 font-medium text-lg">局部置换策略</button>
+                            <button id="tab-ws" class="tab-button whitespace-nowrap py-4 px-1 font-medium text-lg">工作集调度</button>
+                            <button id="tab-ls" class="tab-button whitespace-nowrap py-4 px-1 font-medium text-lg">L=S 准则</button>
+                            <button id="tab-suspend" class="tab-button whitespace-nowrap py-4 px-1 font-medium text-lg">选择暂停进程</button>
+                        </nav>
+                    </div>
+                    <div id="tab-content" class="mt-6">
+                        <div id="content-local">
+                            <h3 class="text-xl font-semibold mb-2">采取局部置换策略</h3>
+                            <p class="text-gray-600">当一个进程发生缺页时，只能从分配给它自己的内存页面中进行置换，不允许从其他进程的内存空间中获取新的物理块。这种方法能将某个进程的“抖动”限制在其内部，防止它影响其他进程的正常运行。但它的效果有限，因为抖动的进程仍会占用磁盘I/O资源，间接影响整个系统的效率。</p>
+                        </div>
+                        <div id="content-ws" class="hidden">
+                            <h3 class="text-xl font-semibold mb-2">把工作集算法融入处理机调度</h3>
+                            <p class="text-gray-600">在调度程序决定调入一个新进程之前，它会先检查系统是否有足够的空闲物理块来容纳这个新进程的工作集。如果内存不足，调度程序会暂停调入新进程，甚至会换出某些进程，以确保所有正在运行的进程都能获得满足其工作集需求的内存空间，从而从根本上预防抖动。</p>
+                        </div>
+                        <div id="content-ls" class="hidden">
+                           <h3 class="text-xl font-semibold mb-2">利用“L=S”准则调节缺页率</h3>
+                           <p class="text-gray-600">该准则通过监控系统的缺页频率来动态调节多道程序度。其中 L 是“缺页之间的平均时间”，S 是“平均缺页服务时间”。当 $L \approx S$ 时，系统资源利用最均衡。如果 $L < S$，意味着缺页过于频繁，系统应降低多道程序度；如果 $L \gg S$，则表示内存有富余，可以适当增加多道程序度。</p>
+                        </div>
+                        <div id="content-suspend" class="hidden">
+                            <h3 class="text-xl font-semibold mb-2">选择暂停的进程</h3>
+                            <p class="text-gray-600">当系统检测到多道程序度过高，整体性能下降时，必须主动减少运行的进程数量。系统会根据一定的策略（如暂停优先级最低的进程、暂停占用内存最大的进程等）选择一个或多个进程，将其换出到外存，释放其内存资源，以缓解内存压力，让剩下的进程能正常运行。</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="text-center mt-12 text-gray-500">
+            <p>&copy; 2025 交互式操作系统学习笔记</p>
+        </footer>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // Section 1: Thrashing Chart
+            const thrashingSlider = document.getElementById('multiprogrammingSlider');
+            const sliderValue = document.getElementById('sliderValue');
+            const thrashingStatus = document.getElementById('thrashingStatus');
+            const thrashingCtx = document.getElementById('thrashingChart').getContext('2d');
+
+            const thrashingData = {
+                labels: Array.from({ length: 100 }, (_, i) => i + 1),
+                utilization: []
+            };
+            
+            for (let i = 0; i < 100; i++) {
+                let n = i + 1;
+                let util;
+                if (n <= 35) {
+                    util = -0.001 * Math.pow(n - 35, 2) + 95;
+                } else if (n > 35 && n <= 60) {
+                     util = -0.01 * Math.pow(n - 35, 2) + 95;
+                } else {
+                    util = -0.03 * Math.pow(n - 45, 2) + 70;
+                }
+                thrashingData.utilization.push(Math.max(5, Math.min(98, util)));
+            }
+
+            const thrashingChart = new Chart(thrashingCtx, {
+                type: 'line',
+                data: {
+                    labels: thrashingData.labels,
+                    datasets: [{
+                        label: 'CPU 利用率 (%)',
+                        data: thrashingData.utilization,
+                        borderColor: '#0d9488',
+                        backgroundColor: 'rgba(13, 148, 136, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 0,
+                    }, {
+                        label: '当前多道程序度',
+                        data: [],
+                        borderColor: '#ef4444',
+                        backgroundColor: '#ef4444',
+                        pointRadius: 6,
+                        pointHoverRadius: 8,
+                        type: 'bubble'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            title: { display: true, text: 'CPU 利用率' }
+                        },
+                        x: {
+                            title: { display: true, text: '多道程序度 (进程数)' }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+            
+            function updateThrashingChart(value) {
+                const numValue = parseInt(value, 10);
+                sliderValue.textContent = numValue;
+                thrashingChart.data.datasets[1].data = [{x: numValue, y: thrashingData.utilization[numValue - 1], r: 5}];
+                thrashingChart.update();
+                
+                if (numValue <= 30) {
+                    thrashingStatus.textContent = '系统负载健康：CPU利用率随进程数增加而稳步提升。';
+                    thrashingStatus.className = 'mt-4 text-center p-4 rounded-lg bg-green-100 text-green-800 transition-all duration-300';
+                } else if (numValue > 30 && numValue <= 50) {
+                    thrashingStatus.textContent = '系统接近饱和：CPU利用率达到峰值，资源开始紧张。';
+                     thrashingStatus.className = 'mt-4 text-center p-4 rounded-lg bg-yellow-100 text-yellow-800 transition-all duration-300';
+                } else {
+                    thrashingStatus.textContent = '警告：发生“抖动”！过多的进程导致频繁缺页，CPU利用率急剧下降。';
+                    thrashingStatus.className = 'mt-4 text-center p-4 rounded-lg bg-red-100 text-red-800 transition-all duration-300';
+                }
+            }
+            thrashingSlider.addEventListener('input', (e) => updateThrashingChart(e.target.value));
+            updateThrashingChart(thrashingSlider.value);
+
+            // Section 2: Working Set Calculator
+            const pageRefInput = document.getElementById('pageRefInput');
+            const windowSizeSlider = document.getElementById('windowSizeSlider');
+            const windowSizeValue = document.getElementById('windowSizeValue');
+            const pageRefVisual = document.getElementById('pageRefVisual');
+            const workingSetResult = document.getElementById('workingSetResult');
+            const resetWsBtn = document.getElementById('resetWsBtn');
+            const prevStepBtn = document.getElementById('prevStepBtn');
+            const nextStepBtn = document.getElementById('nextStepBtn');
+
+            let pageRefs = [];
+            let currentStep = -1;
+            let windowSize = 4;
+
+            function setupWorkingSet() {
+                pageRefs = pageRefInput.value.split(',').map(s => s.trim()).filter(Boolean);
+                currentStep = -1;
+                windowSize = parseInt(windowSizeSlider.value, 10);
+                pageRefVisual.innerHTML = '';
+                pageRefs.forEach((ref, index) => {
+                    const el = document.createElement('span');
+                    el.className = 'page-ref';
+                    el.textContent = ref;
+                    el.dataset.index = index;
+                    pageRefVisual.appendChild(el);
+                });
+                workingSetResult.textContent = '点击 "下一步" 开始计算';
+                updateWsButtons();
+                clearHighlights();
+            }
+            
+            function clearHighlights() {
+                document.querySelectorAll('.page-ref').forEach(el => {
+                    el.classList.remove('current', 'in-window');
+                });
+            }
+
+            function updateWsStep() {
+                clearHighlights();
+                if (currentStep < 0 || currentStep >= pageRefs.length) {
+                    workingSetResult.textContent = currentStep === -1 ? '点击 "下一步" 开始计算' : '计算完成';
+                    return;
+                }
+
+                const currentRefEl = document.querySelector(`.page-ref[data-index='${currentStep}']`);
+                if(currentRefEl) currentRefEl.classList.add('current');
+
+                const start = Math.max(0, currentStep - windowSize + 1);
+                const windowRefs = pageRefs.slice(start, currentStep + 1);
+
+                for (let i = start; i <= currentStep; i++) {
+                    const el = document.querySelector(`.page-ref[data-index='${i}']`);
+                    if(el) el.classList.add('in-window');
+                }
+                
+                const ws = [...new Set(windowRefs)];
+                ws.sort((a,b) => a - b);
+                workingSetResult.textContent = `{ ${ws.join(', ')} } (大小: ${ws.length})`;
+            }
+
+            function updateWsButtons() {
+                prevStepBtn.disabled = currentStep <= 0;
+                nextStepBtn.disabled = currentStep >= pageRefs.length - 1;
+            }
+
+            nextStepBtn.addEventListener('click', () => {
+                if (currentStep < pageRefs.length - 1) {
+                    currentStep++;
+                    updateWsStep();
+                    updateWsButtons();
+                }
+            });
+
+            prevStepBtn.addEventListener('click', () => {
+                if (currentStep > 0) {
+                    currentStep--;
+                    updateWsStep();
+                    updateWsButtons();
+                }
+            });
+
+            resetWsBtn.addEventListener('click', setupWorkingSet);
+            windowSizeSlider.addEventListener('input', (e) => {
+                windowSizeValue.textContent = e.target.value;
+                windowSize = parseInt(e.target.value, 10);
+                if (currentStep > -1) updateWsStep();
+            });
+            pageRefInput.addEventListener('change', setupWorkingSet);
+            setupWorkingSet();
+
+            // Section 3: Page Fault Rate Chart
+            const framesSlider = document.getElementById('framesSlider');
+            const framesValue = document.getElementById('framesValue');
+            const pageFaultCtx = document.getElementById('pageFaultChart').getContext('2d');
+            const pageFaultData = {
+                labels: Array.from({ length: 50 }, (_, i) => i + 1),
+                faultRate: Array.from({ length: 50 }, (_, i) => 100 * Math.exp(-0.2 * i) * (Math.random()*0.2 + 0.9))
+            };
+            const pageFaultChart = new Chart(pageFaultCtx, {
+                type: 'line',
+                data: {
+                    labels: pageFaultData.labels,
+                    datasets: [{
+                        label: '缺页率 (%)',
+                        data: pageFaultData.faultRate,
+                        borderColor: '#0d9488',
+                        backgroundColor: 'rgba(13, 148, 136, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 0
+                    }, {
+                        label: '当前物理块数',
+                        data: [],
+                        borderColor: '#ef4444',
+                        backgroundColor: '#ef4444',
+                        pointRadius: 6,
+                        pointHoverRadius: 8,
+                        type: 'bubble'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            title: { display: true, text: '缺页率' }
+                        },
+                        x: {
+                            title: { display: true, text: '物理块数' }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+            function updatePageFaultChart(value) {
+                const numValue = parseInt(value, 10);
+                framesValue.textContent = numValue;
+                pageFaultChart.data.datasets[1].data = [{x: numValue, y: pageFaultData.faultRate[numValue - 1], r: 5}];
+                pageFaultChart.update();
+            }
+            framesSlider.addEventListener('input', (e) => updatePageFaultChart(e.target.value));
+            updatePageFaultChart(framesSlider.value);
+            
+            // Section 4: Prevention Tabs
+            const tabs = document.querySelectorAll('.tab-button');
+            const contents = document.querySelectorAll('#tab-content > div');
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    tabs.forEach(item => item.classList.remove('active'));
+                    tab.classList.add('active');
+                    const targetId = `content-${tab.id.split('-')[1]}`;
+                    contents.forEach(content => {
+                        if (content.id === targetId) {
+                            content.classList.remove('hidden');
+                        } else {
+                            content.classList.add('hidden');
+                        }
+                    });
+                });
+            });
+        });
+    </script>
+
+</body>
+</html>

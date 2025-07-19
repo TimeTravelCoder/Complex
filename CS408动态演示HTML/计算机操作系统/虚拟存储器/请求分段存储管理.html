@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式学习笔记：请求分段存储管理</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Calm Harmony (Beige, Slate Gray, Muted Teal) -->
+    <!-- Application Structure Plan: A task-oriented, interactive learning tool. It's structured as a series of simulators rather than a linear document. 1. An Address Translation Simulator to actively demonstrate the core mechanism. 2. A Segment Sharing Simulator to explain the lifecycle and reference counting of shared resources. 3. A Ring Protection Explorer to let users test and understand the hierarchical security model. This structure prioritizes hands-on learning and conceptual understanding over passive reading, making a complex topic more digestible. -->
+    <!-- Visualization & Content Choices: 1. Address Translation (Fig 5.13): Goal: Teach the step-by-step logic. Viz: HTML/CSS-based interactive flowchart combined with a visual representation of CPU, Memory, and Disk. Interaction: User inputs logical address, clicks to animate the flow from CPU to Segment Table to Memory/Disk, with visual feedback for each check. Justification: Turns a complex algorithm into a clear, holistic visualization of the hardware-software interaction. 2. Segment Sharing (Fig 5.14): Goal: Explain reference counting and access control. Viz: HTML/CSS representation of a shared segment table and memory block. Interaction: Buttons for processes to request/release a segment, dynamically updating a visual 'count' variable and the shared segment table with process-specific permissions. Justification: Makes the abstract concept of resource lifecycle and permission management concrete. 3. Ring Protection (Fig 5.15): Goal: Demonstrate hierarchical protection rules. Viz: Concentric circles via HTML/CSS. Interaction: Dropdowns to select caller/target rings and action, with instant feedback on whether it's allowed or denied. Justification: Gamifies the learning of access rules. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #fdfbf6;
+            color: #374151;
+        }
+        .section-card {
+            background-color: #ffffff;
+            border-radius: 1rem;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            border: 1px solid #f3f4f6;
+            overflow: hidden;
+        }
+        .flow-step {
+            transition: all 0.5s ease-in-out;
+            border-left-width: 4px;
+        }
+        .flow-step-active {
+            background-color: #f0fdfa;
+            border-color: #14b8a6;
+            transform: scale(1.02);
+        }
+        .flow-step-success {
+            border-color: #22c55e;
+        }
+        .flow-step-fail {
+            background-color: #fef2f2;
+            border-color: #ef4444;
+        }
+        .ring {
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border-style: solid;
+            transition: all 0.3s ease;
+        }
+        .ring-0 { width: 100px; height: 100px; border-width: 50px; border-color: #7f1d1d; z-index: 4; }
+        .ring-1 { width: 200px; height: 200px; border-width: 50px; border-color: #be123c; z-index: 3; }
+        .ring-2 { width: 300px; height: 300px; border-width: 50px; border-color: #fb923c; z-index: 2; }
+        .ring-3 { width: 400px; height: 400px; border-width: 50px; border-color: #fde68a; z-index: 1; }
+        .ring.highlight { box-shadow: 0 0 25px 5px #0d9488; }
+
+        .hardware-box {
+            border: 2px solid #e5e7eb;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            position: relative;
+        }
+        .hardware-label {
+            position: absolute;
+            top: -0.75rem;
+            left: 0.5rem;
+            background-color: #ffffff;
+            padding: 0 0.5rem;
+            font-weight: 600;
+            color: #4b5563;
+        }
+        .memory-segment {
+            background-color: #d1fae5;
+            border: 2px solid #10b981;
+            color: #065f46;
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            margin-bottom: 0.5rem;
+            text-align: center;
+            font-weight: 500;
+            transition: all 0.5s ease;
+        }
+        .memory-segment.not-present {
+            background-color: #fee2e2;
+            border-color: #ef4444;
+            color: #991b1b;
+        }
+        .memory-segment.highlight, .segment-table-row.highlight {
+            background-color: #a7f3d0;
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.5);
+            transform: scale(1.05);
+        }
+        .segment-table-row {
+            transition: all 0.3s ease;
+        }
+        .arrow {
+            position: absolute;
+            width: 0;
+            height: 0;
+            border-style: solid;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            z-index: 10;
+        }
+        .share-table-row-add {
+            animation: fadeIn 0.5s ease-out;
+        }
+        .share-table-row-remove {
+            animation: fadeOut 0.5s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; transform: translateY(0); }
+            to { opacity: 0; transform: translateY(10px); }
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto px-4 py-8 md:py-12">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-800">第 5.5 讲 “请求分段存储管理”</h1>
+            <p class="mt-4 text-lg text-gray-600">一份交互式学习笔记</p>
+        </header>
+
+        <main>
+            <!-- Section 1: Address Translation -->
+            <section id="address-translation" class="section-card">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">1. 交互式地址变换模拟</h2>
+                <p class="text-gray-600 mb-6">
+                    请求分段的地址变换是一个多步骤的过程。本模拟器通过图形化展示CPU、段表、内存和外存的交互，带您亲身体验从逻辑地址到物理地址的完整变换流程，特别是缺段中断的处理。
+                </p>
+                
+                <!-- Hardware Visualization -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div id="cpu-box" class="hardware-box flex flex-col items-center justify-center min-h-[150px]">
+                        <span class="hardware-label">CPU</span>
+                        <div class="text-center">
+                            <p class="text-sm text-gray-500">逻辑地址</p>
+                            <p id="logical-address-display" class="text-xl font-bold font-mono text-teal-600">-</p>
+                        </div>
+                    </div>
+                    <div id="memory-box" class="hardware-box col-span-2">
+                        <span class="hardware-label">内存 (主存)</span>
+                        <div id="memory-content" class="grid grid-cols-2 md:grid-cols-4 gap-4 p-2 min-h-[120px]"></div>
+                    </div>
+                    <div id="segtable-box" class="hardware-box">
+                         <span class="hardware-label">段表</span>
+                         <table class="w-full text-sm text-left text-gray-500">
+                            <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                <tr><th class="px-2 py-2">段号</th><th class="px-2 py-2">段长</th><th class="px-2 py-2">权限</th><th class="px-2 py-2">存在位</th></tr>
+                            </thead>
+                            <tbody id="segment-table-body">
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="disk-box" class="hardware-box col-span-2">
+                        <span class="hardware-label">外存 (磁盘)</span>
+                        <div id="disk-content" class="grid grid-cols-2 md:grid-cols-4 gap-4 p-2 min-h-[120px]"></div>
+                    </div>
+                </div>
+
+                <div class="lg:flex lg:gap-8">
+                    <!-- Controls -->
+                    <div class="lg:w-1/3 mb-8 lg:mb-0">
+                        <h3 class="text-xl font-semibold mb-4">模拟设置</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label for="segmentNumber" class="block text-sm font-medium text-gray-700">逻辑地址: 段号</label>
+                                <input type="number" id="segmentNumber" value="2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500">
+                            </div>
+                            <div>
+                                <label for="segmentOffset" class="block text-sm font-medium text-gray-700">逻辑地址: 段内地址</label>
+                                <input type="number" id="segmentOffset" value="500" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500">
+                            </div>
+                            <div>
+                                <label for="accessType" class="block text-sm font-medium text-gray-700">访问类型</label>
+                                <select id="accessType" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500">
+                                    <option value="read">读 (Read)</option>
+                                    <option value="write">写 (Write)</option>
+                                    <option value="execute">执行 (Execute)</option>
+                                </select>
+                            </div>
+                            <div class="flex space-x-2">
+                                <button id="startTranslation" class="w-full px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700">开始变换</button>
+                                <button id="resetTranslation" class="w-full px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">重置</button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Flowchart -->
+                    <div class="lg:w-2/3">
+                         <h3 class="text-xl font-semibold mb-4">变换流程</h3>
+                        <div class="space-y-3">
+                            <div id="step1" class="p-4 rounded-lg bg-gray-50 border-l-4 border-gray-300 flow-step">
+                                <h4 class="font-bold">1. 检查段号 S</h4>
+                                <p class="text-sm text-gray-600">S < 段表长度 ?</p>
+                                <div id="step1_result" class="text-sm font-semibold mt-1"></div>
+                            </div>
+                            <div id="step2" class="p-4 rounded-lg bg-gray-50 border-l-4 border-gray-300 flow-step">
+                                <h4 class="font-bold">2. 检查段内地址 W</h4>
+                                <p class="text-sm text-gray-600">W < 段长 ?</p>
+                                <div id="step2_result" class="text-sm font-semibold mt-1"></div>
+                            </div>
+                            <div id="step3" class="p-4 rounded-lg bg-gray-50 border-l-4 border-gray-300 flow-step">
+                                <h4 class="font-bold">3. 检查存取权限</h4>
+                                <p class="text-sm text-gray-600">访问类型是否被允许?</p>
+                                <div id="step3_result" class="text-sm font-semibold mt-1"></div>
+                            </div>
+                            <div id="step4" class="p-4 rounded-lg bg-gray-50 border-l-4 border-gray-300 flow-step">
+                                <h4 class="font-bold">4. 检查存在位 P</h4>
+                                <p class="text-sm text-gray-600">P = 1 ?</p>
+                                <div id="step4_result" class="text-sm font-semibold mt-1"></div>
+                            </div>
+                            <div id="final_step" class="p-4 rounded-lg bg-gray-50 border-l-4 border-gray-300 flow-step">
+                                <h4 class="font-bold">5. 形成物理地址</h4>
+                                <p class="text-sm text-gray-600">物理地址 = 段基址 + W</p>
+                                <div id="final_result" class="text-sm font-semibold mt-1">等待变换...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Section 2: Segment Sharing -->
+            <section id="segment-sharing" class="section-card">
+                 <h2 class="text-3xl font-bold text-gray-800 mb-4">2. 分段共享与回收模拟</h2>
+                 <p class="text-gray-600 mb-6">分段管理的一个核心优势是易于实现数据和代码的共享。系统通过一个“共享段表”和“共享计数器”来追踪有多少个进程正在使用同一个共享段。只有当计数器归零时，该段占用的内存才会被真正回收。点击下方按钮，观察共享段的分配与回收过程。</p>
+                 <div class="lg:grid lg:grid-cols-2 lg:gap-8 items-start">
+                     <div>
+                         <h3 class="text-xl font-semibold mb-4">操作面板</h3>
+                         <div class="space-y-4">
+                            <div class="p-4 border rounded-lg">
+                                <h4 class="font-bold text-blue-800">进程 A (权限: 读/写)</h4>
+                                <div class="flex space-x-2 mt-2">
+                                    <button id="pA_req" class="w-full px-4 py-2 bg-blue-100 text-blue-800 rounded-md hover:bg-blue-200">请求共享段</button>
+                                    <button id="pA_rel" class="w-full px-4 py-2 bg-blue-100 text-blue-800 rounded-md hover:bg-blue-200 disabled:opacity-50" disabled>释放共享段</button>
+                                </div>
+                            </div>
+                            <div class="p-4 border rounded-lg">
+                                <h4 class="font-bold text-green-800">进程 B (权限: 只读)</h4>
+                                <div class="flex space-x-2 mt-2">
+                                    <button id="pB_req" class="w-full px-4 py-2 bg-green-100 text-green-800 rounded-md hover:bg-green-200">请求共享段</button>
+                                    <button id="pB_rel" class="w-full px-4 py-2 bg-green-100 text-green-800 rounded-md hover:bg-green-200 disabled:opacity-50" disabled>释放共享段</button>
+                                </div>
+                            </div>
+                             <div class="p-4 border rounded-lg">
+                                <h4 class="font-bold text-purple-800">进程 C (权限: 只读)</h4>
+                                <div class="flex space-x-2 mt-2">
+                                    <button id="pC_req" class="w-full px-4 py-2 bg-purple-100 text-purple-800 rounded-md hover:bg-purple-200">请求共享段</button>
+                                    <button id="pC_rel" class="w-full px-4 py-2 bg-purple-100 text-purple-800 rounded-md hover:bg-purple-200 disabled:opacity-50" disabled>释放共享段</button>
+                                </div>
+                            </div>
+                         </div>
+                         <button id="reset_share" class="mt-6 w-full px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">重置模拟</button>
+                     </div>
+                     <div class="mt-8 lg:mt-0">
+                        <h3 class="text-xl font-semibold mb-4">共享段状态</h3>
+                        <div class="p-6 bg-gray-50 rounded-lg text-center mb-4">
+                            <div id="segment_memory" class="w-full h-24 bg-gray-200 rounded-lg flex items-center justify-center text-gray-500 font-bold text-lg transition-colors duration-500">
+                                内存空闲
+                            </div>
+                            <div class="mt-4">
+                                <span class="font-bold">共享进程计数 (count):</span>
+                                <span id="share_count" class="text-3xl font-bold text-teal-600 ml-2">0</span>
+                            </div>
+                        </div>
+                        <div class="hardware-box">
+                            <span class="hardware-label">共享段表</span>
+                            <table class="w-full text-sm text-left text-gray-500">
+                                <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                    <tr>
+                                        <th scope="col" class="px-4 py-2">进程名</th>
+                                        <th scope="col" class="px-4 py-2">存取权限</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="share-table-body">
+                                    <tr id="share-table-placeholder"><td colspan="2" class="text-center py-4 text-gray-400">暂无进程共享</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                     </div>
+                 </div>
+            </section>
+
+            <!-- Section 3: Ring Protection -->
+            <section id="ring-protection" class="section-card">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">3. 环保护机制浏览器</h2>
+                <p class="text-gray-600 mb-6">环保护机制是一种更完善的安全模型，它将程序和数据划分到不同的特权级别环中。低编号的环拥有高特权。访问规则如下：1) 程序可以访问相同或较低特权（外环）的数据；2) 程序可以调用相同或较高特权（内环）的服务。请使用下面的选项来测试这些规则。</p>
+                 <div class="lg:flex lg:gap-8 items-center">
+                    <div class="lg:w-1/2 relative h-64 lg:h-96 flex items-center justify-center mb-8 lg:mb-0">
+                        <div class="relative w-[300px] h-[300px] md:w-[400px] md:h-[400px]">
+                            <div id="ring_3" class="ring ring-3"><span class="transform -rotate-45 text-white font-bold">Ring 3</span></div>
+                            <div id="ring_2" class="ring ring-2"><span class="transform -rotate-45 text-white font-bold">Ring 2</span></div>
+                            <div id="ring_1" class="ring ring-1"><span class="transform -rotate-45 text-white font-bold">Ring 1</span></div>
+                            <div id="ring_0" class="ring ring-0"><span class="text-white font-bold">Ring 0</span></div>
+                        </div>
+                    </div>
+                    <div class="lg:w-1/2">
+                         <h3 class="text-xl font-semibold mb-4">规则测试</h3>
+                         <div class="space-y-4 p-6 bg-gray-50 rounded-lg">
+                             <div>
+                                 <label for="callerRing" class="block text-sm font-medium text-gray-700">调用者所在环</label>
+                                 <select id="callerRing" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500">
+                                     <option value="3">Ring 3 (应用)</option>
+                                     <option value="2">Ring 2 (驱动)</option>
+                                     <option value="1">Ring 1 (服务)</option>
+                                     <option value="0">Ring 0 (核心)</option>
+                                 </select>
+                             </div>
+                             <div>
+                                 <label for="targetRing" class="block text-sm font-medium text-gray-700">目标所在环</label>
+                                 <select id="targetRing" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500">
+                                     <option value="3">Ring 3 (数据)</option>
+                                     <option value="2">Ring 2 (数据)</option>
+                                     <option value="1">Ring 1 (数据)</option>
+                                     <option value="0">Ring 0 (数据)</option>
+                                 </select>
+                             </div>
+                              <div>
+                                 <label for="operationType" class="block text-sm font-medium text-gray-700">操作类型</label>
+                                 <select id="operationType" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500">
+                                     <option value="data">访问数据</option>
+                                     <option value="call">调用服务</option>
+                                 </select>
+                             </div>
+                         </div>
+                         <div id="ring_result" class="mt-6 p-4 rounded-lg text-center font-bold text-lg transition-all duration-300">
+                             请选择并查看结果
+                         </div>
+                    </div>
+                 </div>
+            </section>
+
+        </main>
+        <footer class="text-center mt-12 text-gray-500">
+            <p>&copy; 2025 交互式操作系统学习笔记</p>
+        </footer>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+
+        // --- Section 1: Address Translation ---
+        let segmentTable = [
+            { length: 1024, access: ['read', 'execute'], present: true, base: 14000 },
+            { length: 400,  access: ['read'], present: true, base: 25000 },
+            { length: 800,  access: ['read', 'write'], present: false, base: 0 },
+            { length: 2000, access: ['read', 'write'], present: true, base: 8000 }
+        ];
+
+        const segNumInput = document.getElementById('segmentNumber');
+        const segOffInput = document.getElementById('segmentOffset');
+        const accTypeSelect = document.getElementById('accessType');
+        const startBtn = document.getElementById('startTranslation');
+        const resetBtn = document.getElementById('resetTranslation');
+        
+        const logicalAddressDisplay = document.getElementById('logical-address-display');
+        const memoryContent = document.getElementById('memory-content');
+        const diskContent = document.getElementById('disk-content');
+        const segmentTableBody = document.getElementById('segment-table-body');
+        
+        const steps = [1,2,3,4].map(i => document.getElementById(`step${i}`));
+        const results = [1,2,3,4].map(i => document.getElementById(`step${i}_result`));
+        const finalResult = document.getElementById('final_result');
+        const finalStepEl = document.getElementById('final_step');
+
+        function createSegmentElement(s, index) {
+            const el = document.createElement('div');
+            el.id = `segment-${index}`;
+            el.className = `memory-segment ${s.present ? '' : 'not-present'}`;
+            el.innerHTML = `<span>段 ${index}</span><br><span class="text-xs">长: ${s.length}</span>`;
+            return el;
+        }
+
+        function renderHardwareState() {
+            memoryContent.innerHTML = '';
+            diskContent.innerHTML = '';
+            segmentTableBody.innerHTML = '';
+            segmentTable.forEach((s, i) => {
+                const segEl = createSegmentElement(s, i);
+                if (s.present) {
+                    memoryContent.appendChild(segEl);
+                } else {
+                    diskContent.appendChild(segEl);
+                }
+                const row = document.createElement('tr');
+                row.id = `seg-row-${i}`;
+                row.className = 'bg-white border-b segment-table-row';
+                row.innerHTML = `<td class="px-2 py-2">${i}</td><td class="px-2 py-2">${s.length}</td><td class="px-2 py-2">${s.access.join('/')}</td><td class="px-2 py-2 presence-bit">${s.present ? 1 : 0}</td>`;
+                segmentTableBody.appendChild(row);
+            });
+        }
+
+        function resetTranslationSim() {
+            startBtn.disabled = false;
+            document.querySelectorAll('.highlight').forEach(el => el.classList.remove('highlight'));
+            steps.forEach(step => step.className = 'p-4 rounded-lg bg-gray-50 border-l-4 border-gray-300 flow-step');
+            results.forEach(res => res.textContent = '');
+            finalResult.textContent = '等待变换...';
+            finalStepEl.className = 'p-4 rounded-lg bg-gray-50 border-l-4 border-gray-300 flow-step';
+            logicalAddressDisplay.textContent = '-';
+            segmentTable = [
+                { length: 1024, access: ['read', 'execute'], present: true, base: 14000 },
+                { length: 400,  access: ['read'], present: true, base: 25000 },
+                { length: 800,  access: ['read', 'write'], present: false, base: 0 },
+                { length: 2000, access: ['read', 'write'], present: true, base: 8000 }
+            ];
+            renderHardwareState();
+        }
+
+        async function runTranslationSim() {
+            resetTranslationSim();
+            startBtn.disabled = true;
+            const s = parseInt(segNumInput.value);
+            const w = parseInt(segOffInput.value);
+            const access = accTypeSelect.value;
+            
+            logicalAddressDisplay.textContent = `S=${s}, W=${w}`;
+            const delay = (ms) => new Promise(res => setTimeout(res, ms));
+
+            const segRow = document.getElementById(`seg-row-${s}`);
+            if(segRow) segRow.classList.add('highlight');
+
+            await delay(200);
+            steps[0].classList.add('flow-step-active');
+            await delay(800);
+            if (s >= 0 && s < segmentTable.length) {
+                results[0].innerHTML = `通过: 段号 ${s} < 段表长度 ${segmentTable.length}。`;
+                steps[0].classList.add('flow-step-success');
+            } else {
+                results[0].innerHTML = `<strong>中断: 段号 ${s} 越界！</strong>`;
+                steps[0].classList.add('flow-step-fail');
+                finalResult.textContent = '地址变换失败: 段号越界中断';
+                finalStepEl.classList.add('flow-step-fail');
+                startBtn.disabled = false;
+                return;
+            }
+            
+            const segment = segmentTable[s];
+
+            await delay(800);
+            steps[1].classList.add('flow-step-active');
+            await delay(800);
+            if (w >= 0 && w < segment.length) {
+                results[1].innerHTML = `通过: 段内地址 ${w} < 段长 ${segment.length}。`;
+                steps[1].classList.add('flow-step-success');
+            } else {
+                results[1].innerHTML = `<strong>中断: 段内地址 ${w} 越界 (段长为 ${segment.length})！</strong>`;
+                steps[1].classList.add('flow-step-fail');
+                finalResult.textContent = '地址变换失败: 段内地址越界中断';
+                finalStepEl.classList.add('flow-step-fail');
+                startBtn.disabled = false;
+                return;
+            }
+
+            await delay(800);
+            steps[2].classList.add('flow-step-active');
+            await delay(800);
+            if (segment.access.includes(access)) {
+                results[2].innerHTML = `通过: '${access}' 访问被允许。`;
+                steps[2].classList.add('flow-step-success');
+            } else {
+                results[2].innerHTML = `<strong>中断: '${access}' 访问被拒绝 (权限: ${segment.access.join('/')})！</strong>`;
+                steps[2].classList.add('flow-step-fail');
+                finalResult.textContent = '地址变换失败: 保护性中断';
+                finalStepEl.classList.add('flow-step-fail');
+                startBtn.disabled = false;
+                return;
+            }
+            
+            await delay(800);
+            steps[3].classList.add('flow-step-active');
+            await delay(800);
+            if (segment.present) {
+                results[3].innerHTML = '通过: 段在内存中 (P=1)。';
+                steps[3].classList.add('flow-step-success');
+                document.getElementById(`segment-${s}`).classList.add('highlight');
+            } else {
+                results[3].innerHTML = '<strong>中断: 段不在内存中 (P=0)，发生缺段中断！</strong>';
+                steps[3].classList.add('flow-step-fail');
+                await delay(1000);
+                results[3].innerHTML += '<br>正在从外存调入段...';
+                
+                const diskSegEl = document.getElementById(`segment-${s}`);
+                diskSegEl.style.transition = 'all 1s ease';
+                diskSegEl.style.transform = 'translateY(-100px) scale(0.8)';
+                diskSegEl.style.opacity = '0';
+
+                await delay(1000);
+                segmentTable[s].present = true;
+                segmentTable[s].base = 30000;
+                renderHardwareState();
+                document.getElementById(`segment-${s}`).classList.add('highlight');
+                document.getElementById(`seg-row-${s}`).classList.add('highlight');
+                document.querySelector(`#seg-row-${s} .presence-bit`).textContent = '1';
+                
+                results[3].innerHTML = '<strong>中断: 段不在内存中 (P=0)，发生缺段中断！</strong><br>已从外存调入段，存在位置为1。';
+                steps[3].classList.remove('flow-step-fail');
+                steps[3].classList.add('flow-step-success');
+            }
+
+            await delay(800);
+            finalStepEl.classList.add('flow-step-active', 'flow-step-success');
+            const physicalAddress = segmentTable[s].base + w;
+            finalResult.textContent = `成功: 物理地址 = ${segmentTable[s].base} + ${w} = ${physicalAddress}`;
+            startBtn.disabled = false;
+        }
+        
+        startBtn.addEventListener('click', runTranslationSim);
+        resetBtn.addEventListener('click', resetTranslationSim);
+        renderHardwareState();
+
+        // --- Section 2: Segment Sharing ---
+        const processes = {
+            A: { name: '进程 A', rights: '读/写', reqBtn: document.getElementById('pA_req'), relBtn: document.getElementById('pA_rel') },
+            B: { name: '进程 B', rights: '只读', reqBtn: document.getElementById('pB_req'), relBtn: document.getElementById('pB_rel') },
+            C: { name: '进程 C', rights: '只读', reqBtn: document.getElementById('pC_req'), relBtn: document.getElementById('pC_rel') }
+        };
+        let shareState = { count: 0, processes: new Map() };
+        const reset_share = document.getElementById('reset_share');
+        const segMemEl = document.getElementById('segment_memory');
+        const countEl = document.getElementById('share_count');
+        const shareTableBody = document.getElementById('share-table-body');
+        const shareTablePlaceholder = document.getElementById('share-table-placeholder');
+
+        function updateShareUI() {
+            countEl.textContent = shareState.count;
+
+            Object.keys(processes).forEach(key => {
+                processes[key].reqBtn.disabled = shareState.processes.has(key);
+                processes[key].relBtn.disabled = !shareState.processes.has(key);
+            });
+
+            if (shareState.count > 0) {
+                segMemEl.classList.remove('bg-gray-200');
+                segMemEl.classList.add('bg-teal-500');
+                segMemEl.textContent = '共享段已分配';
+                shareTablePlaceholder.classList.add('hidden');
+            } else {
+                segMemEl.classList.remove('bg-teal-500');
+                segMemEl.classList.add('bg-gray-200');
+                segMemEl.textContent = '内存空闲';
+                shareTablePlaceholder.classList.remove('hidden');
+            }
+        }
+
+        function handleRequest(procKey) {
+            if (!shareState.processes.has(procKey)) {
+                shareState.count++;
+                const procInfo = processes[procKey];
+                shareState.processes.set(procKey, procInfo);
+                
+                const newRow = document.createElement('tr');
+                newRow.id = `share-row-${procKey}`;
+                newRow.className = 'bg-white border-b share-table-row-add';
+                newRow.innerHTML = `<td class="px-4 py-2 font-medium">${procInfo.name}</td><td class="px-4 py-2">${procInfo.rights}</td>`;
+                shareTableBody.appendChild(newRow);
+
+                updateShareUI();
+            }
+        }
+
+        function handleRelease(procKey) {
+            if (shareState.processes.has(procKey)) {
+                shareState.count--;
+                shareState.processes.delete(procKey);
+                
+                const rowToRemove = document.getElementById(`share-row-${procKey}`);
+                if (rowToRemove) {
+                    rowToRemove.classList.add('share-table-row-remove');
+                    setTimeout(() => rowToRemove.remove(), 500);
+                }
+
+                updateShareUI();
+            }
+        }
+        
+        processes.A.reqBtn.addEventListener('click', () => handleRequest('A'));
+        processes.A.relBtn.addEventListener('click', () => handleRelease('A'));
+        processes.B.reqBtn.addEventListener('click', () => handleRequest('B'));
+        processes.B.relBtn.addEventListener('click', () => handleRelease('B'));
+        processes.C.reqBtn.addEventListener('click', () => handleRequest('C'));
+        processes.C.relBtn.addEventListener('click', () => handleRelease('C'));
+
+        reset_share.addEventListener('click', () => {
+            shareState = { count: 0, processes: new Map() };
+            shareTableBody.innerHTML = '';
+            shareTableBody.appendChild(shareTablePlaceholder);
+            updateShareUI();
+        });
+        
+        // --- Section 3: Ring Protection ---
+        const callerRingEl = document.getElementById('callerRing');
+        const targetRingEl = document.getElementById('targetRing');
+        const opTypeEl = document.getElementById('operationType');
+        const ringResultEl = document.getElementById('ring_result');
+        const rings = [0,1,2,3].map(i => document.getElementById(`ring_${i}`));
+
+        function checkRingProtection() {
+            const caller = parseInt(callerRingEl.value);
+            const target = parseInt(targetRingEl.value);
+            const op = opTypeEl.value;
+
+            rings.forEach(r => r.classList.remove('highlight'));
+            document.getElementById(`ring_${caller}`).classList.add('highlight');
+            document.getElementById(`ring_${target}`).classList.add('highlight');
+
+            let allowed = false;
+            let reason = '';
+
+            if (op === 'data') {
+                if (caller <= target) {
+                    allowed = true;
+                    reason = `规则: 程序可以访问相同或较低特权(外环)的数据 (${caller} <= ${target})。`;
+                } else {
+                    allowed = false;
+                    reason = `规则: 程序不能访问较高特权(内环)的数据 (${caller} > ${target})。`;
+                }
+            } else {
+                if (caller >= target) {
+                    allowed = true;
+                     reason = `规则: 程序可以调用相同或较高特权(内环)的服务 (${caller} >= ${target})。`;
+                } else {
+                    allowed = false;
+                     reason = `规则: 程序不能调用较低特权(外环)的服务 (${caller} < ${target})。`;
+                }
+            }
+            
+            if (allowed) {
+                ringResultEl.className = 'mt-6 p-4 rounded-lg text-center font-bold text-lg bg-green-100 text-green-800';
+                ringResultEl.innerHTML = `允许的操作<p class="text-sm font-normal mt-1">${reason}</p>`;
+            } else {
+                ringResultEl.className = 'mt-6 p-4 rounded-lg text-center font-bold text-lg bg-red-100 text-red-800';
+                ringResultEl.innerHTML = `禁止的操作<p class="text-sm font-normal mt-1">${reason}</p>`;
+            }
+        }
+
+        callerRingEl.addEventListener('change', checkRingProtection);
+        targetRingEl.addEventListener('change', checkRingProtection);
+        opTypeEl.addEventListener('change', checkRingProtection);
+        checkRingProtection();
+
+    });
+    </script>
+</body>
+</html>

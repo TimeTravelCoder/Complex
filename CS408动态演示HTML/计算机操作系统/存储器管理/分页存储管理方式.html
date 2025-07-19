@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式学习笔记：分页存储管理</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chosen Palette: Educational Blue (Background: slate-50, Text: slate-800, Primary: blue-500, Highlight: yellow-300) -->
+    <!-- Application Structure Plan: The SPA is designed as an interactive deep-dive into the core mechanism of paging. It's structured into three main parts: 1) An interactive address translation simulator that forms the centerpiece of the application. 2) A quantitative analysis section with an EAT calculator. 3) A section for advanced concepts (multi-level/inverted tables). This structure was chosen to guide the user from the fundamental process to performance implications and then to scalability solutions. The simulator is placed first because understanding the address translation process is prerequisite for all other topics. -->
+    <!-- Visualization & Content Choices:
+        - Address Translation Simulator: Goal: Inform/Organize. Method: A detailed, multi-part diagram built with HTML/CSS representing CPU, TLB, Page Table, and Memory. Interaction: User inputs a logical address and clicks a button to trigger a step-by-step JS animation of the entire translation process, with and without TLB hits. Justification: This transforms the most complex, abstract part of the topic into a concrete, observable sequence of events, which is superior to static diagrams for learning processes.
+        - EAT Calculator & Chart: Goal: Compare/Relationships. Method: JS calculator with input sliders and a Chart.js line chart. Interaction: User adjusts sliders for TLB hit rate and access times, and the EAT and chart update in real-time. Justification: This clearly demonstrates the performance impact of the TLB and allows for "what-if" analysis, reinforcing the formula's meaning.
+        - Multi-level & Inverted Page Table Diagrams: Goal: Inform/Organize. Method: Diagrams built with HTML/CSS and flexbox/grid to show the lookup hierarchy or the reversed mapping. Interaction: Minimal, mainly for clear presentation. Justification: Static diagrams are sufficient here to explain the structural differences, as the core lookup logic is an extension of the basic process already simulated.
+        - Library/Method: Vanilla JS for simulation logic, Chart.js for the EAT chart. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; /* slate-50 */ }
+        .section-card { background-color: white; border-radius: 0.75rem; padding: 1.5rem 2rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); margin-bottom: 2rem; }
+        .sim-component { border: 2px solid #e2e8f0; border-radius: 0.5rem; padding: 1rem; background-color: #f8fafc;}
+        .address-part { padding: 0.5rem; border-radius: 0.25rem; font-family: monospace; text-align: center; }
+        .page-num { background-color: #dbeafe; /* blue-100 */ color: #1e40af; /* blue-800 */ }
+        .offset-num { background-color: #dcfce7; /* green-100 */ color: #15803d; /* green-700 */ }
+        .arrow { position: absolute; content: ''; width: 2px; background-color: #fbbf24; /* amber-400 */ transition: all 0.5s ease-in-out; transform-origin: top; }
+        .highlight { transition: all 0.3s; box-shadow: 0 0 0 4px #facc15; /* yellow-400 */ }
+        .tlb-hit { box-shadow: 0 0 0 4px #4ade80; /* green-400 */ }
+        .tlb-miss { box-shadow: 0 0 0 4px #f87171; /* red-400 */ }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold text-slate-900">分页存储管理方式</h1>
+            <p class="mt-4 text-lg text-slate-600">一种通过离散分配，极大提高内存利用率的核心技术。</p>
+        </header>
+
+        <!-- Section 1: Address Translation Simulator -->
+        <section id="simulator" class="section-card">
+            <h2 class="text-3xl font-bold mb-2">地址变换过程模拟器</h2>
+            <p class="text-slate-600 mb-6">分页管理的核心在于地址变换。请输入一个逻辑地址，然后点击“开始变换”，观察硬件如何一步步将其翻译为物理地址。本模拟假设页面大小为4KB(4096B)。</p>
+            
+            <div class="bg-slate-100 p-4 rounded-lg mb-6">
+                <div class="flex flex-wrap items-center gap-4">
+                    <label for="logical-address" class="font-bold">输入逻辑地址:</label>
+                    <input type="number" id="logical-address" value="8195" class="w-40 p-2 border border-slate-300 rounded-md shadow-sm">
+                    <button id="translate-btn" class="bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition">▶️ 开始变换</button>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="use-tlb" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" checked>
+                        <label for="use-tlb" class="ml-2 block text-sm text-gray-900">使用快表 (TLB)</label>
+                    </div>
+                </div>
+                <div id="address-breakdown" class="mt-4 flex items-center gap-2 font-mono hidden"></div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 relative">
+                 <!-- CPU -->
+                <div class="sim-component lg:col-span-1">
+                    <h3 class="font-bold text-center">CPU & MMU</h3>
+                     <div id="cpu-output" class="mt-4 p-4 bg-white rounded text-center">等待指令...</div>
+                     <div id="ptr-info" class="mt-4 text-xs font-mono p-2 bg-slate-200 rounded">
+                        <p>PTR (页表寄存器):</p>
+                        <p>Base: <span class="font-bold">内存地址 20480</span></p>
+                        <p>Length: <span class="font-bold">4</span></p>
+                     </div>
+                </div>
+
+                <!-- TLB and Page Table -->
+                 <div class="sim-component lg:col-span-1">
+                    <h3 class="font-bold text-center mb-2">快表 (TLB)</h3>
+                    <table id="tlb-table" class="w-full text-sm font-mono text-center">
+                        <thead><tr class="border-b"><th class="py-1">页号</th><th class="py-1">块号</th></tr></thead>
+                        <tbody><!-- TLB rows here --></tbody>
+                    </table>
+                     <h3 class="font-bold text-center mb-2 mt-4">页表 (在内存中)</h3>
+                     <table id="page-table" class="w-full text-sm font-mono text-center">
+                        <thead><tr class="border-b"><th class="py-1">页号(索引)</th><th class="py-1">块号</th></tr></thead>
+                        <tbody>
+                            <tr><td>0</td><td>2</td></tr>
+                            <tr><td>1</td><td>8</td></tr>
+                            <tr><td>2</td><td>5</td></tr>
+                            <tr><td>3</td><td>10</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Physical Memory -->
+                 <div class="sim-component lg:col-span-1">
+                     <h3 class="font-bold text-center">物理内存</h3>
+                     <div id="physical-memory" class="mt-2 space-y-1">
+                        <!-- Physical memory blocks here -->
+                     </div>
+                </div>
+            </div>
+             <div class="mt-6">
+                <h3 class="font-bold text-lg mb-2">操作日志</h3>
+                <div id="log-area" class="h-40 bg-slate-800 text-white font-mono text-sm p-4 rounded-lg overflow-y-auto"></div>
+            </div>
+        </section>
+
+        <!-- Section 2: EAT Calculator -->
+        <section class="section-card">
+            <h2 class="text-3xl font-bold mb-4">有效访问时间 (EAT) 计算器</h2>
+            <p class="mb-6 text-slate-600">快表 (TLB) 的命中率是影响系统性能的关键。使用下面的工具，观察命中率和访问时间如何影响最终的有效访问时间。</p>
+            <div class="grid md:grid-cols-2 gap-8 items-center">
+                <div>
+                    <div class="mb-4">
+                        <label for="hit-rate" class="font-semibold">快表命中率 (a): <span id="hit-rate-val" class="font-bold text-blue-600">90</span>%</label>
+                        <input type="range" id="hit-rate" min="0" max="100" value="98" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                    </div>
+                    <div class="mb-4">
+                        <label for="tlb-time" class="font-semibold">快表查找时间 (λ):</label>
+                        <input type="number" id="tlb-time" value="20" class="w-full mt-1 p-2 border border-slate-300 rounded-md">
+                    </div>
+                    <div>
+                        <label for="mem-time" class="font-semibold">内存访问时间 (t):</label>
+                        <input type="number" id="mem-time" value="100" class="w-full mt-1 p-2 border border-slate-300 rounded-md">
+                    </div>
+                    <div class="mt-6 p-4 bg-blue-50 rounded-lg text-center">
+                        <p class="text-lg">计算出的有效访问时间 (EAT):</p>
+                        <p id="eat-result" class="text-4xl font-bold text-blue-700">122 ns</p>
+                    </div>
+                </div>
+                <div class="chart-container relative h-80 w-full max-w-xl mx-auto">
+                    <canvas id="eat-chart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 3: Advanced Concepts -->
+        <section class="section-card">
+            <h2 class="text-2xl font-bold mb-4">高级页表结构</h2>
+             <div class="grid md:grid-cols-2 gap-8">
+                <div class="p-4 bg-slate-50 rounded-lg">
+                    <h3 class="font-bold text-lg">多级页表</h3>
+                    <p class="text-sm mt-2">当逻辑地址空间巨大时，单一页表会占用过多连续内存。多级页表通过对页表本身进行再次分页来解决这个问题，将巨大的页表离散地存放在内存中。</p>
+                     <div class="mt-4 font-mono text-xs p-2 bg-white rounded">
+                        <p>逻辑地址: [P1][P2][W]</p>
+                        <p>P1 → 索引外层页表</p>
+                        <p>&nbsp;&nbsp;↳ 得到二级页表基址</p>
+                        <p>P2 → 索引二级页表</p>
+                        <p>&nbsp;&nbsp;↳ 得到物理块号</p>
+                     </div>
+                </div>
+                <div class="p-4 bg-slate-50 rounded-lg">
+                    <h3 class="font-bold text-lg">反置页表</h3>
+                    <p class="text-sm mt-2">传统页表为每个进程都建立一张，总开销大。反置页表反其道而行之，为每个物理块建立一个表项，整个系统只有一张表。表项记录了“哪个进程的哪个页”占用了此块。</p>
+                    <div class="mt-4 font-mono text-xs p-2 bg-white rounded">
+                        <p>查找: search(PID, PageNum)</p>
+                        <p>优点: 极大节省内存</p>
+                        <p>缺点: 搜索困难,需Hash辅助</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+<script>
+class PagingSimulator {
+    constructor() {
+        this.logArea = document.getElementById('log-area');
+        this.tlbTableBody = document.querySelector('#tlb-table tbody');
+        this.pageTableBody = document.querySelector('#page-table tbody');
+        this.physMemContainer = document.getElementById('physical-memory');
+        this.addressBreakdown = document.getElementById('address-breakdown');
+        this.cpuOutput = document.getElementById('cpu-output');
+        this.useTlbCheckbox = document.getElementById('use-tlb');
+        
+        this.PAGE_SIZE = 4096;
+        this.PHYSICAL_BLOCKS = 16;
+        this.TLB_SIZE = 4;
+        
+        this.tlb = []; // {page, frame}
+        this.pageTable = { 0: 2, 1: 8, 2: 5, 3: 10 };
+
+        this.init();
+    }
+
+    init() {
+        this.log('模拟器已初始化。');
+        this.tlb = [];
+        this.renderTLB();
+        this.renderPhysicalMemory();
+        this.addressBreakdown.classList.add('hidden');
+        this.cpuOutput.textContent = '等待指令...';
+    }
+
+    log(message, step) {
+        const stepPrefix = step ? `${step}. ` : '';
+        this.logArea.innerHTML += `<p class="fade-in">> ${stepPrefix}${message}</p>`;
+        this.logArea.scrollTop = this.logArea.scrollHeight;
+    }
+
+    renderTLB() {
+        this.tlbTableBody.innerHTML = '';
+        for(let i=0; i<this.TLB_SIZE; i++) {
+            const entry = this.tlb[i];
+            const row = this.tlbTableBody.insertRow();
+            row.id = `tlb-row-${i}`;
+            if(entry) {
+                row.innerHTML = `<td>${entry.page}</td><td>${entry.frame}</td>`;
+            } else {
+                row.innerHTML = `<td>-</td><td>-</td>`;
+            }
+        }
+    }
+    
+    renderPhysicalMemory() {
+        this.physMemContainer.innerHTML = '';
+        for (let i = 0; i < this.PHYSICAL_BLOCKS; i++) {
+             const block = document.createElement('div');
+             block.id = `mem-block-${i}`;
+             block.className = 'p-1 text-xs border border-slate-200 rounded bg-slate-100';
+             let content = `块 ${i}`;
+             // Check if this block is used by our page table
+             for(const page in this.pageTable) {
+                 if (this.pageTable[page] === i) {
+                     content += ` (页 ${page})`;
+                 }
+             }
+             if(i >= 5 && i <= 6) { // Page table location
+                 block.classList.add('bg-rose-100');
+                 content += ' (页表)'
+             }
+
+             block.textContent = content;
+             this.physMemContainer.appendChild(block);
+        }
+    }
+
+    async highlight(element, className, duration = 1000) {
+        if (!element) return;
+        element.classList.add(className);
+        await this.sleep(duration);
+        element.classList.remove(className);
+    }
+    
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    updateTLB(page, frame) {
+        // Simple FIFO replacement
+        if (this.tlb.find(e => e.page === page)) return; // Already exists
+        
+        this.tlb.push({ page, frame });
+        if (this.tlb.length > this.TLB_SIZE) {
+            this.tlb.shift();
+        }
+        this.renderTLB();
+    }
+
+    async translate() {
+        document.getElementById('translate-btn').disabled = true;
+        this.resetHighlights();
+        this.logArea.innerHTML = '';
+        const useTlb = this.useTlbCheckbox.checked;
+        let step = 1;
+
+        const logicalAddress = parseInt(document.getElementById('logical-address').value);
+        if (isNaN(logicalAddress) || logicalAddress < 0) {
+            this.log('错误：请输入有效的非负逻辑地址。');
+            document.getElementById('translate-btn').disabled = false;
+            return;
+        }
+
+        const pageNum = Math.floor(logicalAddress / this.PAGE_SIZE);
+        const offset = logicalAddress % this.PAGE_SIZE;
+        
+        this.log(`CPU发出逻辑地址: ${logicalAddress}`, step++);
+        this.cpuOutput.textContent = `访问地址 ${logicalAddress}`;
+        await this.highlight(this.cpuOutput, 'highlight');
+
+        this.addressBreakdown.innerHTML = `
+            <div class="address-part page-num">页号 (P) = ${pageNum}</div>
+            <div class="address-part offset-num">页内地址 (W) = ${offset}</div>
+        `;
+        this.addressBreakdown.classList.remove('hidden');
+        await this.sleep(1000);
+
+        if (useTlb) {
+            this.log('硬件首先查询快表 (TLB)...', step++);
+            await this.highlight(this.tlbTableBody.parentElement, 'highlight');
+            
+            const tlbEntry = this.tlb.find(e => e.page === pageNum);
+            const tlbRowIndex = this.tlb.findIndex(e => e.page === pageNum);
+
+            if (tlbEntry) {
+                this.log(`<span class="text-green-400">TLB命中！在第 ${tlbRowIndex} 行找到。</span>`);
+                await this.highlight(document.getElementById(`tlb-row-${tlbRowIndex}`), 'tlb-hit');
+                const frameNum = tlbEntry.frame;
+                this.finishTranslation(frameNum, offset, logicalAddress, step);
+                return;
+            } else {
+                this.log('<span class="text-red-400">TLB未命中。</span>');
+                 await this.highlight(this.tlbTableBody.parentElement, 'tlb-miss');
+            }
+        }
+        
+        this.log('检查页号是否越界...', step++);
+        const pageTableLength = Object.keys(this.pageTable).length;
+        await this.highlight(document.getElementById('ptr-info'), 'highlight');
+        if (pageNum >= pageTableLength) {
+            this.log(`错误：页号 ${pageNum} >= 页表长度 ${pageTableLength}。地址越界中断！`);
+            document.getElementById('translate-btn').disabled = false;
+            return;
+        }
+        this.log(`页号 ${pageNum} < ${pageTableLength}，合法。`);
+        await this.sleep(1000);
+
+        this.log('访问内存中的页表...', step++);
+        const pageTableRow = this.pageTableBody.rows[pageNum];
+        await this.highlight(this.pageTableBody.parentElement, 'highlight');
+        await this.sleep(500);
+        await this.highlight(pageTableRow, 'highlight');
+        
+        const frameNum = this.pageTable[pageNum];
+        this.log(`从页表中查得，页${pageNum} 对应物理块${frameNum}。`);
+        await this.sleep(1000);
+        
+        if(useTlb) {
+            this.log('更新TLB...', step++);
+            this.updateTLB(pageNum, frameNum);
+            this.log(`将映射关系 (页${pageNum} -> 块${frameNum}) 写入TLB。`);
+            const newTlbRowIndex = this.tlb.findIndex(e => e.page === pageNum);
+            await this.highlight(document.getElementById(`tlb-row-${newTlbRowIndex}`), 'tlb-hit');
+        }
+
+        this.finishTranslation(frameNum, offset, logicalAddress, step);
+    }
+    
+    async finishTranslation(frameNum, offset, logicalAddress, step) {
+        const physicalAddress = frameNum * this.PAGE_SIZE + offset;
+        this.log(`形成物理地址: 块号 * 页面大小 + 偏移量`, step++);
+        this.log(`   = ${frameNum} * ${this.PAGE_SIZE} + ${offset} = <span class="text-green-400 font-bold">${physicalAddress}</span>`);
+
+        this.addressBreakdown.innerHTML += `<div class="mx-4 font-bold text-2xl text-slate-400">→</div> <div class="address-part bg-green-200 text-green-800">物理地址 = ${physicalAddress}</div>`;
+        await this.sleep(1000);
+
+        this.log(`访问物理内存地址 ${physicalAddress}`, step++);
+        const targetBlock = document.getElementById(`mem-block-${frameNum}`);
+        await this.highlight(targetBlock, 'highlight');
+        this.cpuOutput.textContent = `成功从地址 ${physicalAddress} 读取数据`;
+        document.getElementById('translate-btn').disabled = false;
+    }
+    
+    resetHighlights() {
+        document.querySelectorAll('.highlight, .tlb-hit, .tlb-miss').forEach(el => {
+            el.classList.remove('highlight', 'tlb-hit', 'tlb-miss');
+        });
+    }
+}
+
+class EATCalculator {
+    constructor() {
+        this.hitRateSlider = document.getElementById('hit-rate');
+        this.hitRateVal = document.getElementById('hit-rate-val');
+        this.tlbTimeInput = document.getElementById('tlb-time');
+        this.memTimeInput = document.getElementById('mem-time');
+        this.eatResult = document.getElementById('eat-result');
+        this.chartCanvas = document.getElementById('eat-chart');
+        
+        this.chart = null;
+        
+        this.addEventListeners();
+        this.calculateAndRender();
+    }
+    
+    addEventListeners() {
+        this.hitRateSlider.addEventListener('input', () => this.calculateAndRender());
+        this.tlbTimeInput.addEventListener('input', () => this.calculateAndRender());
+        this.memTimeInput.addEventListener('input', () => this.calculateAndRender());
+    }
+    
+    calculateAndRender() {
+        const a = parseFloat(this.hitRateSlider.value) / 100;
+        const lambda = parseFloat(this.tlbTimeInput.value) || 0;
+        const t = parseFloat(this.memTimeInput.value) || 0;
+        
+        this.hitRateVal.textContent = this.hitRateSlider.value;
+        
+        const eat = a * (lambda + t) + (1 - a) * (lambda + 2 * t);
+        this.eatResult.textContent = `${eat.toFixed(2)} ns`;
+        
+        this.renderChart();
+    }
+    
+    renderChart() {
+        const lambda = parseFloat(this.tlbTimeInput.value) || 0;
+        const t = parseFloat(this.memTimeInput.value) || 0;
+        
+        const labels = Array.from({length: 11}, (_, i) => i * 10); // 0, 10, ..., 100
+        const data = labels.map(rate => {
+            const a = rate / 100;
+            return a * (lambda + t) + (1 - a) * (lambda + 2 * t);
+        });
+        
+        if (this.chart) {
+            this.chart.data.labels = labels;
+            this.chart.data.datasets[0].data = data;
+            this.chart.update();
+        } else {
+            const ctx = this.chartCanvas.getContext('2d');
+            this.chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '有效访问时间 (ns)',
+                        data: data,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: '快表命中率 (%)' } },
+                        y: { title: { display: true, text: 'EAT (ns)' } }
+                    }
+                }
+            });
+        }
+    }
+}
+
+
+document.addEventListener('DOMContentLoaded', () => {
+    const simulator = new PagingSimulator();
+    const calculator = new EATCalculator();
+    document.getElementById('translate-btn').addEventListener('click', () => simulator.translate());
+});
+</script>
+
+</body>
+</html>

@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式学习笔记：分段存储管理</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chosen Palette: Academic Slate (Background: slate-50, Text: slate-800, Primary: slate-700, Highlight: amber-400, Accent: sky-500) -->
+    <!-- Application Structure Plan: The application is designed as a focused learning module on segmentation. It begins by explaining the "why" (motivations), then dives into the core interactive element: a detailed address translation simulator that explains the "how". Following this, it provides a direct visual comparison to paging to solidify understanding, and concludes with advanced concepts like sharing and segmented paging. This structure (Why -> How -> Compare -> Extend) is a proven pedagogical pattern for building robust mental models. -->
+    <!-- Visualization & Content Choices:
+        - Motivations Section: Goal: Inform. Method: A set of five distinct info cards (HTML/CSS). Interaction: None. Justification: Quickly presents the core reasons for segmentation's existence as a foundation.
+        - Address Translation Simulator: Goal: Inform/Organize/Interact. Method: A multi-component diagram (CPU, STR, Segment Table, Memory) built with HTML/CSS. Interaction: User inputs segment number and offset, then clicks a button to trigger a step-by-step JS animation of the entire two-check translation process. Justification: This is the application's centerpiece. It makes the abstract, multi-step translation process tangible and easy to follow. It also visually demonstrates boundary checks, a key concept.
+        - Paging vs. Segmentation: Goal: Compare. Method: A side-by-side comparison using styled cards instead of a plain table. Interaction: None. Justification: Provides a high-contrast, easily digestible summary of the key differences discussed in the source document.
+        - Information Sharing Diagram: Goal: Inform/Organize. Method: An HTML/CSS diagram showing two processes' segment tables pointing to the same physical memory location. Interaction: None necessary, the visual itself is the explanation. Justification: Clearly illustrates the mechanism for sharing code segments.
+        - Segmented Paging Diagram: Goal: Inform/Organize. Method: A simplified flow diagram using styled divs. Interaction: None. Justification: Introduces the hybrid concept by showing the three-part address structure and the two-level table lookup (segment table -> page table).
+        - Library/Method: Vanilla JS for all simulation logic and animation. No external charting libraries needed. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; /* slate-50 */ }
+        .section-card { background-color: white; border-radius: 0.75rem; padding: 1.5rem 2rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); margin-bottom: 2rem; }
+        .sim-component { border: 2px solid #e2e8f0; border-radius: 0.5rem; padding: 1rem; background-color: #f8fafc; }
+        .address-part { padding: 0.5rem; border-radius: 0.25rem; font-family: monospace; text-align: center; }
+        .segment-num { background-color: #f0f9ff; /* sky-50 */ color: #0369a1; /* sky-800 */ }
+        .offset-num { background-color: #fefce8; /* yellow-50 */ color: #a16207; /* yellow-800 */ }
+        .highlight-process { transition: all 0.3s; box-shadow: 0 0 0 4px #fbbf24; /* amber-400 */ }
+        .highlight-success { box-shadow: 0 0 0 4px #22c55e; /* green-500 */ }
+        .highlight-error { box-shadow: 0 0 0 4px #ef4444; /* red-500 */ }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold text-slate-900">分段存储管理方式</h1>
+            <p class="mt-4 text-lg text-slate-600">一种更符合程序逻辑、以用户为中心的内存管理方案。</p>
+        </header>
+
+        <!-- Section 1: Motivations -->
+        <section class="section-card">
+            <h2 class="text-2xl font-bold mb-4">为何引入分段？</h2>
+            <p class="mb-6 text-slate-600">分段管理的出现并非主要为了解决碎片问题，而是为了更好地满足程序员和应用程序在逻辑层面的需求。</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 text-center">
+                <div class="p-4 bg-slate-100 rounded-lg">
+                    <div class="text-3xl">💻</div><h3 class="font-bold mt-2">方便编程</h3><p class="text-xs mt-1">按逻辑功能（主程序、函数）划分代码。</p>
+                </div>
+                <div class="p-4 bg-slate-100 rounded-lg">
+                    <div class="text-3xl">🤝</div><h3 class="font-bold mt-2">信息共享</h3><p class="text-xs mt-1">以段为单位轻松共享函数库或数据。</p>
+                </div>
+                <div class="p-4 bg-slate-100 rounded-lg">
+                    <div class="text-3xl">🛡️</div><h3 class="font-bold mt-2">信息保护</h3><p class="text-xs mt-1">为不同段（代码、数据）设置不同权限。</p>
+                </div>
+                <div class="p-4 bg-slate-100 rounded-lg">
+                    <div class="text-3xl">📈</div><h3 class="font-bold mt-2">动态增长</h3><p class="text-xs mt-1">方便数据段（如栈）在运行时扩展。</p>
+                </div>
+                <div class="p-4 bg-slate-100 rounded-lg">
+                    <div class="text-3xl">🔗</div><h3 class="font-bold mt-2">动态链接</h3><p class="text-xs mt-1">在需要时才链接和加载程序段。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 2: Address Translation Simulator -->
+        <section id="simulator" class="section-card">
+            <h2 class="text-3xl font-bold mb-2">地址变换过程模拟器</h2>
+            <p class="text-slate-600 mb-6">分段管理的核心在于其二维地址的变换过程。请输入段号和段内地址，观察硬件如何通过段表将其翻译为物理地址，并注意两次关键的越界检查。</p>
+            
+            <div class="bg-slate-100 p-4 rounded-lg mb-6">
+                <div class="flex flex-wrap items-center gap-4">
+                    <label class="font-bold">输入逻辑地址:</label>
+                    <div>
+                        <label for="seg-num" class="text-sm font-medium">段号 (S)</label>
+                        <input type="number" id="seg-num" value="2" class="w-24 p-2 border border-slate-300 rounded-md shadow-sm">
+                    </div>
+                    <div>
+                        <label for="seg-offset" class="text-sm font-medium">段内地址 (W)</label>
+                        <input type="number" id="seg-offset" value="100" class="w-24 p-2 border border-slate-300 rounded-md shadow-sm">
+                    </div>
+                    <button id="translate-btn" class="bg-slate-800 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-700 transition">▶️ 开始变换</button>
+                </div>
+                 <div id="physical-address-result" class="mt-4 font-mono hidden"></div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 relative">
+                 <!-- CPU and STR -->
+                <div class="sim-component">
+                    <h3 class="font-bold text-center">CPU & 段表寄存器 (STR)</h3>
+                    <div id="cpu-output" class="mt-4 p-4 bg-white rounded text-center font-mono">等待指令...</div>
+                    <div id="str-info" class="mt-4 text-sm font-mono p-2 bg-slate-200 rounded">
+                        <p>段表始址: <span class="font-bold">14000</span></p>
+                        <p>段表长度 (TL): <span class="font-bold">4</span></p>
+                     </div>
+                </div>
+
+                <!-- Segment Table -->
+                 <div class="sim-component">
+                    <h3 class="font-bold text-center mb-2">段表 (在内存中)</h3>
+                     <table id="seg-table" class="w-full text-sm font-mono text-center">
+                        <thead class="border-b"><tr class="text-slate-500"><th class="py-1">段号</th><th class="py-1">段长 (SL)</th><th class="py-1">基址 (Base)</th></tr></thead>
+                        <tbody>
+                            <tr data-seg="0"><td>0</td><td>1024</td><td>6300</td></tr>
+                            <tr data-seg="1"><td>1</td><td>4200</td><td>2400</td></tr>
+                            <tr data-seg="2"><td>2</td><td>500</td><td>8192</td></tr>
+                            <tr data-seg="3"><td>3</td><td>800</td><td>9800</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+             <div class="mt-6">
+                <h3 class="font-bold text-lg mb-2">操作日志</h3>
+                <div id="log-area" class="h-48 bg-slate-800 text-white font-mono text-sm p-4 rounded-lg overflow-y-auto"></div>
+            </div>
+        </section>
+
+        <!-- Section 3: Paging vs Segmentation -->
+        <section class="section-card">
+            <h2 class="text-2xl font-bold mb-4 text-center">分页 vs. 分段：核心区别</h2>
+            <div class="grid md:grid-cols-2 lg:grid-cols-5 gap-4 mt-6">
+                <div class="p-4 rounded-lg bg-slate-50">
+                    <h3 class="font-bold text-center">单位性质</h3>
+                    <p class="text-xs mt-2"><b class="text-sky-600">分页:</b> 信息的物理单位，大小固定。</p>
+                    <p class="text-xs mt-1"><b class="text-amber-600">分段:</b> 信息的逻辑单位，大小可变。</p>
+                </div>
+                <div class="p-4 rounded-lg bg-slate-50">
+                    <h3 class="font-bold text-center">目的</h3>
+                    <p class="text-xs mt-2"><b class="text-sky-600">分页:</b> 提高内存利用率，是系统行为。</p>
+                    <p class="text-xs mt-1"><b class="text-amber-600">分段:</b> 满足用户需求，是用户行为。</p>
+                </div>
+                <div class="p-4 rounded-lg bg-slate-50">
+                    <h3 class="font-bold text-center">地址空间</h3>
+                    <p class="text-xs mt-2"><b class="text-sky-600">分页:</b> 一维的线性地址。</p>
+                    <p class="text-xs mt-1"><b class="text-amber-600">分段:</b> 二维的（段号, 段内地址）。</p>
+                </div>
+                <div class="p-4 rounded-lg bg-slate-50">
+                    <h3 class="font-bold text-center">可见性</h3>
+                    <p class="text-xs mt-2"><b class="text-sky-600">分页:</b> 对用户透明。</p>
+                    <p class="text-xs mt-1"><b class="text-amber-600">分段:</b> 对用户可见。</p>
+                </div>
+                 <div class="p-4 rounded-lg bg-slate-50">
+                    <h3 class="font-bold text-center">碎片</h3>
+                    <p class="text-xs mt-2"><b class="text-sky-600">分页:</b> 有内部碎片，无外部碎片。</p>
+                    <p class="text-xs mt-1"><b class="text-amber-600">分段:</b> 有外部碎片，无内部碎片。</p>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Section 4: Advanced Concepts -->
+        <section class="section-card">
+            <h2 class="text-2xl font-bold mb-4">高级概念图解</h2>
+             <div class="grid md:grid-cols-2 gap-8">
+                <div class="p-4 bg-slate-50 rounded-lg">
+                    <h3 class="font-bold text-lg">ℹ️ 信息共享</h3>
+                    <p class="text-sm mt-2">多个进程的段表可以指向同一个物理内存段。例如，进程A和进程B都共享一个代码段（段2）。</p>
+                    <div class="mt-4 flex justify-around items-start text-xs font-mono">
+                        <div>
+                            <b>进程A段表</b>
+                            <table class="w-full mt-1 bg-white">
+                                <tr><td class="border p-1">1: (.. , 1000)</td></tr>
+                                <tr><td class="border p-1 bg-sky-200">2: (.. , 5000)</td></tr>
+                            </table>
+                        </div>
+                        <div class="pt-12 text-2xl text-slate-400">↘<br>↙</div>
+                        <div>
+                            <b>进程B段表</b>
+                             <table class="w-full mt-1 bg-white">
+                                <tr><td class="border p-1">3: (.. , 8000)</td></tr>
+                                <tr><td class="border p-1 bg-sky-200">2: (.. , 5000)</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="mt-2 text-center text-sm font-mono p-2 bg-sky-100 rounded">内存地址 5000: [共享代码...]</div>
+                </div>
+                <div class="p-4 bg-slate-50 rounded-lg">
+                    <h3 class="font-bold text-lg">🧬 段页式管理</h3>
+                    <p class="text-sm mt-2">结合二者优点：先分段，再对每段分页。地址变换需要两次查表。</p>
+                    <div class="font-mono text-xs mt-4 p-2 bg-white rounded space-y-1">
+                        <p class="text-center">逻辑地址: [段号 S][页号 P][地址 W]</p>
+                        <p>1. S → 查 <b class="text-amber-600">段表</b> → 找到页表基址</p>
+                        <p class="pl-4">↳ (访问内存 #1)</p>
+                        <p>2. P → 查 <b class="text-sky-600">页表</b> → 找到物理块号</p>
+                        <p class="pl-4">↳ (访问内存 #2)</p>
+                        <p>3. 块号+W → 物理地址 → 访问数据</p>
+                         <p class="pl-4">↳ (访问内存 #3)</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+<script>
+class SegmentationSimulator {
+    constructor() {
+        this.logArea = document.getElementById('log-area');
+        this.cpuOutput = document.getElementById('cpu-output');
+        this.strInfo = document.getElementById('str-info');
+        this.segTable = document.getElementById('seg-table');
+        this.resultDiv = document.getElementById('physical-address-result');
+        this.translateBtn = document.getElementById('translate-btn');
+        
+        this.segmentTableData = {
+            0: { length: 1024, base: 6300 },
+            1: { length: 4200, base: 2400 },
+            2: { length: 500, base: 8192 },
+            3: { length: 800, base: 9800 }
+        };
+        this.segmentTableLength = 4;
+        
+        this.translateBtn.addEventListener('click', () => this.translate());
+        this.log('模拟器已就绪。');
+    }
+
+    log(message, step) {
+        const stepPrefix = step ? `<span class="text-amber-300">${step}.</span> ` : '';
+        this.logArea.innerHTML += `<p class="fade-in">> ${stepPrefix}${message}</p>`;
+        this.logArea.scrollTop = this.logArea.scrollHeight;
+    }
+
+    reset() {
+        this.translateBtn.disabled = false;
+        this.logArea.innerHTML = '';
+        this.resultDiv.classList.add('hidden');
+        document.querySelectorAll('.highlight-process, .highlight-success, .highlight-error').forEach(el => {
+            el.classList.remove('highlight-process', 'highlight-success', 'highlight-error');
+        });
+        this.log('模拟器已重置。');
+    }
+
+    async highlight(element, className, duration = 1000) {
+        if (!element) return;
+        element.classList.add(className);
+        await this.sleep(duration);
+        element.classList.remove(className);
+    }
+    
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async translate() {
+        this.reset();
+        this.translateBtn.disabled = true;
+        let step = 1;
+
+        const segNum = parseInt(document.getElementById('seg-num').value);
+        const offset = parseInt(document.getElementById('seg-offset').value);
+
+        if (isNaN(segNum) || isNaN(offset)) {
+            this.log('<span class="text-red-400">错误: 请输入有效的段号和段内地址。</span>');
+            this.translateBtn.disabled = false;
+            return;
+        }
+
+        // Step 1: CPU
+        this.log(`CPU 发出逻辑地址 (S=${segNum}, W=${offset})`, step++);
+        this.cpuOutput.textContent = `(S = ${segNum}, W = ${offset})`;
+        await this.highlight(this.cpuOutput, 'highlight-process');
+
+        // Step 2: Check segment number
+        this.log(`将段号 S (${segNum}) 与段表长度 TL (${this.segmentTableLength}) 比较`, step++);
+        await this.highlight(this.strInfo, 'highlight-process');
+        if (segNum >= this.segmentTableLength) {
+            this.log(`<span class="text-red-400">错误: 段号越界 (S >= TL)。产生越界中断。</span>`);
+            await this.highlight(this.strInfo, 'highlight-error');
+            this.translateBtn.disabled = false;
+            return;
+        }
+        this.log(`检查通过 (S < TL)。`);
+        await this.sleep(500);
+
+        // Step 3: Find segment table entry
+        this.log(`查找段表项。地址 = STR.Base + S * entry_size。定位到段 ${segNum}。`, step++);
+        const segRow = document.querySelector(`#seg-table tr[data-seg="${segNum}"]`);
+        await this.highlight(segRow, 'highlight-process');
+        
+        const { length: segLength, base: segBase } = this.segmentTableData[segNum];
+        this.log(`从段表项中读出段长 SL = ${segLength}，基址 Base = ${segBase}。`);
+        await this.sleep(1000);
+
+        // Step 4: Check offset
+        this.log(`将段内地址 W (${offset}) 与段长 SL (${segLength}) 比较`, step++);
+        await this.highlight(segRow, 'highlight-process');
+        if (offset >= segLength) {
+             this.log(`<span class="text-red-400">错误: 段内地址越界 (W >= SL)。产生越界中断。</span>`);
+             await this.highlight(segRow, 'highlight-error');
+             this.translateBtn.disabled = false;
+             return;
+        }
+        this.log(`检查通过 (W < SL)。`);
+        await this.sleep(500);
+
+        // Step 5: Calculate physical address
+        const physicalAddress = segBase + offset;
+        this.log(`计算物理地址 = Base + W = ${segBase} + ${offset}`, step++);
+        this.log(`<b class="text-green-400">物理地址 = ${physicalAddress}</b>`);
+
+        this.resultDiv.innerHTML = `<span class="font-bold">最终物理地址:</span> <span class="p-2 rounded bg-green-200 text-green-800">${physicalAddress}</span>`;
+        this.resultDiv.classList.remove('hidden');
+        await this.highlight(this.resultDiv.querySelector('span:last-child'), 'highlight-success');
+        
+        this.translateBtn.disabled = false;
+    }
+}
+
+
+document.addEventListener('DOMContentLoaded', () => {
+    const simulator = new SegmentationSimulator();
+});
+</script>
+
+</body>
+</html>

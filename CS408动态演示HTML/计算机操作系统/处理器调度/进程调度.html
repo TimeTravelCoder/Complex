@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>进程调度 - 交互式学习指南</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Academic Blue and Beige -->
+    <!-- Application Structure Plan: The application is designed to be a comprehensive learning tool, structured into three main parts. First, '核心机制' introduces fundamental concepts like scheduling modes and mechanisms using clear, concise cards. The second, and most significant, section is the '算法探索与模拟'. This part uses a tabbed interface, which is ideal for comparing distinct yet related topics. It covers the key algorithms from the report: RR, Priority, and MFQ. The centerpiece is the interactive simulation for the Round-Robin (RR) algorithm, transforming the static text example into a hands-on experience. The Multilevel Feedback Queue (MFQ) is explained with an animated diagram, which is far more intuitive for understanding process flow than text alone. The final section covers '公平性调度', completing the conceptual map. This structure guides the user from basic concepts to complex simulations, promoting deep understanding. -->
+    <!-- Visualization & Content Choices: 1. Scheduling Modes: Report Info -> Preemptive vs. Non-preemptive. Goal -> Compare. Viz -> Side-by-side cards. Interaction -> None needed, direct comparison is effective. 2. RR Simulator: Report Info -> RR example with q=1 and q=4. Goal -> Demonstrate & Compare. Viz -> Spacetime diagram (HTML/CSS divs), results table, and a CPU status indicator. Interaction -> User selects time slice via buttons, triggering a full simulation with animated chart, updated table, and synchronized CPU status/log. Justification -> A spacetime diagram visualizes waiting/running time. The addition of a synced CPU status display directly links the abstract chart to the core resource allocation, making the entire process tangible. 3. MFQ Diagram: Report Info -> MFQ mechanism. Goal -> Explain process flow. Viz -> Animated diagram with queues and a process token, plus a CPU status indicator. Interaction -> A 'play' button initiates an animation showing a process moving between queues, being preempted, and its effect on the CPU. Justification -> Animation makes the abstract concept of a process 'sinking' through queues and being preempted tangible and easy to follow. The CPU status display directly links queue activity to resource allocation. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #F5F5F5; }
+        .tab-button.active { background-color: #4A90E2; color: white; border-color: #4A90E2; }
+        .sim-button.active { background-color: #4A90E2; color: white; transform: scale(1.05); }
+        .content-panel { display: none; }
+        .content-panel.active { display: block; }
+        .gantt-bar { transition: all 0.5s ease-in-out; }
+        .process-token {
+            transition: all 1.5s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+            position: absolute;
+            left: 20px;
+        }
+        .queue-row {
+            transition: opacity 0.5s ease-in-out;
+        }
+        .queue-row.dimmed {
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl font-bold text-gray-900">第 3.3 讲：进程调度</h1>
+            <p class="mt-2 text-lg text-gray-600">交互式算法探索与模拟</p>
+        </header>
+
+        <main>
+            <!-- Section 1: Core Concepts -->
+            <section id="concepts" class="mb-16">
+                <h2 class="text-3xl font-bold text-center mb-8 text-gray-900">核心机制</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="bg-white p-6 rounded-lg shadow-lg">
+                        <h3 class="font-bold text-xl text-slate-800 mb-2">非抢占方式</h3>
+                        <p class="text-gray-600">一旦CPU分配给进程，该进程将持续运行，直到它自愿放弃（完成、阻塞等）。实现简单，但可能导致长作业阻塞短作业，响应性差。</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-lg">
+                        <h3 class="font-bold text-xl text-slate-800 mb-2">抢占方式</h3>
+                        <p class="text-gray-600">允许调度程序根据更高原则（如更高优先级、时间片用完）中断当前进程，将CPU分配给其他进程。响应性好，是现代操作系统的标准实践。</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 2: Algorithms & Simulation -->
+            <section id="algorithms" class="mb-16">
+                <h2 class="text-3xl font-bold text-center mb-8 text-gray-900">算法探索与模拟</h2>
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <div id="algo-tabs" class="flex flex-wrap border-b mb-6 justify-center">
+                        <button data-target="rr" class="tab-button active py-2 px-6 font-semibold border-b-2 m-1">时间片轮转 (RR)</button>
+                        <button data-target="mfq" class="tab-button py-2 px-6 font-semibold border-b-2 m-1">多级反馈队列 (MFQ)</button>
+                        <button data-target="priority" class="tab-button py-2 px-6 font-semibold border-b-2 m-1">优先级调度</button>
+                    </div>
+
+                    <div id="algo-content" class="min-h-[400px]">
+                        <!-- RR Simulator -->
+                        <div id="content-rr" class="content-panel active">
+                            <p class="text-center text-gray-600 mb-6">选择一个时间片大小，模拟教科书中的例子，观察进程调度过程和性能指标。</p>
+                            <div class="mb-6 flex flex-wrap justify-center gap-3">
+                                <button onclick="runRRSimulation(1)" class="sim-button py-2 px-5 bg-gray-200 rounded-full font-semibold transition-all duration-300 hover:bg-blue-500 hover:text-white">时间片 q = 1</button>
+                                <button onclick="runRRSimulation(4)" class="sim-button py-2 px-5 bg-gray-200 rounded-full font-semibold transition-all duration-300 hover:bg-blue-500 hover:text-white">时间片 q = 4</button>
+                                <button onclick="resetRRSimulation()" class="sim-button py-2 px-5 bg-gray-200 rounded-full font-semibold transition-all duration-300 hover:bg-slate-500 hover:text-white">重置</button>
+                            </div>
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                <div id="rr-gantt-container" class="p-4 border rounded-lg bg-gray-50">
+                                    <h4 class="font-bold text-lg mb-4 text-center">调度过程 (时空图)</h4>
+                                    <div id="rr-gantt-chart" class="space-y-2"></div>
+                                    <div id="rr-gantt-labels" class="relative h-6 mt-2 flex justify-between text-xs font-mono pr-4 pl-16"></div>
+                                    <div class="mt-4 pt-4 border-t">
+                                     <div class="flex items-center justify-center gap-4">
+                                         <span class="font-bold text-lg">CPU 状态:</span>
+                                         <div id="rr-cpu-status" class="w-24 h-10 rounded bg-gray-200 flex items-center justify-center font-bold text-gray-500">
+                                             空闲
+                                         </div>
+                                     </div>
+                                     <div id="rr-log" class="mt-2 text-center font-mono text-sm text-slate-600 h-6"></div>
+                                 </div>
+                                </div>
+                                <div>
+                                    <h4 class="font-bold text-lg mb-4 text-center">性能指标分析</h4>
+                                    <div class="overflow-x-auto">
+                                        <table class="min-w-full bg-white border">
+                                            <thead class="bg-slate-100">
+                                                <tr>
+                                                    <th class="py-2 px-4 border-b">进程</th>
+                                                    <th class="py-2 px-4 border-b">完成时间</th>
+                                                    <th class="py-2 px-4 border-b">周转时间</th>
+                                                    <th class="py-2 px-4 border-b">带权周转时间</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="rr-results-body" class="text-center"></tbody>
+                                            <tfoot id="rr-results-foot" class="font-bold bg-slate-200"></tfoot>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- MFQ Visualizer -->
+                        <div id="content-mfq" class="content-panel">
+                             <p class="text-center text-gray-600 mb-4">多级反馈队列通过将进程在不同优先级的队列间移动，兼顾了响应时间和吞吐量。点击按钮，观察一个长进程、一个短进程和一个高优先级抢占进程的调度过程。</p>
+                             <div class="text-center mb-6">
+                                <button id="mfq-play-button" onclick="animateMfq()" class="py-2 px-5 bg-blue-500 text-white rounded-full font-semibold transition-all duration-300 hover:bg-blue-600">播放动画</button>
+                            </div>
+                            <div class="relative p-4 border rounded-lg bg-gray-50 min-h-[400px] overflow-hidden">
+                                <div class="mb-4 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm">
+                                    <div class="flex items-center"><div class="w-4 h-4 bg-sky-500 rounded-full mr-2"></div>长作业 (P1)</div>
+                                    <div class="flex items-center"><div class="w-4 h-4 bg-emerald-500 rounded-full mr-2"></div>短作业 (P2)</div>
+                                    <div class="flex items-center"><div class="w-4 h-4 bg-amber-500 rounded-full mr-2"></div>抢占作业 (P3)</div>
+                                </div>
+                                <div id="mfq-queues" class="space-y-6">
+                                    <div class="queue-row flex items-center gap-4">
+                                        <span class="font-bold w-40 text-right">第一队列 (q=1)</span>
+                                        <div id="mfq-q1" class="h-10 flex-1 bg-gray-200 rounded relative"></div>
+                                    </div>
+                                    <div class="queue-row flex items-center gap-4">
+                                        <span class="font-bold w-40 text-right">第二队列 (q=2)</span>
+                                        <div id="mfq-q2" class="h-10 flex-1 bg-gray-200 rounded relative"></div>
+                                    </div>
+                                    <div class="queue-row flex items-center gap-4">
+                                        <span class="font-bold w-40 text-right">第三队列 (FCFS)</span>
+                                        <div id="mfq-q3" class="h-10 flex-1 bg-gray-200 rounded relative"></div>
+                                    </div>
+                                </div>
+                                 <div id="mfq-log" class="mt-6 text-center font-mono text-sm text-slate-600 h-6"></div>
+                                 <div class="mt-4 pt-4 border-t">
+                                     <div class="flex items-center justify-center gap-4">
+                                         <span class="font-bold text-lg">CPU 状态:</span>
+                                         <div id="cpu-status" class="w-24 h-10 rounded bg-gray-200 flex items-center justify-center font-bold text-gray-500">
+                                             空闲
+                                         </div>
+                                     </div>
+                                 </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Priority Scheduling -->
+                        <div id="content-priority" class="content-panel">
+                            <p class="text-gray-700 mb-6">该算法将处理机分配给就绪队列中优先级最高的进程。优先级可以是静态的或动态的。</p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div class="bg-slate-100 p-4 rounded-lg">
+                                    <h4 class="font-bold text-lg">静态优先级</h4>
+                                    <p class="text-sm text-gray-600">在进程创建时确定，整个运行期间不变。依据：进程类型、资源需求、用户付费等。优点是简单开销小，缺点是可能导致低优先级进程饥饿。</p>
+                                </div>
+                                <div class="bg-slate-100 p-4 rounded-lg">
+                                    <h4 class="font-bold text-lg">动态优先级</h4>
+                                    <p class="text-sm text-gray-600">优先级随进程状态或等待时间而改变。例如，等待时间越长，优先级越高，可以有效防止饥饿现象。</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Section 3: Fairness -->
+            <section id="fairness" class="mb-16">
+                 <h2 class="text-3xl font-bold text-center mb-8 text-gray-900">公平性调度</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="bg-white p-6 rounded-lg shadow-lg">
+                        <h3 class="font-bold text-xl text-slate-800 mb-2">保证调度算法</h3>
+                        <p class="text-gray-600">向用户做出明确的性能保证，如“若有N个用户，每个用户将获得1/N的CPU处理能力”。调度器会跟踪进程的CPU使用情况，并优先选择与理想分配差距最大的进程。</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-lg">
+                        <h3 class="font-bold text-xl text-slate-800 mb-2">公平分享调度算法</h3>
+                        <p class="text-gray-600">将公平性从进程层面提升到用户层面。它会考虑哪个用户拥有一个进程，并确保CPU时间在用户之间公平分配，而不是在进程之间。</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const tabsContainer = document.getElementById('algo-tabs');
+    const contentContainer = document.getElementById('algo-content');
+    tabsContainer.addEventListener('click', e => {
+        const button = e.target.closest('.tab-button');
+        if (!button) return;
+        
+        tabsContainer.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+        button.classList.add('active');
+
+        contentContainer.querySelectorAll('.content-panel').forEach(p => p.classList.remove('active'));
+        document.getElementById(`content-${button.dataset.target}`).classList.add('active');
+    });
+
+    resetRRSimulation();
+});
+
+const processColors = {
+    'A': 'bg-sky-500',
+    'B': 'bg-emerald-500',
+    'C': 'bg-amber-500',
+    'D': 'bg-rose-500',
+    'E': 'bg-indigo-500',
+    'P1': 'bg-sky-500',      // Long Job
+    'P2': 'bg-emerald-500',  // Short Job
+    'P3': 'bg-amber-500'     // Preempt Job
+};
+
+const rrJobData = [
+    { id: 'A', arrival: 0, service: 4, color: processColors['A'] },
+    { id: 'B', arrival: 1, service: 3, color: processColors['B'] },
+    { id: 'C', arrival: 2, service: 4, color: processColors['C'] },
+    { id: 'D', arrival: 3, service: 2, color: processColors['D'] },
+    { id: 'E', arrival: 4, service: 4, color: processColors['E'] }
+];
+
+let rrAnimationTimeouts = [];
+function resetRRSimulation() {
+    rrAnimationTimeouts.forEach(clearTimeout);
+    rrAnimationTimeouts = [];
+    document.querySelectorAll('#content-rr .sim-button').forEach(b => b.classList.remove('active'));
+    document.getElementById('rr-gantt-chart').innerHTML = '<p class="text-center text-gray-400">请选择一个时间片以开始模拟</p>';
+    document.getElementById('rr-gantt-labels').innerHTML = '';
+    document.getElementById('rr-results-body').innerHTML = '';
+    document.getElementById('rr-results-foot').innerHTML = '';
+    document.getElementById('rr-log').textContent = '';
+    const cpu = document.getElementById('rr-cpu-status');
+    cpu.textContent = '空闲';
+    cpu.className = 'w-24 h-10 rounded bg-gray-200 flex items-center justify-center font-bold text-gray-500';
+}
+
+function runRRSimulation(q) {
+    resetRRSimulation();
+    document.querySelector(`#content-rr .sim-button[onclick="runRRSimulation(${q})"]`).classList.add('active');
+
+    let jobs = JSON.parse(JSON.stringify(rrJobData));
+    jobs.forEach(j => j.remaining = j.service);
+    
+    let schedule = [];
+    let readyQueue = [];
+    let currentTime = 0;
+    let jobIndex = 0;
+
+    while (jobs.some(j => j.remaining > 0)) {
+        while(jobIndex < jobs.length && jobs[jobIndex].arrival <= currentTime) {
+            readyQueue.push(jobs[jobIndex]);
+            jobIndex++;
+        }
+
+        if (readyQueue.length === 0) {
+            if (jobIndex < jobs.length) {
+                currentTime = jobs[jobIndex].arrival;
+                continue;
+            } else {
+                break; 
+            }
+        }
+
+        const currentJob = readyQueue.shift();
+        const startTime = currentTime;
+        const runTime = Math.min(currentJob.remaining, q);
+        
+        currentTime += runTime;
+        currentJob.remaining -= runTime;
+
+        schedule.push({ id: currentJob.id, color: currentJob.color, start: startTime, end: currentTime });
+        
+        while(jobIndex < jobs.length && jobs[jobIndex].arrival <= currentTime) {
+            readyQueue.push(jobs[jobIndex]);
+            jobIndex++;
+        }
+
+        if (currentJob.remaining > 0) {
+            readyQueue.push(currentJob);
+        } else {
+            currentJob.completionTime = currentTime;
+        }
+    }
+    
+    renderRRResults(jobs);
+    renderRRChart(jobs, schedule);
+    playbackRRSimulation(schedule);
+}
+
+function renderRRResults(jobs) {
+    const resultsBody = document.getElementById('rr-results-body');
+    const resultsFoot = document.getElementById('rr-results-foot');
+    resultsBody.innerHTML = '';
+    
+    let totalTurnaround = 0;
+    let totalWeightedTurnaround = 0;
+    
+    const sortedJobs = [...jobs].sort((a,b) => a.id.localeCompare(b.id));
+
+    sortedJobs.forEach(job => {
+        const turnaround = job.completionTime - job.arrival;
+        const weightedTurnaround = (turnaround / job.service);
+        totalTurnaround += turnaround;
+        totalWeightedTurnaround += weightedTurnaround;
+
+        resultsBody.innerHTML += `
+            <tr>
+                <td class="py-2 px-4 border-b">${job.id}</td>
+                <td class="py-2 px-4 border-b">${job.completionTime}</td>
+                <td class="py-2 px-4 border-b">${turnaround}</td>
+                <td class="py-2 px-4 border-b">${weightedTurnaround.toFixed(2)}</td>
+            </tr>
+        `;
+    });
+
+    const avgTurnaround = (totalTurnaround / jobs.length).toFixed(2);
+    const avgWeightedTurnaround = (totalWeightedTurnaround / jobs.length).toFixed(2);
+
+    resultsFoot.innerHTML = `
+        <tr>
+            <td class="py-2 px-4 border-b text-right font-bold" colspan="2">平均值</td>
+            <td class="py-2 px-4 border-b">${avgTurnaround}</td>
+            <td class="py-2 px-4 border-b">${avgWeightedTurnaround}</td>
+        </tr>
+    `;
+}
+
+function renderRRChart(jobs, schedule) {
+    const chartContainer = document.getElementById('rr-gantt-chart');
+    const labelsContainer = document.getElementById('rr-gantt-labels');
+    chartContainer.innerHTML = '';
+    labelsContainer.innerHTML = '';
+
+    const totalDuration = Math.max(...jobs.map(j => j.completionTime));
+
+    labelsContainer.innerHTML = `<span>0</span><span>${Math.round(totalDuration/2)}</span><span>${totalDuration}</span>`;
+
+    const sortedJobs = [...jobs].sort((a,b) => a.id.localeCompare(b.id));
+
+    sortedJobs.forEach(job => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center';
+        row.innerHTML = `<span class="w-16 font-semibold text-sm text-right pr-2">进程 ${job.id}:</span>
+                         <div id="timeline-${job.id}" class="flex-1 h-8 bg-gray-200 rounded relative overflow-hidden"></div>`;
+        chartContainer.appendChild(row);
+        
+        const timeline = document.getElementById(`timeline-${job.id}`);
+        
+        const jobSlices = schedule.filter(s => s.id === job.id);
+        let lastEndTime = job.arrival;
+
+        jobSlices.forEach((slice, sliceIndex) => {
+            if (slice.start > lastEndTime) {
+                const waitingSegment = document.createElement('div');
+                waitingSegment.className = 'gantt-bar absolute h-full bg-gray-300';
+                waitingSegment.style.left = `${(lastEndTime / totalDuration) * 100}%`;
+                waitingSegment.style.width = `${((slice.start - lastEndTime) / totalDuration) * 100}%`;
+                timeline.appendChild(waitingSegment);
+            }
+
+            const runningSegment = document.createElement('div');
+            runningSegment.className = `gantt-bar absolute h-full flex items-center justify-center text-white text-xs font-bold ${slice.color}`;
+            runningSegment.style.left = `${(slice.start / totalDuration) * 100}%`;
+            runningSegment.style.width = `0%`;
+            timeline.appendChild(runningSegment);
+            
+            const globalIndex = schedule.findIndex(s => s.start === slice.start && s.id === slice.id);
+            const timeoutId = setTimeout(() => {
+                runningSegment.style.width = `${((slice.end - slice.start) / totalDuration) * 100}%`;
+            }, 100 + globalIndex * 50);
+            rrAnimationTimeouts.push(timeoutId);
+
+            lastEndTime = slice.end;
+        });
+    });
+}
+
+function playbackRRSimulation(schedule) {
+    const cpu = document.getElementById('rr-cpu-status');
+    const log = document.getElementById('rr-log');
+    const scalingFactor = 150; 
+
+    const setCpuStatus = (slice, isEnd = false) => {
+        if (slice && !isEnd) {
+            cpu.textContent = `P-${slice.id}`;
+            cpu.className = `w-24 h-10 rounded flex items-center justify-center font-bold text-white ${slice.color}`;
+            log.textContent = `时刻 ${slice.start}: 调度进程 ${slice.id} 执行`;
+        } else {
+            cpu.textContent = '空闲';
+            cpu.className = 'w-24 h-10 rounded bg-gray-200 flex items-center justify-center font-bold text-gray-500';
+            if (slice) {
+                const job = rrJobData.find(j => j.id === slice.id);
+                const totalRunTime = schedule.filter(s => s.id === slice.id).reduce((acc, s) => acc + (s.end - s.start), 0);
+                const isFinished = totalRunTime >= job.service;
+                if (isFinished) {
+                    log.textContent = `时刻 ${slice.end}: 进程 ${slice.id} 完成`;
+                } else {
+                    log.textContent = `时刻 ${slice.end}: 进程 ${slice.id} 时间片用完`;
+                }
+            } else {
+                 log.textContent = `上下文切换...`;
+            }
+        }
+    };
+
+    schedule.forEach((slice, index) => {
+        let startTimeout = setTimeout(() => {
+            setCpuStatus(slice);
+        }, slice.start * scalingFactor);
+        rrAnimationTimeouts.push(startTimeout);
+
+        let endTimeout = setTimeout(() => {
+            if (index < schedule.length - 1) {
+                setCpuStatus(slice, true);
+            } else {
+                setCpuStatus(slice, true);
+                let finalTimeout = setTimeout(() => {
+                    log.textContent = '所有进程完成';
+                    setCpuStatus(null);
+                }, scalingFactor);
+                rrAnimationTimeouts.push(finalTimeout);
+            }
+        }, slice.end * scalingFactor - 1);
+        rrAnimationTimeouts.push(endTimeout);
+    });
+}
+
+
+function createProcessToken(id, colorClass) {
+    const token = document.createElement('div');
+    token.id = `token-${id}`;
+    token.className = `process-token w-8 h-8 ${colorClass} rounded-full flex items-center justify-center text-white font-bold text-sm shadow-lg`;
+    token.textContent = id;
+    return token;
+}
+
+let isMfqAnimating = false;
+async function animateMfq() {
+    if (isMfqAnimating) return;
+    isMfqAnimating = true;
+    const playButton = document.getElementById('mfq-play-button');
+    playButton.disabled = true;
+    playButton.classList.add('opacity-50', 'cursor-not-allowed');
+
+    document.querySelectorAll('.process-token').forEach(t => t.remove());
+    const log = document.getElementById('mfq-log');
+    const cpu = document.getElementById('cpu-status');
+    const queues = document.getElementById('mfq-queues').children;
+    
+    const setCpuStatus = (process) => {
+        if (process) {
+            cpu.textContent = process.textContent;
+            cpu.className = `w-24 h-10 rounded flex items-center justify-center font-bold text-white ${process.classList[2]}`;
+        } else {
+            cpu.textContent = '空闲';
+            cpu.className = 'w-24 h-10 rounded bg-gray-200 flex items-center justify-center font-bold text-gray-500';
+        }
+    };
+    
+    const highlightQueue = (queueElement) => {
+        for(let q of queues) {
+            q.classList.add('dimmed');
+        }
+        if(queueElement) {
+            queueElement.closest('.queue-row').classList.remove('dimmed');
+        }
+    };
+    
+    const resetHighlight = () => {
+         for(let q of queues) {
+            q.classList.remove('dimmed');
+        }
+    };
+
+    const longJob = createProcessToken('P1', processColors['P1']);
+    const shortJob = createProcessToken('P2', processColors['P2']);
+    const preemptJob = createProcessToken('P3', processColors['P3']);
+
+    const q1 = document.getElementById('mfq-q1');
+    const q2 = document.getElementById('mfq-q2');
+    const q3 = document.getElementById('mfq-q3');
+
+    const sleep = ms => new Promise(res => setTimeout(res, ms));
+
+    const setLog = async (text, delay = 1600) => {
+        log.textContent = text;
+        await sleep(delay);
+    };
+    
+    setCpuStatus(null);
+    resetHighlight();
+
+    q1.appendChild(longJob);
+    await setLog('长作业 P1 进入第一队列');
+    
+    highlightQueue(q1);
+    setCpuStatus(longJob);
+    longJob.style.left = '80%';
+    await setLog('P1 在第一队列执行一个时间片 (q=1)');
+    
+    setCpuStatus(null);
+    resetHighlight();
+    q2.appendChild(longJob);
+    longJob.style.left = '20px';
+    await setLog('P1 未完成，进入第二队列');
+    
+    q1.appendChild(shortJob);
+    await setLog('短作业 P2 进入第一队列');
+    
+    highlightQueue(q1);
+    setCpuStatus(shortJob);
+    shortJob.style.left = '80%';
+    await setLog('调度 P2 (更高优先级), P2 执行并完成');
+    
+    setCpuStatus(null);
+    shortJob.style.opacity = '0';
+    await setLog('P2 完成', 1000);
+    shortJob.remove();
+    resetHighlight();
+
+    highlightQueue(q2);
+    setCpuStatus(longJob);
+    longJob.style.left = '80%';
+    await setLog('调度 P1，在第二队列执行 (q=2)');
+    
+    q1.appendChild(preemptJob);
+    await setLog('高优先级抢占作业 P3 到达');
+    
+    longJob.style.left = '20px'; 
+    setCpuStatus(preemptJob);
+    highlightQueue(q1);
+    await setLog('P3 抢占 P1 的CPU');
+    
+    preemptJob.style.left = '80%';
+    await setLog('P3 执行并完成');
+    
+    setCpuStatus(null);
+    preemptJob.style.opacity = '0';
+    await setLog('P3 完成', 1000);
+    preemptJob.remove();
+    resetHighlight();
+    
+    q3.appendChild(longJob);
+    longJob.style.left = '20px';
+    await setLog('P1 仍未完成，进入第三队列 (FCFS)');
+
+    highlightQueue(q3);
+    setCpuStatus(longJob);
+    longJob.style.left = '80%';
+    await setLog('P1 在第三队列执行直至完成');
+    
+    setCpuStatus(null);
+    longJob.style.opacity = '0';
+    await setLog('所有作业完成', 1000);
+    longJob.remove();
+    log.textContent = '动画结束';
+    resetHighlight();
+
+    isMfqAnimating = false;
+    playButton.disabled = false;
+    playButton.classList.remove('opacity-50', 'cursor-not-allowed');
+}
+</script>
+</body>
+</html>
