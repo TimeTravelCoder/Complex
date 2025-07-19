@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>死锁检测与解除 - 交互式学习指南</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: System Monitor (Cool Grays, Blues for processes, Orange for resources, Green for safe, Red for deadlock) -->
+    <!-- Application Structure Plan: The application is structured as a diagnostic tool. It starts with the theoretical foundation ('资源分配图' and '死锁定理'), then moves to the core '死锁检测算法模拟器'. This simulator is the main interactive element, transforming the static example into a dynamic, step-by-step process. It includes a control panel, state displays, and a detailed log. Finally, the '死锁解除策略' section provides a clear, organized summary of recovery methods. This flow mimics a real-world problem-solving process: understand the model, run the diagnostics, and then review the solutions. -->
+    <!-- Visualization & Content Choices: 1. Resource Allocation Graph: Report Info -> RAG definition. Goal -> Inform. Viz -> A clear, static diagram built with HTML/CSS divs and a legend. Interaction -> None. Justification -> A clean, static visual is sufficient to explain the concept. 2. Deadlock Detection Simulator: Report Info -> The detailed algorithm example. Goal -> Demonstrate & Explain. Viz -> A dashboard with tables for Allocation/Request, a dynamic 'Work' and 'Finish' vector display, and a step-by-step event log. Interaction -> A "Run Detection" button initiates a fully automated, animated simulation of the algorithm's execution. Justification -> This transforms the abstract, multi-step calculation into a live, narrated process, making it far easier to understand how the algorithm finds a safe sequence by "simulating" process completion and resource release. 3. Recovery Strategies: Report Info -> Termination vs. Preemption. Goal -> Organize & Compare. Viz -> Side-by-side informational cards with highlighted criteria. Interaction -> Hover effects on criteria lists. Justification -> This provides a quick, scannable summary of the trade-offs involved in deadlock recovery. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #f0f4f8; }
+        .table-cell-highlight { background-color: #fef3c7; transition: background-color 0.5s ease; }
+        .status-true { background-color: #10b981; color: white; }
+        .status-false { background-color: #ef4444; color: white; }
+        .arrow {
+            position: absolute;
+            background-color: #4b5563;
+            height: 2px;
+            transform-origin: left center;
+        }
+        .arrow::after {
+            content: '';
+            position: absolute;
+            right: -1px;
+            top: -4px;
+            border-style: solid;
+            border-width: 5px 0 5px 10px;
+            border-color: transparent transparent transparent #4b5563;
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl font-bold text-gray-900">第 3.8 讲：死锁的检测与解除</h1>
+            <p class="mt-2 text-lg text-gray-600">一种事后处理的死锁应对策略</p>
+        </header>
+
+        <main>
+            <!-- Section 1: Detection Theory -->
+            <section id="theory" class="mb-16">
+                <h2 class="text-3xl font-bold text-center mb-8 text-gray-900">死锁检测的理论基础</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="bg-white p-6 rounded-lg shadow-md">
+                        <h3 class="font-bold text-xl text-slate-800 mb-2">资源分配图 (RAG)</h3>
+                        <p class="text-gray-600 mb-4">这是一种用于描述系统资源分配状态的有向图，下图展示了一个典型的死锁场景。</p>
+                        <div class="relative h-48 bg-gray-50 rounded-lg p-4" id="rag-diagram">
+                            <div id="rag-p1" class="absolute top-1/2 -translate-y-1/2 left-4 w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold">P1</div>
+                            <div id="rag-p2" class="absolute top-1/2 -translate-y-1/2 right-4 w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold">P2</div>
+                            <div id="rag-r1" class="absolute top-4 left-1/2 -translate-x-1/2 w-12 h-12 bg-orange-500 rounded-md flex items-center justify-center"><div class="w-3 h-3 bg-white rounded-full"></div></div>
+                            <div id="rag-r2" class="absolute bottom-4 left-1/2 -translate-x-1/2 w-12 h-12 bg-orange-500 rounded-md flex items-center justify-center"><div class="w-3 h-3 bg-white rounded-full"></div></div>
+                        </div>
+                         <div class="mt-4 text-sm text-gray-600">
+                           <p><b class="text-blue-600">请求边 (P → R):</b> P1 等待 R2, P2 等待 R1.</p>
+                           <p><b class="text-orange-600">分配边 (R → P):</b> R1 已分配给 P1, R2 已分配给 P2.</p>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-md">
+                        <h3 class="font-bold text-xl text-slate-800 mb-2">死锁定理</h3>
+                        <p class="text-gray-600">一个系统处于死锁状态，当且仅当其资源分配图是**不可完全简化的**。简化的过程就是模拟寻找一个能让所有进程都顺利完成的序列。如果找不到，则存在死锁。</p>
+                        <p class="mt-4 text-gray-600">在上图的例子中，P1和P2都处于阻塞状态，没有任何一个进程可以首先完成并释放资源来打破僵局，因此该图是不可简化的，系统处于死锁状态。</p>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Section 2: Detection Algorithm Simulator -->
+            <section id="simulator" class="mb-16">
+                <h2 class="text-3xl font-bold text-center mb-8 text-gray-900">死锁检测算法模拟器</h2>
+                <p class="text-center text-gray-600 mb-8 max-w-3xl mx-auto">本模拟器基于教材中的例题。点击“开始检测”按钮，观察算法如何通过模拟资源释放来逐步判断系统当前是否处于安全状态。</p>
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <div class="text-center mb-6">
+                        <button id="sim-button" onclick="runDetectionSimulation()" class="py-2 px-5 bg-blue-500 text-white rounded-full font-semibold transition-all duration-300 hover:bg-blue-600">开始检测</button>
+                    </div>
+                    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                        <!-- Left Panel: State Tables -->
+                        <div>
+                            <h4 class="font-bold text-lg mb-2 text-center">T0 时刻系统状态</h4>
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <table class="min-w-full border text-center">
+                                    <thead class="bg-gray-100"><tr class="text-sm"><th colspan="4" class="p-2">Allocation (已分配)</th></tr><tr><th></th><th>A</th><th>B</th><th>C</th></tr></thead>
+                                    <tbody id="alloc-table"></tbody>
+                                </table>
+                                <table class="min-w-full border text-center">
+                                    <thead class="bg-gray-100"><tr class="text-sm"><th colspan="4" class="p-2">Request (请求)</th></tr><tr><th></th><th>A</th><th>B</th><th>C</th></tr></thead>
+                                    <tbody id="req-table"></tbody>
+                                </table>
+                            </div>
+                             <div class="mt-4 text-center">
+                                <h4 class="font-bold text-lg">Available (初始可用)</h4>
+                                <div id="initial-avail" class="font-mono text-xl p-2 bg-gray-100 rounded"></div>
+                            </div>
+                        </div>
+                        <!-- Right Panel: Simulation Process -->
+                        <div>
+                            <h4 class="font-bold text-lg mb-2 text-center">检测过程</h4>
+                            <div class="flex justify-around items-center bg-gray-100 p-2 rounded-lg mb-4">
+                                <div>
+                                    <h5 class="font-semibold text-center">Work (动态可用)</h5>
+                                    <div id="work-vector" class="font-mono text-xl text-blue-600"></div>
+                                </div>
+                                <div>
+                                    <h5 class="font-semibold text-center">Finish (完成状态)</h5>
+                                    <div id="finish-vector" class="flex gap-2 font-mono text-sm"></div>
+                                </div>
+                            </div>
+                             <div id="sim-log" class="h-64 bg-gray-900 text-white font-mono text-sm p-4 rounded-lg overflow-y-auto"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 3: Deadlock Recovery -->
+            <section id="recovery">
+                <h2 class="text-3xl font-bold text-center mb-8 text-gray-900">死锁解除策略</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="bg-white p-6 rounded-lg shadow-md">
+                        <h3 class="font-bold text-xl text-slate-800 mb-2">1. 抢占资源</h3>
+                        <p class="text-gray-600 mb-4">从一个或多个死锁进程中强行剥夺资源，分配给其他进程。此方法代价高昂，需要解决三大难题：</p>
+                        <ul class="space-y-2 text-sm">
+                            <li class="p-2 bg-yellow-100 rounded"><b>选择牺牲品:</b> 如何决定抢占哪个进程的资源代价最小？</li>
+                            <li class="p-2 bg-yellow-100 rounded"><b>进程回滚:</b> 如何将牺牲进程恢复到某个安全状态？</li>
+                            <li class="p-2 bg-yellow-100 rounded"><b>防止饥饿:</b> 如何确保同一个进程不会被反复抢占？</li>
+                        </ul>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-md">
+                        <h3 class="font-bold text-xl text-slate-800 mb-2">2. 终止进程</h3>
+                        <p class="text-gray-600 mb-4">通过终止一个或多个死锁进程来打破循环。这是最常用的方法，分为两种：</p>
+                        <ul class="space-y-2 text-sm">
+                            <li class="p-2 bg-red-100 rounded"><b>终止所有死锁进程:</b> 简单粗暴，但代价巨大。</li>
+                            <li class="p-2 bg-red-100 rounded"><b>逐个终止进程:</b> 代价更小，但需要反复检测。选择终止对象的依据包括：优先级、已运行时间、进程性质等。</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+<script>
+const initialState = {
+    processes: ['P0', 'P1', 'P2', 'P3', 'P4'],
+    resources: ['A', 'B', 'C'],
+    allocation: [
+        [0, 1, 0],
+        [2, 0, 0],
+        [3, 0, 3],
+        [2, 1, 1],
+        [0, 0, 2]
+    ],
+    request: [
+        [0, 0, 0],
+        [2, 0, 2],
+        [0, 0, 0],
+        [1, 0, 0],
+        [0, 0, 2]
+    ],
+    available: [0, 0, 0]
+};
+
+function drawArrow(from, to, container) {
+    const fromEl = document.getElementById(from);
+    const toEl = document.getElementById(to);
+    const containerEl = document.getElementById(container);
+
+    const fromRect = fromEl.getBoundingClientRect();
+    const toRect = toEl.getBoundingClientRect();
+    const containerRect = containerEl.getBoundingClientRect();
+
+    const startX = (fromRect.left + fromRect.width / 2) - containerRect.left;
+    const startY = (fromRect.top + fromRect.height / 2) - containerRect.top;
+    const endX = (toRect.left + toRect.width / 2) - containerRect.left;
+    const endY = (toRect.top + toRect.height / 2) - containerRect.top;
+
+    const angle = Math.atan2(endY - startY, endX - startX) * 180 / Math.PI;
+    const length = Math.hypot(endX - startX, endY - startY) - 28; // 28 is half of node width + gap
+
+    const arrow = document.createElement('div');
+    arrow.className = 'arrow';
+    arrow.style.width = `${length}px`;
+    arrow.style.left = `${startX}px`;
+    arrow.style.top = `${startY}px`;
+    arrow.style.transform = `rotate(${angle}deg)`;
+    
+    containerEl.appendChild(arrow);
+}
+
+
+document.addEventListener('DOMContentLoaded', () => {
+    setupInitialState();
+    drawArrow('rag-r1', 'rag-p1', 'rag-diagram');
+    drawArrow('rag-p1', 'rag-r2', 'rag-diagram');
+    drawArrow('rag-r2', 'rag-p2', 'rag-diagram');
+    drawArrow('rag-p2', 'rag-r1', 'rag-diagram');
+});
+
+function setupInitialState() {
+    const allocTable = document.getElementById('alloc-table');
+    const reqTable = document.getElementById('req-table');
+    const finishVector = document.getElementById('finish-vector');
+
+    allocTable.innerHTML = '';
+    reqTable.innerHTML = '';
+    finishVector.innerHTML = '';
+
+    initialState.processes.forEach((p, i) => {
+        allocTable.innerHTML += `<tr id="alloc-row-${i}"><td class="font-bold p-1">${p}</td><td>${initialState.allocation[i][0]}</td><td>${initialState.allocation[i][1]}</td><td>${initialState.allocation[i][2]}</td></tr>`;
+        reqTable.innerHTML += `<tr id="req-row-${i}"><td class="font-bold p-1">${p}</td><td>${initialState.request[i][0]}</td><td>${initialState.request[i][1]}</td><td>${initialState.request[i][2]}</td></tr>`;
+        finishVector.innerHTML += `<div id="finish-${i}" class="px-2 py-1 rounded status-false">${p}</div>`;
+    });
+    
+    document.getElementById('initial-avail').textContent = `( ${initialState.available.join(', ')} )`;
+    document.getElementById('work-vector').textContent = `( ${initialState.available.join(', ')} )`;
+    document.getElementById('sim-log').innerHTML = '';
+}
+
+let isSimulating = false;
+async function runDetectionSimulation() {
+    if (isSimulating) return;
+    isSimulating = true;
+    
+    setupInitialState();
+    const button = document.getElementById('sim-button');
+    button.disabled = true;
+    button.classList.add('opacity-50');
+
+    const log = document.getElementById('sim-log');
+    const workVectorEl = document.getElementById('work-vector');
+
+    const addLog = async (text, delay = 1000) => {
+        log.innerHTML += `> ${text}\n`;
+        log.scrollTop = log.scrollHeight;
+        await sleep(delay);
+    };
+    const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+    let work = [...initialState.available];
+    let finish = new Array(initialState.processes.length).fill(false);
+    
+    await addLog("检测开始: Work = Available = (" + work.join(', ') + ")");
+    
+    let found;
+    let round = 1;
+    do {
+        found = false;
+        await addLog(`--- 第 ${round} 轮扫描 ---`, 500);
+        for (let i = 0; i < initialState.processes.length; i++) {
+            if (!finish[i]) {
+                const reqRow = document.getElementById(`req-row-${i}`);
+                highlightRow(reqRow);
+                
+                const request = initialState.request[i];
+                const canBeSatisfied = request.every((val, j) => val <= work[j]);
+
+                await addLog(`检查 P${i}: Request(${request.join(',')}) <= Work(${work.join(',')})?`);
+
+                if (canBeSatisfied) {
+                    await addLog(`...是. P${i} 可以完成.`, 500);
+                    found = true;
+                    
+                    const alloc = initialState.allocation[i];
+                    await addLog(`P${i} 释放资源 (${alloc.join(',')})`);
+                    
+                    work = work.map((val, j) => val + alloc[j]);
+                    workVectorEl.textContent = `( ${work.join(', ')} )`;
+
+                    finish[i] = true;
+                    document.getElementById(`finish-${i}`).classList.replace('status-false', 'status-true');
+
+                    await addLog(`新 Work = (${work.join(',')}). P${i} 标记为 Finish=true`);
+                    unhighlightRow(reqRow);
+                    break; // Restart scan
+                } else {
+                     await addLog(`...否. P${i} 必须等待.`, 500);
+                     unhighlightRow(reqRow);
+                }
+            }
+        }
+        round++;
+    } while (found);
+
+    const isDeadlocked = finish.some(f => !f);
+    if (isDeadlocked) {
+        await addLog("--- 扫描结束 ---");
+        await addLog("无法找到更多可完成的进程。");
+        const deadlockedProcs = initialState.processes.filter((p, i) => !finish[i]);
+        await addLog(`<span class="text-red-400 font-bold">检测到死锁! 死锁进程: ${deadlockedProcs.join(', ')}</span>`);
+    } else {
+        await addLog("--- 扫描结束 ---");
+        await addLog("所有进程均可完成。");
+        await addLog(`<span class="text-green-400 font-bold">系统未发生死锁。</span>`);
+    }
+
+    isSimulating = false;
+    button.disabled = false;
+    button.classList.remove('opacity-50');
+}
+
+function highlightRow(row) {
+    Array.from(row.children).forEach(cell => cell.classList.add('table-cell-highlight'));
+}
+function unhighlightRow(row) {
+    Array.from(row.children).forEach(cell => cell.classList.remove('table-cell-highlight'));
+}
+
+</script>
+
+</body>
+</html>

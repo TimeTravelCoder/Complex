@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>死锁避免 - 交互式学习指南</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Financial Blue (Blues, Greens for safe, Reds for unsafe, Grays for neutral) -->
+    <!-- Application Structure Plan: The application is designed as an interactive dashboard to explain the Banker's Algorithm. It follows a logical progression: 1. '核心概念' explains the foundational theory of safe vs. unsafe states using a clear visual diagram. 2. '银行家算法交互式模拟器' is the main component. It presents the initial system state from the textbook example in static tables, providing a clear baseline. The interactive part consists of a control panel with buttons for specific scenarios from the text, a dynamic simulation panel showing the Safety Algorithm's execution (Work and Finish vectors), and a detailed event log. This task-oriented design allows users to actively trigger and observe the algorithm's decision-making process, making it far more effective than passive reading. -->
+    <!-- Visualization & Content Choices: 1. State Relationship Diagram: Report Info -> Relationship between safe, unsafe, and deadlock states. Goal -> Inform. Viz -> Nested HTML divs with Tailwind styling to create a clear Venn-like diagram. Justification -> A visual diagram is more intuitive for understanding set relationships than plain text. 2. Banker's Algorithm Simulator: Report Info -> The detailed 5-process, 3-resource example. Goal -> Demonstrate & Explain. Viz -> A dashboard combining static data tables (Max, Allocation, Need) with a dynamic simulation panel and a step-by-step event log. Interaction -> Buttons trigger specific, pre-defined request simulations. The simulation animates by highlighting rows in the tables and updating the 'Work' and 'Finish' vectors with color-coded status changes. Justification -> This interactive, step-by-step visualization transforms the complex, multi-stage algorithm from an abstract concept into a concrete, observable process. The real-time log narrates the algorithm's "thought process," making the logic transparent and easy to follow. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #f3f4f6; }
+        .table-cell-highlight { background-color: #fef9c3; transition: background-color 0.5s ease; }
+        .status-true { background-color: #10b981; color: white; transform: scale(1.1); }
+        .status-false { background-color: #ef4444; color: white; }
+        .vector-value { transition: all 0.5s ease-in-out; display: inline-block; }
+        .finish-box { transition: all 0.5s ease-in-out; }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl font-bold text-gray-900">第 3.7 讲：避免死锁</h1>
+            <p class="mt-2 text-lg text-gray-600">通过银行家算法在资源分配前进行安全检查</p>
+        </header>
+
+        <main>
+            <!-- Section 1: Core Concepts -->
+            <section id="concepts" class="mb-16">
+                <h2 class="text-3xl font-bold text-center mb-8 text-gray-900">核心概念：安全与不安全状态</h2>
+                <div class="max-w-3xl mx-auto bg-white p-6 rounded-lg shadow-md flex flex-col md:flex-row items-center gap-6">
+                    <div class="w-full md:w-1/2 p-4 border rounded-lg h-48 flex items-center justify-center">
+                        <div class="w-full h-full bg-red-200 rounded p-2 flex items-center justify-center text-red-800 font-bold text-center">
+                            不安全状态
+                            <div class="w-3/5 h-3/5 bg-red-400 rounded p-2 flex items-center justify-center">
+                                死锁状态
+                            </div>
+                        </div>
+                    </div>
+                    <div class="w-full md:w-1/2">
+                         <h3 class="font-bold text-xl text-slate-800 mb-2">状态关系</h3>
+                         <ul class="list-disc list-inside space-y-2 text-gray-600">
+                             <li><b class="text-green-600">安全状态:</b> 系统一定**不会**发生死锁。</li>
+                             <li><b class="text-red-600">不安全状态:</b> 系统**可能**会发生死锁。</li>
+                             <li>死锁避免的核心就是**绝不让系统进入不安全状态**。</li>
+                         </ul>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Section 2: Banker's Algorithm Simulator -->
+            <section id="simulator" class="mb-16">
+                <h2 class="text-3xl font-bold text-center mb-8 text-gray-900">银行家算法交互式模拟器</h2>
+                <p class="text-center text-gray-600 mb-8 max-w-4xl mx-auto">本模拟器基于教材中的经典例题。下方展示了T0时刻的系统快照。您可以检查初始安全性，或自定义一个进程的资源请求来观察算法的决策过程。</p>
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <!-- Initial State Display -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+                        <div class="text-center">
+                            <h4 class="font-bold text-lg mb-2">Max (最大需求)</h4>
+                            <table class="min-w-full border text-sm"><thead class="bg-gray-100"><tr><th></th><th>A</th><th>B</th><th>C</th></tr></thead><tbody id="max-table"></tbody></table>
+                        </div>
+                        <div class="text-center">
+                            <h4 class="font-bold text-lg mb-2">Allocation (已分配)</h4>
+                            <table class="min-w-full border text-sm"><thead class="bg-gray-100"><tr><th></th><th>A</th><th>B</th><th>C</th></tr></thead><tbody id="alloc-table"></tbody></table>
+                        </div>
+                        <div class="text-center">
+                            <h4 class="font-bold text-lg mb-2">Need (尚需)</h4>
+                            <table class="min-w-full border text-sm"><thead class="bg-gray-100"><tr><th></th><th>A</th><th>B</th><th>C</th></tr></thead><tbody id="need-table"></tbody></table>
+                        </div>
+                        <div class="text-center p-4 bg-gray-50 rounded-lg flex flex-col justify-center">
+                            <h4 class="font-bold text-lg">系统资源总量</h4>
+                            <p class="font-mono text-2xl">(10, 5, 7)</p>
+                            <h4 class="font-bold text-lg mt-4">Available (当前可用)</h4>
+                            <p id="initial-avail" class="font-mono text-2xl text-blue-600"></p>
+                        </div>
+                    </div>
+                    
+                    <!-- Simulation Control and Display -->
+                    <div class="border-t pt-6">
+                        <h3 class="font-bold text-xl text-center mb-4">场景模拟与安全检查</h3>
+                        <div class="bg-gray-100 p-4 rounded-lg flex flex-wrap justify-center items-center gap-4 mb-6">
+                            <button onclick="runScenario('initial')" class="py-2 px-4 bg-gray-600 text-white rounded-full font-semibold">检查 T0 安全性</button>
+                            <div class="flex items-center gap-2">
+                                <label for="process-select" class="font-semibold">进程</label>
+                                <select id="process-select" class="border rounded px-2 py-1"></select>
+                                <span class="font-semibold">请求资源:</span>
+                                <label>A:<input id="res-a-input" type="number" min="0" value="0" class="w-16 border rounded px-2 py-1"></label>
+                                <label>B:<input id="res-b-input" type="number" min="0" value="0" class="w-16 border rounded px-2 py-1"></label>
+                                <label>C:<input id="res-c-input" type="number" min="0" value="0" class="w-16 border rounded px-2 py-1"></label>
+                            </div>
+                            <button onclick="runCustomRequest()" class="py-2 px-4 bg-blue-600 text-white rounded-full font-semibold">提交请求并检查</button>
+                             <button onclick="setupInitialUI()" class="py-2 px-4 bg-gray-400 text-white rounded-full font-semibold">重置</button>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 bg-gray-50 p-4 rounded-lg">
+                            <div>
+                                <h4 class="font-bold text-lg mb-2 text-center">检测过程</h4>
+                                <div class="flex justify-around items-center bg-white p-2 rounded-lg mb-4 shadow-inner">
+                                    <div>
+                                        <h5 class="font-semibold text-center">Work (动态可用)</h5>
+                                        <div id="work-vector" class="font-mono text-xl text-blue-600 text-center"></div>
+                                    </div>
+                                    <div>
+                                        <h5 class="font-semibold text-center">Finish (完成状态)</h5>
+                                        <div id="finish-vector" class="flex gap-2 font-mono text-sm"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-lg mb-2 text-center">事件日志</h4>
+                                <div id="sim-log" class="h-48 bg-gray-900 text-white font-mono text-sm p-4 rounded-lg overflow-y-auto"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+<script>
+const initialState = {
+    processes: ['P0', 'P1', 'P2', 'P3', 'P4'],
+    resources: ['A', 'B', 'C'],
+    max: [ [7, 5, 3], [3, 2, 2], [9, 0, 2], [2, 2, 2], [4, 3, 3] ],
+    allocation: [ [0, 1, 0], [2, 0, 0], [3, 0, 2], [2, 1, 1], [0, 0, 2] ],
+    available: [3, 3, 2]
+};
+
+function calculateNeed(max, allocation) {
+    return max.map((maxRow, i) => maxRow.map((maxVal, j) => maxVal - allocation[i][j]));
+}
+
+function setupInitialUI() {
+    const state = JSON.parse(JSON.stringify(initialState));
+    state.need = calculateNeed(state.max, state.allocation);
+
+    const tables = {
+        'max-table': state.max,
+        'alloc-table': state.allocation,
+        'need-table': state.need
+    };
+
+    for (const [tableId, data] of Object.entries(tables)) {
+        const tableBody = document.getElementById(tableId);
+        tableBody.innerHTML = '';
+        state.processes.forEach((p, i) => {
+            tableBody.innerHTML += `
+                <tr id="${tableId.split('-')[0]}-row-${i}">
+                    <td class="font-bold p-1">${p}</td>
+                    <td>${data[i][0]}</td><td>${data[i][1]}</td><td>${data[i][2]}</td>
+                </tr>`;
+        });
+    }
+    
+    const processSelect = document.getElementById('process-select');
+    processSelect.innerHTML = '';
+    state.processes.forEach((p, i) => {
+        processSelect.innerHTML += `<option value="${i}">${p}</option>`;
+    });
+    
+    document.getElementById('initial-avail').textContent = `( ${state.available.join(', ')} )`;
+    resetSimulationUI(state.available);
+}
+
+function resetSimulationUI(available) {
+    const finishVector = document.getElementById('finish-vector');
+    finishVector.innerHTML = '';
+    initialState.processes.forEach((p, i) => {
+        finishVector.innerHTML += `<div id="finish-${i}" class="finish-box px-2 py-1 rounded status-false">${p}</div>`;
+    });
+    
+    const workVectorEl = document.getElementById('work-vector');
+    workVectorEl.innerHTML = `( ${available.map(v => `<span class="vector-value">${v}</span>`).join(', ')} )`;
+
+    document.getElementById('sim-log').innerHTML = '';
+    document.querySelectorAll('tr').forEach(row => unhighlightRow(row));
+}
+
+document.addEventListener('DOMContentLoaded', setupInitialUI);
+
+let isSimulating = false;
+
+async function runScenario(scenario) {
+    if (isSimulating) return;
+    isSimulating = true;
+    document.querySelectorAll('button').forEach(b => b.disabled = true);
+    
+    const log = document.getElementById('sim-log');
+    const addLog = async (text, delay = 700) => {
+        log.innerHTML += `> ${text}\n`;
+        log.scrollTop = log.scrollHeight;
+        await sleep(delay);
+    };
+    const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+    let state = JSON.parse(JSON.stringify(initialState));
+    state.need = calculateNeed(state.max, state.allocation);
+    resetSimulationUI(state.available);
+
+    await addLog("开始检查 T0 时刻系统安全性...");
+    const result = await runSafetyAlgorithm(state, log);
+    await addLog(result.isSafe 
+        ? `<span class="text-green-400 font-bold">系统安全. 安全序列: &lt;${result.safeSequence.join(', ')}&gt;</span>`
+        : `<span class="text-red-400 font-bold">系统不安全!</span>`);
+
+    isSimulating = false;
+    document.querySelectorAll('button').forEach(b => b.disabled = false);
+}
+
+async function runCustomRequest() {
+    if (isSimulating) return;
+    isSimulating = true;
+    document.querySelectorAll('button').forEach(b => b.disabled = true);
+
+    const log = document.getElementById('sim-log');
+    const addLog = async (text, delay = 700) => {
+        log.innerHTML += `> ${text}\n`;
+        log.scrollTop = log.scrollHeight;
+        await sleep(delay);
+    };
+    const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+    let state = JSON.parse(JSON.stringify(initialState));
+    state.need = calculateNeed(state.max, state.allocation);
+    resetSimulationUI(state.available);
+
+    const process = parseInt(document.getElementById('process-select').value);
+    const request = [
+        parseInt(document.getElementById('res-a-input').value) || 0,
+        parseInt(document.getElementById('res-b-input').value) || 0,
+        parseInt(document.getElementById('res-c-input').value) || 0,
+    ];
+
+    const pName = state.processes[process];
+    await addLog(`收到进程 ${pName} 的请求 Request(${request.join(',')})`);
+    
+    const needRow = document.getElementById(`need-row-${process}`);
+    const isLegit = request.every((v, i) => v <= state.need[process][i]);
+    highlightRow(needRow);
+    await addLog(`1. 检查: Request(${request.join(',')}) <= Need(${state.need[process].join(',')})?`);
+    unhighlightRow(needRow);
+    if (!isLegit) {
+        await addLog(`<span class="text-red-400 font-bold">错误: 请求超过最大需求, 拒绝.</span>`);
+    } else {
+        await addLog(`...检查通过.`);
+        const isAvailable = request.every((v, i) => v <= state.available[i]);
+        await addLog(`2. 检查: Request(${request.join(',')}) <= Available(${state.available.join(',')})?`);
+        if (!isAvailable) {
+            await addLog(`<span class="text-yellow-400 font-bold">资源不足, ${pName} 必须等待.</span>`);
+        } else {
+            await addLog(`...检查通过. 尝试进行分配...`);
+            let tempState = JSON.parse(JSON.stringify(state));
+            tempState.available = tempState.available.map((v, i) => v - request[i]);
+            tempState.allocation[process] = tempState.allocation[process].map((v, i) => v + request[i]);
+            tempState.need[process] = tempState.need[process].map((v, i) => v - request[i]);
+            
+            await addLog(`3. 执行安全检查...`, 200);
+            resetSimulationUI(tempState.available);
+            const result = await runSafetyAlgorithm(tempState, log);
+
+            if (result.isSafe) {
+                await addLog(`<span class="text-green-400 font-bold">安全检查通过. 请求被批准!</span>`);
+            } else {
+                await addLog(`<span class="text-red-400 font-bold">安全检查失败! 分配将导致不安全状态, 请求被拒绝.</span>`);
+            }
+        }
+    }
+
+    isSimulating = false;
+    document.querySelectorAll('button').forEach(b => b.disabled = false);
+}
+
+async function runSafetyAlgorithm(state, log) {
+    const workVectorEl = document.getElementById('work-vector');
+    const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+    const addLog = async (text, delay = 700) => {
+        log.innerHTML += `> ${text}\n`;
+        log.scrollTop = log.scrollHeight;
+        await sleep(delay);
+    };
+    
+    let work = [...state.available];
+    let finish = new Array(state.processes.length).fill(false);
+    let safeSequence = [];
+
+    await addLog("安全算法: Work = Available = (" + work.join(', ') + ")");
+
+    let foundInRound;
+    let round = 1;
+    while(safeSequence.length < state.processes.length) {
+        foundInRound = false;
+        await addLog(`--- 第 ${round} 轮扫描 ---`, 500);
+        for (let i = 0; i < state.processes.length; i++) {
+            if (!finish[i]) {
+                const needRow = document.getElementById(`need-row-${i}`);
+                highlightRow(needRow);
+                
+                const canBeSatisfied = state.need[i].every((val, j) => val <= work[j]);
+                await addLog(`检查 ${state.processes[i]}: Need(${state.need[i].join(',')}) <= Work(${work.join(',')})?`);
+
+                if (canBeSatisfied) {
+                    await addLog(`...是. ${state.processes[i]} 可以完成.`, 500);
+                    foundInRound = true;
+                    
+                    await addLog(`${state.processes[i]} 释放资源 (${state.allocation[i].join(',')})`);
+                    
+                    const oldWork = [...work];
+                    work = work.map((val, j) => val + state.allocation[i][j]);
+                    
+                    const workSpans = workVectorEl.querySelectorAll('.vector-value');
+                    work.forEach((val, index) => {
+                        if (val !== oldWork[index]) {
+                            workSpans[index].style.transform = 'scale(1.5)';
+                            workSpans[index].style.color = '#10b981';
+                        }
+                        workSpans[index].textContent = val;
+                    });
+                    await sleep(500);
+                    workSpans.forEach(span => {
+                         span.style.transform = 'scale(1)';
+                         span.style.color = '';
+                    });
+
+
+                    finish[i] = true;
+                    document.getElementById(`finish-${i}`).classList.replace('status-false', 'status-true');
+                    safeSequence.push(state.processes[i]);
+
+                    await addLog(`新 Work = (${work.join(',')}). ${state.processes[i]} 标记为 Finish=true`);
+                    unhighlightRow(needRow);
+                    break;
+                } else {
+                     await addLog(`...否. ${state.processes[i]} 必须等待.`, 500);
+                     unhighlightRow(needRow);
+                }
+            }
+        }
+        if (!foundInRound) break; 
+        round++;
+    }
+
+    return { isSafe: safeSequence.length === state.processes.length, safeSequence };
+}
+
+function highlightRow(row) {
+    if (row) Array.from(row.children).forEach(cell => cell.classList.add('table-cell-highlight'));
+}
+function unhighlightRow(row) {
+    if (row) Array.from(row.children).forEach(cell => cell.classList.remove('table-cell-highlight'));
+}
+
+</script>
+
+</body>
+</html>

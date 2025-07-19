@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>死锁预防 - 交互式学习指南</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Cautionary Tech (Grays, Blues, Yellows, Reds) -->
+    <!-- Application Structure Plan: The app uses a tabbed, interactive explorer for each prevention strategy. It's a task-oriented design where users can isolate and simulate each method. The core interactions are two distinct animations: a side-by-side comparison for 'Request & Hold' protocols, and a resource graph simulation for 'Circular Wait'. This is more engaging than static text and allows users to see the consequences of each rule. -->
+    <!-- Visualization & Content Choices: 1. Request & Hold: Info -> Two protocols. Goal -> Compare efficiency. Viz -> Side-by-side animated timelines. Interaction -> Play button. Justification -> Visually contrasts resource wastage vs. efficiency. 2. Circular Wait: Info -> Resource ordering rule. Goal -> Demonstrate cycle breaking. Viz -> Animated resource allocation graph. Interaction -> Buttons for 'with' and 'without' ordering rule. Justification -> Animating the graph makes the abstract concept of a cycle tangible and its prevention clear. 3. No Preemption: Info -> Impractical rule. Goal -> Inform. Viz -> Static card. Justification -> An animation is not needed for a concept explained as impractical; a clear text explanation is sufficient. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #f3f4f6; }
+        .tab-button.active { background-color: #3b82f6; color: white; border-color: #3b82f6; }
+        .content-panel { display: none; }
+        .content-panel.active { display: block; }
+        .timeline-bar { transition: width 0.5s ease-in-out; }
+        .sim-node, .sim-arrow { transition: all 0.5s ease-in-out; }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl font-bold text-gray-900">第 3.6 讲：预防死锁</h1>
+            <p class="mt-2 text-lg text-gray-600">通过破坏死锁必要条件来规避风险</p>
+        </header>
+
+        <main>
+            <section id="strategies" class="bg-white rounded-lg shadow-lg p-6">
+                <p class="text-center text-gray-600 mb-6">预防死锁是一种静态策略，通过施加限制来破坏“请求和保持”、“不可抢占”或“循环等待”这三个条件之一。请选择下面的标签页来探索和模拟每种策略。</p>
+                <div id="strategy-tabs" class="flex flex-wrap border-b mb-6 justify-center">
+                    <button data-target="req-hold" class="tab-button active py-2 px-6 font-semibold border-b-2 m-1">破坏“请求和保持”</button>
+                    <button data-target="no-preempt" class="tab-button py-2 px-6 font-semibold border-b-2 m-1">破坏“不可抢占”</button>
+                    <button data-target="circ-wait" class="tab-button py-2 px-6 font-semibold border-b-2 m-1">破坏“循环等待”</button>
+                </div>
+
+                <div id="strategy-content" class="min-h-[400px]">
+                    <!-- 1. Breaking Request and Hold -->
+                    <div id="content-req-hold" class="content-panel active">
+                        <h3 class="text-xl font-bold text-center mb-2">模拟：一次性申请 vs. 动态申请</h3>
+                        <p class="text-center text-sm text-gray-500 mb-4">观察两种协议在处理同一个任务时，对资源利用率的影响。</p>
+                        <div class="text-center mb-6">
+                            <button id="rh-play-button" onclick="runReqHoldSim()" class="py-2 px-5 bg-blue-500 text-white rounded-full font-semibold">开始模拟</button>
+                        </div>
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <!-- Protocol 1 -->
+                            <div class="p-4 border rounded-lg">
+                                <h4 class="font-bold text-lg text-center mb-2">协议一：一次性申请</h4>
+                                <p id="rh1-log" class="text-center h-8 text-sm text-gray-600 mb-2"></p>
+                                <div class="space-y-3">
+                                    <div class="flex items-center"><span class="w-24 text-right pr-2 font-mono">磁带机 R1:</span><div id="rh1-r1" class="flex-1 h-6 bg-gray-200 rounded relative"><div class="timeline-bar absolute h-full bg-red-400"></div></div></div>
+                                    <div class="flex items-center"><span class="w-24 text-right pr-2 font-mono">磁盘 R2:</span><div id="rh1-r2" class="flex-1 h-6 bg-gray-200 rounded relative"><div class="timeline-bar absolute h-full bg-red-400"></div></div></div>
+                                    <div class="flex items-center"><span class="w-24 text-right pr-2 font-mono">打印机 R3:</span><div id="rh1-r3" class="flex-1 h-6 bg-gray-200 rounded relative"><div class="timeline-bar absolute h-full bg-red-400"></div></div></div>
+                                </div>
+                            </div>
+                            <!-- Protocol 2 -->
+                            <div class="p-4 border rounded-lg">
+                                <h4 class="font-bold text-lg text-center mb-2">协议二：资源释放后再申请</h4>
+                                <p id="rh2-log" class="text-center h-8 text-sm text-gray-600 mb-2"></p>
+                                <div class="space-y-3">
+                                    <div class="flex items-center"><span class="w-24 text-right pr-2 font-mono">磁带机 R1:</span><div id="rh2-r1" class="flex-1 h-6 bg-gray-200 rounded relative"><div class="timeline-bar absolute h-full bg-green-400"></div></div></div>
+                                    <div class="flex items-center"><span class="w-24 text-right pr-2 font-mono">磁盘 R2:</span><div id="rh2-r2" class="flex-1 h-6 bg-gray-200 rounded relative"><div class="timeline-bar absolute h-full bg-green-400"></div></div></div>
+                                    <div class="flex items-center"><span class="w-24 text-right pr-2 font-mono">打印机 R3:</span><div id="rh2-r3" class="flex-1 h-6 bg-gray-200 rounded relative"><div class="timeline-bar absolute h-full bg-green-400"></div></div></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. Breaking No Preemption -->
+                    <div id="content-no-preempt" class="content-panel">
+                        <div class="max-w-2xl mx-auto p-6 bg-yellow-100 border-l-4 border-yellow-500 rounded-r-lg">
+                            <h3 class="text-xl font-bold text-yellow-800 mb-2">策略：主动释放资源</h3>
+                            <p class="text-yellow-700">该策略规定：当一个持有资源的进程请求新资源失败时，必须释放它已持有的所有资源。虽然这能破坏“不可抢占”条件，但由于以下原因，**该方法在实际中很少使用**：</p>
+                            <ul class="list-disc list-inside mt-4 space-y-2 text-yellow-700">
+                                <li><strong>实现复杂，代价高昂：</strong> 反复申请和释放资源会增加大量系统开销。</li>
+                                <li><strong>可能导致前功尽弃：</strong> 进程被“抢占”资源后，其中间状态可能丢失，需要从头再来。</li>
+                                <li><strong>可能导致进程饥饿：</strong> 一个进程可能不断地在“申请-失败-释放”循环中，长时间无法推进。</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- 3. Breaking Circular Wait -->
+                    <div id="content-circ-wait" class="content-panel">
+                        <h3 class="text-xl font-bold text-center mb-2">模拟：资源有序分配法</h3>
+                        <p class="text-center text-sm text-gray-500 mb-4">为资源 R1 和 R2 分配序号 (R1=1, R2=5)。观察遵守和违反“按序申请”规则的不同后果。</p>
+                        <div class="text-center mb-6 flex justify-center gap-4">
+                            <button onclick="runCircWaitSim(false)" class="py-2 px-5 bg-red-500 text-white rounded-full font-semibold">模拟违规申请 (可能死锁)</button>
+                            <button onclick="runCircWaitSim(true)" class="py-2 px-5 bg-green-500 text-white rounded-full font-semibold">模拟有序申请 (安全)</button>
+                        </div>
+                        <div class="flex flex-col md:flex-row gap-8 items-center">
+                            <div class="w-full md:w-1/2 h-64 relative bg-gray-100 rounded-lg" id="cw-canvas">
+                                <!-- Nodes and arrows will be injected here -->
+                            </div>
+                            <div id="cw-log" class="w-full md:w-1/2 h-64 bg-gray-900 text-white font-mono text-sm p-4 rounded-lg overflow-y-auto"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const tabsContainer = document.getElementById('strategy-tabs');
+    const contentContainer = document.getElementById('strategy-content');
+    tabsContainer.addEventListener('click', e => {
+        const button = e.target.closest('.tab-button');
+        if (!button) return;
+        
+        tabsContainer.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+        button.classList.add('active');
+
+        contentContainer.querySelectorAll('.content-panel').forEach(p => p.classList.remove('active'));
+        document.getElementById(`content-${button.dataset.target}`).classList.add('active');
+    });
+});
+
+const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+// --- Request & Hold Simulation ---
+let isRhSimulating = false;
+async function runReqHoldSim() {
+    if (isRhSimulating) return;
+    isRhSimulating = true;
+    
+    const button = document.getElementById('rh-play-button');
+    button.disabled = true;
+    button.classList.add('opacity-50');
+
+    const logs = [document.getElementById('rh1-log'), document.getElementById('rh2-log')];
+    const resources = {
+        rh1: [document.querySelector('#rh1-r1 .timeline-bar'), document.querySelector('#rh1-r2 .timeline-bar'), document.querySelector('#rh1-r3 .timeline-bar')],
+        rh2: [document.querySelector('#rh2-r1 .timeline-bar'), document.querySelector('#rh2-r2 .timeline-bar'), document.querySelector('#rh2-r3 .timeline-bar')]
+    };
+
+    Object.values(resources).flat().forEach(bar => bar.style.width = '0%');
+    logs.forEach(log => log.textContent = '');
+
+    // Protocol 1
+    logs[0].textContent = '开始：一次性申请所有资源...';
+    await sleep(500);
+    resources.rh1.forEach(bar => bar.style.width = '100%');
+    logs[0].textContent = '任务完成，释放所有资源';
+    await sleep(1000);
+    resources.rh1.forEach(bar => { bar.style.transition = 'none'; bar.style.width = '0%'; setTimeout(()=>bar.style.transition = 'width 0.5s ease-in-out', 50)});
+
+
+    // Protocol 2
+    logs[1].textContent = '开始：申请 R1, R2';
+    await sleep(500);
+    resources.rh2[0].style.width = '33%';
+    resources.rh2[1].style.width = '66%';
+    await sleep(1000);
+    logs[1].textContent = '复制完成，释放 R1';
+    resources.rh2[0].style.width = '0%';
+    await sleep(1000);
+    logs[1].textContent = '处理完成，释放 R2';
+    resources.rh2[1].style.width = '0%';
+    await sleep(500);
+    logs[1].textContent = '申请 R3...';
+    await sleep(500);
+    resources.rh2[2].style.width = '100%';
+    await sleep(1000);
+    logs[1].textContent = '任务完成，释放 R3';
+    resources.rh2[2].style.width = '0%';
+
+    button.disabled = false;
+    button.classList.remove('opacity-50');
+    isRhSimulating = false;
+}
+
+// --- Circular Wait Simulation ---
+let isCwSimulating = false;
+async function runCircWaitSim(ordered) {
+    if (isCwSimulating) return;
+    isCwSimulating = true;
+
+    const canvas = document.getElementById('cw-canvas');
+    const log = document.getElementById('cw-log');
+    canvas.innerHTML = '';
+    log.innerHTML = '';
+    
+    const addLog = (text) => {
+        log.innerHTML += `> ${text}\n`;
+        log.scrollTop = log.scrollHeight;
+    };
+
+    const createNode = (id, text, top, left, color) => {
+        const node = document.createElement('div');
+        node.id = id;
+        node.className = `sim-node absolute w-16 h-16 rounded-full flex items-center justify-center text-white font-bold shadow-lg ${color}`;
+        node.style.top = top;
+        node.style.left = left;
+        node.textContent = text;
+        canvas.appendChild(node);
+        return node;
+    };
+
+    const createArrow = (id, fromNode, toNode, isRequest = true) => {
+        const fromRect = fromNode.getBoundingClientRect();
+        const toRect = toNode.getBoundingClientRect();
+        const canvasRect = canvas.getBoundingClientRect();
+
+        const fromX = (fromRect.left + fromRect.width / 2) - canvasRect.left;
+        const fromY = (fromRect.top + fromRect.height / 2) - canvasRect.top;
+        const toX = (toRect.left + toRect.width / 2) - canvasRect.left;
+        const toY = (toRect.top + toRect.height / 2) - canvasRect.top;
+        
+        const angle = Math.atan2(toY - fromY, toX - fromX) * 180 / Math.PI;
+        const length = Math.sqrt(Math.pow(toX - fromX, 2) + Math.pow(toY - fromY, 2)) - 40;
+
+        const arrow = document.createElement('div');
+        arrow.id = id;
+        arrow.className = 'sim-arrow absolute h-1 bg-gray-500';
+        arrow.style.top = `${fromY}px`;
+        arrow.style.left = `${fromX}px`;
+        arrow.style.width = `${length}px`;
+        arrow.style.transform = `rotate(${angle}deg)`;
+        
+        // Arrowhead
+        const head = document.createElement('div');
+        head.style.position = 'absolute';
+        head.style.right = '-4px';
+        head.style.top = '-4px';
+        head.style.width = '0';
+        head.style.height = '0';
+        head.style.borderTop = '5px solid transparent';
+        head.style.borderBottom = '5px solid transparent';
+        head.style.borderLeft = '10px solid #6b7280';
+        arrow.appendChild(head);
+
+        canvas.appendChild(arrow);
+        return arrow;
+    };
+    
+    const p1 = createNode('cw-p1', 'P1', '20%', '10%', 'bg-blue-500');
+    const p2 = createNode('cw-p2', 'P2', '60%', '80%', 'bg-blue-500');
+    const r1 = createNode('cw-r1', 'R1 (1)', '20%', '80%', 'bg-orange-500');
+    const r2 = createNode('cw-r2', 'R2 (5)', '60%', '10%', 'bg-orange-500');
+
+    addLog('模拟开始...');
+    await sleep(1000);
+
+    if (!ordered) {
+        addLog('P1 请求 R1...');
+        const p1r1 = createArrow('p1r1', p1, r1);
+        await sleep(1000);
+        addLog('P1 获得 R1');
+        p1r1.style.transform = `rotate(${parseFloat(p1r1.style.transform.match(/-?\d+/)[0]) + 180}deg)`;
+        p1r1.style.left = `${parseFloat(p1r1.style.left) - p1r1.offsetWidth}px`;
+        p1r1.id = 'r1p1';
+        
+        await sleep(1000);
+        
+        addLog('P2 请求 R2...');
+        const p2r2 = createArrow('p2r2', p2, r2);
+        await sleep(1000);
+        addLog('P2 获得 R2');
+        p2r2.style.transform = `rotate(${parseFloat(p2r2.style.transform.match(/-?\d+/)[0]) + 180}deg)`;
+        p2r2.style.left = `${parseFloat(p2r2.style.left) - p2r2.offsetWidth}px`;
+        p2r2.id = 'r2p2';
+        
+        await sleep(1000);
+
+        addLog('P1 请求 R2 (被P2持有)...');
+        createArrow('p1r2', p1, r2);
+        p1.classList.add('bg-yellow-500');
+        await sleep(1500);
+        
+        addLog('P2 请求 R1 (被P1持有)...');
+        createArrow('p2r1', p2, r1);
+        p2.classList.add('bg-yellow-500');
+        await sleep(1500);
+
+        addLog('循环等待形成！死锁！');
+        p1.classList.remove('bg-yellow-500');
+        p1.classList.add('bg-red-600');
+        p2.classList.remove('bg-yellow-500');
+        p2.classList.add('bg-red-600');
+    } else {
+        addLog('P1 请求 R1 (序号1)...');
+        const p1r1 = createArrow('p1r1', p1, r1);
+        await sleep(1000);
+        addLog('P1 获得 R1');
+        p1r1.style.transform = `rotate(${parseFloat(p1r1.style.transform.match(/-?\d+/)[0]) + 180}deg)`;
+        p1r1.style.left = `${parseFloat(p1r1.style.left) - p1r1.offsetWidth}px`;
+        p1r1.id = 'r1p1';
+        
+        await sleep(1000);
+
+        addLog('P2 请求 R1 (序号1)...');
+        createArrow('p2r1', p2, r1);
+        p2.classList.add('bg-yellow-500');
+        await sleep(1500);
+        addLog('P2 等待 R1...');
+
+        await sleep(1000);
+
+        addLog('P1 请求 R2 (序号5), 满足递增规则');
+        const p1r2 = createArrow('p1r2', p1, r2);
+        await sleep(1000);
+        addLog('P1 获得 R2');
+        p1r2.style.transform = `rotate(${parseFloat(p1r2.style.transform.match(/-?\d+/)[0]) + 180}deg)`;
+        p1r2.style.left = `${parseFloat(p1r2.style.left) - p1r2.offsetWidth}px`;
+        p1r2.id = 'r2p1';
+        
+        await sleep(1500);
+
+        addLog('P1 完成任务, 释放所有资源');
+        document.getElementById('r1p1').remove();
+        document.getElementById('r2p1').remove();
+        await sleep(1000);
+
+        addLog('P2 获得 R1, 解除等待');
+        p2.classList.remove('bg-yellow-500');
+        document.getElementById('p2r1').style.transform = `rotate(${parseFloat(document.getElementById('p2r1').style.transform.match(/-?\d+/)[0]) + 180}deg)`;
+        document.getElementById('p2r1').style.left = `${parseFloat(document.getElementById('p2r1').style.left) - document.getElementById('p2r1').offsetWidth}px`;
+        document.getElementById('p2r1').id = 'r1p2';
+
+        await sleep(1500);
+        addLog('系统安全，无死锁发生。');
+    }
+    
+    isCwSimulating = false;
+}
+</script>
+
+</body>
+</html>
+```
