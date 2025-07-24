@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>动态演示：突发传输模式（详细版）</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; display: flex; flex-direction: column; align-items: center; background-color: #f8f9fa; color: #343a40; }
+        h1, h2, h3 { color: #0056b3; text-align: center;}
+        .main-container { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; width: 95%; max-width: 1600px; margin-top: 20px; }
+        .panel { background-color: #fff; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
+        .controls { text-align: center; margin-bottom: 20px; }
+        .controls button { padding: 12px 20px; font-size: 16px; font-weight: 600; border-radius: 5px; border: none; cursor: pointer; transition: all 0.2s ease; margin: 0 10px; }
+        #single-btn { background-color: #dc3545; color: white; }
+        #single-btn:hover { background-color: #c82333; }
+        #burst-btn { background-color: #28a745; color: white; }
+        #burst-btn:hover { background-color: #218838; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
+
+        .visualization { display: flex; align-items: center; justify-content: space-between; margin-top: 20px; }
+        .cpu-box { text-align: center; }
+        .cpu-box .entity-box { width: 100px; height: 100px; background: #e9ecef; border: 2px solid #ced4da; border-radius: 5px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: bold; }
+        #cpu-data-display { font-size: 12px; margin-top: 5px; font-family: monospace; }
+        
+        .buses { flex-grow: 1; padding: 0 20px; }
+        .bus { position: relative; height: 25px; background-color: #ecf0f1; border-radius: 5px; margin: 35px 0; border: 1px solid #dcdcdc; }
+        .bus-label { position: absolute; left: 50%; top: -25px; transform: translateX(-50%); font-weight: bold; background-color: #f8f9fa; padding: 0 10px; font-size: 14px; color: #495057; }
+        
+        .memory-bank { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 10px; border: 2px solid #ced4da; border-radius: 5px; background: #e9ecef;}
+        .mem-cell { background-color: #fff; border: 1px solid #ccc; border-radius: 3px; padding: 3px; font-family: monospace; font-size: 12px; transition: all 0.2s ease; }
+        .mem-cell .addr { font-weight: bold; color: #6c757d; }
+        .mem-cell .data { color: #0056b3; }
+        .mem-cell.active { background-color: #ffc107; transform: scale(1.1); }
+
+        .packet { position: absolute; top: 50%; transform: translateY(-50%); padding: 5px 10px; border-radius: 5px; color: white; font-size: 12px; font-weight: bold; white-space: nowrap; opacity: 0; font-family: monospace;}
+        .address-packet { background-color: #007bff; }
+        .data-packet { background-color: #17a2b8; }
+        .control-signal { position: absolute; top: 0; left: 0; width: 0%; height: 100%; background-color: #fd7e14; opacity: 0.7; border-radius: 5px; transition: width 0.5s ease-out; }
+
+        .timeline { margin-top: 20px; background: #f1f3f5; padding: 10px; border-radius: 5px; }
+        .timeline-bar { display: flex; height: 25px; width: 100%; border: 1px solid #ccc; font-size: 10px; }
+        .time-segment { height: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; color: white; }
+        .latency { background-color: #fd7e14; border-right: 1px solid #fff; }
+        .transfer { background-color: #20c997; border-right: 1px solid #fff; }
+        .result { font-size: 1.2em; font-weight: bold; text-align: center; margin-top: 15px; }
+        #single-result { color: #dc3545; }
+        #burst-result { color: #28a745; }
+    </style>
+</head>
+<body>
+    <h1>突发传输模式 vs 普通模式（总线版）</h1>
+
+    <div class="main-container">
+        <div id="single-panel" class="panel">
+            <h3>普通模式 (Single Access)</h3>
+            <div class="controls"><button id="single-btn">读取8个数据块</button></div>
+            <div class="visualization">
+                <div class="cpu-box"><div class="entity-box">CPU<div id="s-cpu-data-display">Data: ?</div></div></div>
+                <div class="buses" id="single-buses">
+                    <div class="bus"><div class="bus-label">地址总线</div></div>
+                    <div class="bus"><div class="bus-label">数据总线</div></div>
+                    <div class="bus"><div class="bus-label">控制总线</div></div>
+                </div>
+                <div id="s-memory-bank" class="memory-bank"></div>
+            </div>
+            <div class="timeline">
+                <h4>时间线</h4>
+                <div class="timeline-bar" id="single-timeline"></div>
+                <div class="result" id="single-result"></div>
+            </div>
+        </div>
+        <div id="burst-panel" class="panel">
+            <h3>突发模式 (Burst Mode)</h3>
+            <div class="controls"><button id="burst-btn">读取8个数据块 (BL8)</button></div>
+            <div class="visualization">
+                <div class="cpu-box"><div class="entity-box">CPU<div id="b-cpu-data-display">Data: ?</div></div></div>
+                <div class="buses" id="burst-buses">
+                    <div class="bus"><div class="bus-label">地址总线</div></div>
+                    <div class="bus"><div class="bus-label">数据总线</div></div>
+                    <div class="bus"><div class="bus-label">控制总线</div></div>
+                </div>
+                <div id="b-memory-bank" class="memory-bank"></div>
+            </div>
+            <div class="timeline">
+                <h4>时间线</h4>
+                <div class="timeline-bar" id="burst-timeline"></div>
+                <div class="result" id="burst-result"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const singleBtn = document.getElementById('single-btn');
+        const burstBtn = document.getElementById('burst-btn');
+        const s_mem_bank = document.getElementById('s-memory-bank');
+        const b_mem_bank = document.getElementById('b-memory-bank');
+        const s_buses = document.getElementById('single-buses').getElementsByClassName('bus');
+        const b_buses = document.getElementById('burst-buses').getElementsByClassName('bus');
+        const s_cpu_data = document.getElementById('s-cpu-data-display');
+        const b_cpu_data = document.getElementById('b-cpu-data-display');
+        
+        const singleTimeline = document.getElementById('single-timeline');
+        const burstTimeline = document.getElementById('burst-timeline');
+        const singleResult = document.getElementById('single-result');
+        const burstResult = document.getElementById('burst-result');
+
+        const LATENCY = 100;
+        const TRANSFER_TIME = 20;
+        const DATA_COUNT = 8;
+        const mem_data = ["0x3A", "0x1B", "0xC4", "0x88", "0x2F", "0xE1", "0x90", "0x5D"];
+
+        // --- 初始化 ---
+        function initMemoryBank(bankElement) {
+            bankElement.innerHTML = '';
+            for (let i = 0; i < DATA_COUNT; i++) {
+                const addr = `0xA${i}`;
+                const cell = document.createElement('div');
+                cell.className = 'mem-cell';
+                cell.id = `${bankElement.id}-cell-${i}`;
+                cell.innerHTML = `<span class="addr">${addr}:</span> <span class="data">${mem_data[i]}</span>`;
+                bankElement.appendChild(cell);
+            }
+        }
+        initMemoryBank(s_mem_bank);
+        initMemoryBank(b_mem_bank);
+
+        function disableButtons(disabled) {
+            singleBtn.disabled = disabled;
+            burstBtn.disabled = disabled;
+        }
+
+        async function animatePacket(bus, text, className, direction = 'left-to-right') {
+            const packet = document.createElement('div');
+            packet.className = `packet ${className}`;
+            packet.textContent = text;
+            bus.appendChild(packet);
+            
+            packet.style.left = direction === 'left-to-right' ? '0%' : '100%';
+            packet.style.transition = 'opacity 0.2s, left 0.6s ease-in-out';
+
+            await new Promise(r => setTimeout(r, 50));
+            packet.style.opacity = '1';
+            packet.style.left = direction === 'left-to-right' ? '100%' : '0%';
+            
+            await new Promise(r => setTimeout(r, 600));
+            packet.style.opacity = '0';
+            
+            await new Promise(r => setTimeout(r, 200));
+            packet.remove();
+        }
+
+        async function animateControlSignal(bus) {
+            const signal = document.createElement('div');
+            signal.className = 'control-signal';
+            bus.appendChild(signal);
+            await new Promise(r => setTimeout(r, 50));
+            signal.style.width = '100%';
+            await new Promise(r => setTimeout(r, 500));
+            signal.remove();
+        }
+        
+        function drawTimeline(container, segments) {
+            container.innerHTML = '';
+            const totalTime = segments.reduce((sum, s) => sum + s.duration, 0);
+            if (totalTime === 0) return;
+            for (const seg of segments) {
+                const div = document.createElement('div');
+                div.className = `time-segment ${seg.type}`;
+                div.style.width = `${(seg.duration / totalTime) * 100}%`;
+                div.title = `${seg.type}: ${seg.duration}ns`;
+                if(seg.duration / totalTime > 0.1) {
+                    div.textContent = seg.type.charAt(0).toUpperCase();
+                }
+                container.appendChild(div);
+            }
+        }
+
+        // --- 单次访问模式逻辑 ---
+        singleBtn.addEventListener('click', async () => {
+            disableButtons(true);
+            s_cpu_data.textContent = 'Data: ?';
+            const segments = [];
+
+            for (let i = 0; i < DATA_COUNT; i++) {
+                // 1. 发送地址
+                await animatePacket(s_buses[0], `Addr: 0xA${i}`, 'address-packet');
+                
+                // 2. 发送读命令
+                await animateControlSignal(s_buses[2]);
+                
+                // 高亮内存单元 & 计算延迟
+                const cell = document.getElementById(`s-memory-bank-cell-${i}`);
+                cell.classList.add('active');
+                segments.push({ type: 'latency', duration: LATENCY });
+                drawTimeline(singleTimeline, segments);
+                
+                await new Promise(r => setTimeout(r, 400)); // 模拟内存工作
+                
+                // 3. 数据返回
+                await animatePacket(s_buses[1], `Data: ${mem_data[i]}`, 'data-packet', 'right-to-left');
+                s_cpu_data.textContent = `Data: ${mem_data[i]}`;
+                segments.push({ type: 'transfer', duration: TRANSFER_TIME });
+                drawTimeline(singleTimeline, segments);
+
+                cell.classList.remove('active');
+            }
+            const totalTime = DATA_COUNT * (LATENCY + TRANSFER_TIME);
+            singleResult.textContent = `总耗时: ${totalTime} ns`;
+            disableButtons(false);
+        });
+
+        // --- 突发模式逻辑 ---
+        burstBtn.addEventListener('click', async () => {
+            disableButtons(true);
+            b_cpu_data.textContent = 'Data: ?';
+            const segments = [];
+
+            // 1. 发送一次起始地址
+            await animatePacket(b_buses[0], 'Addr: 0xA0', 'address-packet');
+            
+            // 2. 发送一次突发读命令
+            await animateControlSignal(b_buses[2]);
+
+            // 3. 初始延迟
+            const firstCell = document.getElementById('b-memory-bank-cell-0');
+            firstCell.classList.add('active');
+            segments.push({ type: 'latency', duration: LATENCY });
+            drawTimeline(burstTimeline, segments);
+            
+            await new Promise(r => setTimeout(r, 400)); // 模拟内存工作
+            
+            // 4. 连续传回8个数据
+            for (let i = 0; i < DATA_COUNT; i++) {
+                const cell = document.getElementById(`b-memory-bank-cell-${i}`);
+                if(i > 0) {
+                     document.getElementById(`b-memory-bank-cell-${i-1}`).classList.remove('active');
+                     cell.classList.add('active');
+                }
+                
+                await animatePacket(b_buses[1], `Data: ${mem_data[i]}`, 'data-packet', 'right-to-left');
+                b_cpu_data.textContent = `Data: ${mem_data[i]}`;
+                segments.push({ type: 'transfer', duration: TRANSFER_TIME });
+                drawTimeline(burstTimeline, segments);
+            }
+            document.getElementById(`b-memory-bank-cell-${DATA_COUNT-1}`).classList.remove('active');
+
+            const totalTime = LATENCY + DATA_COUNT * TRANSFER_TIME;
+            burstResult.textContent = `总耗时: ${totalTime} ns`;
+            disableButtons(false);
+        });
+    </script>
+</body>
+</html>

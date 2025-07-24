@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>动态演示：四体并行低位交叉存储器</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', 'Hiragino Sans GB', 'WenQuanYi Micro Hei', 'Microsoft Yahei', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f4f8;
+            color: #333;
+        }
+        h1, h3 {
+            color: #1a5d99;
+        }
+        #main-container {
+            display: flex;
+            gap: 20px;
+            width: 95%;
+            max-width: 1400px;
+        }
+        #left-panel {
+            flex-basis: 350px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        #right-panel {
+            flex-grow: 1;
+        }
+        .panel {
+            border: 1px solid #cddde8;
+            padding: 15px;
+            background-color: #fff;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            border-radius: 8px;
+        }
+        #controls button {
+            padding: 10px 15px;
+            margin-right: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background-color: #2a7ab0;
+            color: white;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        #controls button:hover {
+            background-color: #1a5d99;
+        }
+        #controls button:disabled {
+            background-color: #aaa;
+            cursor: not-allowed;
+        }
+        #address-mapping-info, #log-panel {
+            height: 250px;
+            overflow-y: auto;
+        }
+        #log-panel ul {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+        }
+        #log-panel li {
+            padding: 6px 8px;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+            animation: fadeIn 0.5s;
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        #memory-modules {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .module {
+            border: 2px solid #a0c4e4;
+            border-radius: 5px;
+            padding: 10px;
+            min-height: 200px;
+            background: #fdfdfe;
+            transition: all 0.3s ease;
+        }
+        .module h4 {
+            text-align: center;
+            margin: 0 0 10px 0;
+            color: #00437c;
+        }
+        .module.active {
+            border-color: #ff8c00;
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(255, 140, 0, 0.4);
+        }
+        #address-display {
+            font-size: 20px;
+            font-weight: bold;
+            text-align: center;
+            margin: 15px 0;
+            padding: 10px;
+            background: #e6f1f9;
+            border-radius: 5px;
+        }
+        #address-display .binary {
+            color: #d9534f;
+        }
+        #address-display .low-bits {
+            color: #d9534f;
+            font-weight: bold;
+            text-decoration: underline;
+        }
+        #timeline {
+            margin-top: 20px;
+        }
+        .timeline-track {
+            position: relative;
+            height: 30px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            margin-bottom: 5px;
+        }
+        .timeline-track .label {
+            position: absolute;
+            left: 5px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 2;
+        }
+        .timeline-event {
+            position: absolute;
+            height: 100%;
+            border-radius: 4px;
+            opacity: 0.8;
+            font-size: 12px;
+            color: white;
+            text-align: center;
+            line-height: 30px;
+        }
+    </style>
+</head>
+<body>
+    <h1>动态演示：四体并行低位交叉存储器</h1>
+    <div id="main-container">
+        <div id="left-panel">
+            <div id="controls" class="panel">
+                <h3>控制面板</h3>
+                <button id="start-btn">开始连续读取</button>
+                <button id="reset-btn">重置</button>
+            </div>
+            <div id="address-mapping-info" class="panel">
+                <h3>地址映射分析</h3>
+                <div id="address-display">等待指令...</div>
+            </div>
+            <div id="log-panel" class="panel">
+                <h3>事件日志</h3>
+                <ul></ul>
+            </div>
+        </div>
+        <div id="right-panel">
+            <div id="memory-modules" class="panel">
+                <div class="module" id="mod-0"><h4>存储体 0</h4></div>
+                <div class="module" id="mod-1"><h4>存储体 1</h4></div>
+                <div class="module" id="mod-2"><h4>存储体 2</h4></div>
+                <div class="module" id="mod-3"><h4>存储体 3</h4></div>
+            </div>
+            <div id="timeline" class="panel">
+                <h3>访问时间线 (T = 100, τ = 20)</h3>
+                <div class="timeline-track"><div class="label">总线</div><div id="bus-timeline"></div></div>
+                <div class="timeline-track"><div class="label">体 0</div><div id="mod0-timeline"></div></div>
+                <div class="timeline-track"><div class="label">体 1</div><div id="mod1-timeline"></div></div>
+                <div class="timeline-track"><div class="label">体 2</div><div id="mod2-timeline"></div></div>
+                <div class="timeline-track"><div class="label">体 3</div><div id="mod3-timeline"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const startBtn = document.getElementById('start-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const logList = document.querySelector('#log-panel ul');
+        const addressDisplay = document.getElementById('address-display');
+        const modules = [
+            document.getElementById('mod-0'),
+            document.getElementById('mod-1'),
+            document.getElementById('mod-2'),
+            document.getElementById('mod-3')
+        ];
+        const timelines = {
+            bus: document.getElementById('bus-timeline'),
+            mod0: document.getElementById('mod0-timeline'),
+            mod1: document.getElementById('mod1-timeline'),
+            mod2: document.getElementById('mod2-timeline'),
+            mod3: document.getElementById('mod3-timeline')
+        };
+        const MODULE_COUNT = 4;
+        const SIM_DURATION_MS = 5000;
+        const T = 100; // Memory cycle time
+        const TAU = 20; // Bus transfer time
+
+        let logCounter = 1;
+        let isRunning = false;
+
+        function log(message) {
+            const li = document.createElement('li');
+            li.innerHTML = `<strong>${logCounter++}.</strong> ${message}`;
+            logList.prepend(li);
+        }
+
+        function clearAll() {
+            logList.innerHTML = '';
+            addressDisplay.innerHTML = '等待指令...';
+            logCounter = 1;
+            isRunning = false;
+            startBtn.disabled = false;
+            modules.forEach(m => {
+                m.classList.remove('active');
+            });
+            Object.values(timelines).forEach(tl => tl.innerHTML = '');
+        }
+
+        function createTimelineEvent(text, start, duration, color, timeline) {
+            const event = document.createElement('div');
+            event.className = 'timeline-event';
+            event.innerText = text;
+            event.style.left = `${start / (T + (MODULE_COUNT) * TAU) * 100}%`;
+            event.style.width = `${duration / (T + (MODULE_COUNT) * TAU) * 100}%`;
+            event.style.backgroundColor = color;
+            timeline.appendChild(event);
+        }
+
+        async function startSimulation() {
+            if (isRunning) return;
+            isRunning = true;
+            startBtn.disabled = true;
+            clearAll();
+            log('开始模拟连续读取地址 0-7。');
+            
+            for (let addr = 0; addr < 8; addr++) {
+                // 1. Determine module and address
+                const moduleIndex = addr % MODULE_COUNT;
+                const inModuleAddr = Math.floor(addr / MODULE_COUNT);
+                
+                const addrBin = addr.toString(2).padStart(8, '0');
+                const highBits = addrBin.slice(0, -2);
+                const lowBits = addrBin.slice(-2);
+                
+                // 2. Update Address Display
+                addressDisplay.innerHTML = `请求地址: ${addr} &nbsp;&nbsp; 
+                    二进制: <span class="binary">${highBits}<span class="low-bits">${lowBits}</span></span><br>
+                    体号 = ${moduleIndex}, 体内地址 = ${inModuleAddr}`;
+                
+                // 3. Highlight active module
+                modules.forEach(m => m.classList.remove('active'));
+                const activeModule = modules[moduleIndex];
+                activeModule.classList.add('active');
+                
+                log(`请求地址 ${addr} -> 映射到 <span style="color:#00437c;font-weight:bold;">体 ${moduleIndex}</span>`);
+                
+                // 4. Animate Timelines
+                const busStartTime = addr * TAU;
+                const moduleStartTime = busStartTime;
+                const dataReadyTime = moduleStartTime + T;
+                const dataBusStartTime = dataReadyTime;
+
+                // Bus busy sending address
+                createTimelineEvent(`Addr ${addr}`, busStartTime, TAU, '#2a7ab0', timelines.bus);
+                // Module busy processing
+                createTimelineEvent(`Read ${addr}`, moduleStartTime, T, '#ff8c00', timelines[`mod${moduleIndex}`]);
+                // Bus busy sending data back
+                createTimelineEvent(`Data ${addr}`, dataBusStartTime, TAU, '#5cb85c', timelines.bus);
+                
+                await new Promise(r => setTimeout(r, 600));
+            }
+            
+            log('所有请求发送完毕。流水线正在处理...');
+            await new Promise(r => setTimeout(r, 1000));
+            log('模拟完成。');
+            isRunning = false;
+            startBtn.disabled = false;
+        }
+
+        startBtn.addEventListener('click', startSimulation);
+        resetBtn.addEventListener('click', clearAll);
+        
+        // Initial state
+        clearAll();
+    </script>
+</body>
+</html>

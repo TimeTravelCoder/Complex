@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>动态演示：突发传输模式（步进详解版）</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; display: flex; flex-direction: column; align-items: center; background-color: #f8f9fa; color: #343a40; }
+        h1, h2, h3 { color: #0056b3; text-align: center;}
+        .main-container { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; width: 98%; max-width: 1700px; margin-top: 15px; }
+        .panel { background-color: #fff; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.05); display: flex; flex-direction: column; }
+        .controls { display: flex; gap: 10px; justify-content: center; margin-bottom: 20px; }
+        .controls button { padding: 10px 15px; font-size: 15px; font-weight: 600; border-radius: 5px; border: none; cursor: pointer; transition: all 0.2s ease; flex-grow: 1; }
+        .start-btn { background-color: #007bff; color: white; }
+        .start-btn:hover { background-color: #0069d9; }
+        .next-btn { background-color: #28a745; color: white; }
+        .next-btn:hover { background-color: #218838; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
+
+        .visualization { display: flex; align-items: center; justify-content: space-between; }
+        .cpu-box .entity-box { width: 100px; height: 100px; background: #e9ecef; border: 2px solid #ced4da; border-radius: 5px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: bold; }
+        #s-cpu-data-display, #b-cpu-data-display { font-size: 12px; margin-top: 5px; font-family: monospace; }
+        
+        .buses { flex-grow: 1; padding: 0 20px; }
+        .bus { position: relative; height: 25px; background-color: #ecf0f1; border-radius: 5px; margin: 35px 0; border: 1px solid #dcdcdc; }
+        .bus-label { position: absolute; left: 50%; top: -25px; transform: translateX(-50%); font-weight: bold; background-color: #fff; padding: 0 10px; font-size: 14px; color: #495057; }
+        
+        .memory-bank { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 10px; border: 2px solid #ced4da; border-radius: 5px; background: #e9ecef;}
+        .mem-cell { background-color: #fff; border: 1px solid #ccc; border-radius: 3px; padding: 3px; font-family: monospace; font-size: 12px; transition: all 0.2s ease; }
+        .mem-cell .addr { font-weight: bold; color: #6c757d; }
+        .mem-cell .data { color: #0056b3; }
+        .mem-cell.active { background-color: #ffc107; transform: scale(1.1); box-shadow: 0 0 10px #ffc107; }
+
+        .packet { position: absolute; top: 50%; transform: translateY(-50%); padding: 5px 10px; border-radius: 5px; color: white; font-size: 12px; font-weight: bold; white-space: nowrap; opacity: 0; font-family: monospace; transition: all 0.2s ease-in-out; }
+        .address-packet { background-color: #007bff; }
+        .data-packet { background-color: #17a2b8; }
+        .control-signal { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: #fd7e14; opacity: 0; transition: opacity 0.3s ease; }
+
+        .timeline { margin-top: auto; padding-top: 20px; }
+        .timeline-bar { display: flex; height: 25px; width: 100%; border: 1px solid #ccc; font-size: 10px; }
+        .time-segment { height: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; color: white; }
+        .latency { background-color: #fd7e14; }
+        .transfer { background-color: #20c997; }
+        .result { font-weight: bold; text-align: right; margin-top: 5px; }
+
+        .log-panel { margin-top: 20px; }
+        .log-list { list-style-type: none; padding: 10px; margin: 0; height: 180px; overflow-y: auto; background-color: #2c3e50; color: #ecf0f1; border-radius: 5px; font-family: monospace; font-size: 14px; }
+        .log-list li { padding: 4px 8px; border-bottom: 1px solid #34495e; animation: log-fade-in 0.3s; }
+        .log-list li.active { background-color: #3498db; }
+        @keyframes log-fade-in { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+</head>
+<body>
+    <h1>突发传输模式 vs 普通模式（步进详解版）</h1>
+
+    <div class="main-container">
+        <div id="single-panel" class="panel">
+            <h3>普通模式 (Single Access)</h3>
+            <div class="controls">
+                <button id="s-start-btn" class="start-btn">准备/重置</button>
+                <button id="s-next-btn" class="next-btn">下一步</button>
+            </div>
+            <div class="visualization">
+                <div class="cpu-box"><div class="entity-box">CPU<div id="s-cpu-data-display">Data: ?</div></div></div>
+                <div class="buses" id="s-buses">
+                    <div class="bus"><div class="bus-label">地址总线</div></div>
+                    <div class="bus"><div class="bus-label">数据总线</div></div>
+                    <div class="bus"><div class="bus-label">控制总线</div></div>
+                </div>
+                <div id="s-memory-bank" class="memory-bank"></div>
+            </div>
+            <div class="log-panel">
+                <h3>读取日志</h3>
+                <ul id="s-log-list" class="log-list"></ul>
+            </div>
+            <div class="timeline">
+                <div class="timeline-bar" id="s-timeline"></div>
+                <div class="result" id="s-result"></div>
+            </div>
+        </div>
+        <div id="burst-panel" class="panel">
+            <h3>突发模式 (Burst Mode)</h3>
+            <div class="controls">
+                <button id="b-start-btn" class="start-btn">准备/重置</button>
+                <button id="b-next-btn" class="next-btn">下一步</button>
+            </div>
+            <div class="visualization">
+                <div class="cpu-box"><div class="entity-box">CPU<div id="b-cpu-data-display">Data: ?</div></div></div>
+                <div class="buses" id="b-buses">
+                    <div class="bus"><div class="bus-label">地址总线</div></div>
+                    <div class="bus"><div class="bus-label">数据总线</div></div>
+                    <div class="bus"><div class="bus-label">控制总线</div></div>
+                </div>
+                <div id="b-memory-bank" class="memory-bank"></div>
+            </div>
+            <div class="log-panel">
+                 <h3>读取日志</h3>
+                <ul id="b-log-list" class="log-list"></ul>
+            </div>
+            <div class="timeline">
+                <div class="timeline-bar" id="b-timeline"></div>
+                <div class="result" id="b-result"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const LATENCY = 100;
+        const TRANSFER_TIME = 20;
+        const DATA_COUNT = 8;
+        const mem_data = ["0x3A", "0x1B", "0xC4", "0x88", "0x2F", "0xE1", "0x90", "0x5D"];
+
+        function createMemoryBank(bankId, memDataArray) {
+            const bankElement = document.getElementById(bankId);
+            bankElement.innerHTML = '';
+            for (let i = 0; i < memDataArray.length; i++) {
+                const addr = `0xA${i}`;
+                const cell = document.createElement('div');
+                cell.className = 'mem-cell';
+                cell.id = `${bankId}-cell-${i}`;
+                cell.innerHTML = `<span class="addr">${addr}:</span> <span class="data">${memDataArray[i]}</span>`;
+                bankElement.appendChild(cell);
+            }
+        }
+        createMemoryBank('s-memory-bank', mem_data);
+        createMemoryBank('b-memory-bank', mem_data);
+
+        class Stepper {
+            constructor(prefix, totalSteps) {
+                this.prefix = prefix;
+                this.totalSteps = totalSteps;
+                this.elements = {
+                    startBtn: document.getElementById(`${prefix}-start-btn`),
+                    nextBtn: document.getElementById(`${prefix}-next-btn`),
+                    cpuData: document.getElementById(`${prefix}-cpu-data-display`),
+                    buses: document.getElementById(`${prefix}-buses`).getElementsByClassName('bus'),
+                    memBankId: `${prefix}-memory-bank`,
+                    logList: document.getElementById(`${prefix}-log-list`),
+                    timeline: document.getElementById(`${prefix}-timeline`),
+                    result: document.getElementById(`${prefix}-result`),
+                };
+                this.elements.startBtn.addEventListener('click', () => this.reset());
+                this.elements.nextBtn.addEventListener('click', () => this.next());
+                this.initialize();
+            }
+
+            initialize() {
+                this.elements.logList.innerHTML = '<li>点击"准备/重置"开始新的模拟。</li>';
+                this.elements.nextBtn.disabled = true;
+                this.elements.startBtn.textContent = '准备/重置';
+            }
+
+            reset() {
+                this.step = 0;
+                this.elements.buses[0].innerHTML = '';
+                this.elements.buses[1].innerHTML = '';
+                this.elements.buses[2].innerHTML = '';
+                this.elements.cpuData.textContent = 'Data: ?';
+                this.elements.timeline.innerHTML = '';
+                this.elements.result.innerHTML = '';
+                this.elements.logList.innerHTML = '';
+                this.log('点击"下一步"开始...');
+                this.elements.nextBtn.disabled = false;
+                this.elements.startBtn.textContent = '重置模拟';
+                document.querySelectorAll(`#${this.elements.memBankId} .mem-cell`).forEach(c => c.classList.remove('active'));
+            }
+
+            log(message) {
+                this.elements.logList.querySelectorAll('li').forEach(li => li.classList.remove('active'));
+                const li = document.createElement('li');
+                li.innerHTML = message;
+                li.classList.add('active');
+                this.elements.logList.prepend(li);
+            }
+
+            next() {
+                this.step++;
+                if (this.step > this.totalSteps) {
+                    this.finish();
+                } else {
+                    this.executeStep();
+                }
+            }
+
+            executeStep() { /* To be implemented by subclasses */ }
+            
+            finish() {
+                 this.elements.nextBtn.disabled = true;
+                 this.elements.startBtn.textContent = '再来一次';
+                 this.log('模拟完成!');
+            }
+        }
+
+        class SingleAccessStepper extends Stepper {
+            constructor() {
+                super('s', DATA_COUNT * 4);
+            }
+            
+            reset() {
+                super.reset();
+                this.segments = [];
+                this.totalTime = 0;
+            }
+
+            executeStep() {
+                const subStep = (this.step - 1) % 4;
+                const dataIndex = Math.floor((this.step - 1) / 4);
+                const addr = `0xA${dataIndex}`;
+                
+                this.elements.buses[0].innerHTML = '';
+                this.elements.buses[1].innerHTML = '';
+                this.elements.buses[2].innerHTML = '';
+                
+                switch(subStep) {
+                    case 0: // 发送地址
+                        this.log(`[${dataIndex+1}/${DATA_COUNT}] CPU将地址 ${addr} 放到地址总线`);
+                        createPacket(this.elements.buses[0], `Addr: ${addr}`, 'address-packet').style.opacity = '1';
+                        break;
+                    case 1: // 发送命令
+                        this.log(`CPU通过控制总线发送 READ 命令`);
+                        createControlSignal(this.elements.buses[2]).style.opacity = '1';
+                        break;
+                    case 2: // 内存响应
+                        document.querySelectorAll(`#${this.elements.memBankId} .mem-cell`).forEach(c => c.classList.remove('active'));
+                        document.getElementById(`${this.elements.memBankId}-cell-${dataIndex}`).classList.add('active');
+                        this.log(`内存响应，发生 ${LATENCY}ns 延迟`);
+                        this.segments.push({ type: 'latency', duration: LATENCY });
+                        this.totalTime = this.drawTimeline();
+                        break;
+                    case 3: // 数据返回
+                        this.log(`数据 ${mem_data[dataIndex]} 通过数据总线返回CPU`);
+                        createPacket(this.elements.buses[1], `Data: ${mem_data[dataIndex]}`, 'data-packet').style.opacity = '1';
+                        this.elements.cpuData.textContent = `Data: ${mem_data[dataIndex]}`;
+                        this.segments.push({ type: 'transfer', duration: TRANSFER_TIME });
+                        this.totalTime = this.drawTimeline();
+                        break;
+                }
+            }
+            
+            drawTimeline() {
+                const total = drawTimeline(this.elements.timeline, this.segments);
+                this.elements.result.textContent = `当前耗时: ${total}ns`;
+                return total;
+            }
+        }
+        
+        class BurstAccessStepper extends Stepper {
+             constructor() {
+                super('b', 3 + DATA_COUNT);
+            }
+            
+            reset() {
+                super.reset();
+                this.segments = [];
+                this.totalTime = 0;
+            }
+            
+            executeStep() {
+                this.elements.buses[0].innerHTML = '';
+                this.elements.buses[1].innerHTML = '';
+                this.elements.buses[2].innerHTML = '';
+
+                switch(this.step) {
+                    case 1: // 发送地址
+                        this.log(`CPU将突发起始地址 0xA0 放到地址总线`);
+                        createPacket(this.elements.buses[0], `Addr: 0xA0`, 'address-packet').style.opacity = '1';
+                        break;
+                    case 2: // 发送命令
+                        this.log(`CPU发送 BURST READ (BL8) 命令`);
+                        createControlSignal(this.elements.buses[2]).style.opacity = '1';
+                        break;
+                    case 3: // 初始延迟
+                        this.log(`内存响应，发生初始延迟 ${LATENCY}ns`);
+                        document.getElementById(`${this.elements.memBankId}-cell-0`).classList.add('active');
+                        this.segments.push({ type: 'latency', duration: LATENCY });
+                        this.totalTime = this.drawTimeline();
+                        break;
+                    default: // 连续传输数据 (Steps 4 to 11)
+                        const dataIdx = this.step - 4;
+                        document.querySelectorAll(`#${this.elements.memBankId} .mem-cell`).forEach(c => c.classList.remove('active'));
+                        document.getElementById(`${this.elements.memBankId}-cell-${dataIdx}`).classList.add('active');
+
+                        this.log(`[${dataIdx+1}/${DATA_COUNT}] 数据块 ${mem_data[dataIdx]} 正在流式传输`);
+                        createPacket(this.elements.buses[1], `Data: ${mem_data[dataIdx]}`, 'data-packet').style.opacity = '1';
+                        this.elements.cpuData.textContent = `Data: ${mem_data[dataIdx]}`;
+                        this.segments.push({ type: 'transfer', duration: TRANSFER_TIME });
+                        this.totalTime = this.drawTimeline();
+                        break;
+                }
+            }
+
+             drawTimeline() {
+                const total = drawTimeline(this.elements.timeline, this.segments);
+                this.elements.result.textContent = `当前耗时: ${total}ns`;
+                return total;
+            }
+        }
+        
+        function createPacket(bus, text, className) {
+            const packet = document.createElement('div');
+            packet.className = `packet ${className}`;
+            packet.textContent = text;
+            bus.appendChild(packet);
+            return packet;
+        }
+
+        function createControlSignal(bus) {
+            const signal = document.createElement('div');
+            signal.className = 'control-signal';
+            bus.appendChild(signal);
+            return signal;
+        }
+        
+        function drawTimeline(container, segments) {
+            container.innerHTML = '';
+            const totalTime = segments.reduce((sum, s) => sum + s.duration, 0);
+            if (totalTime === 0) return 0;
+            for (const seg of segments) {
+                const div = document.createElement('div');
+                div.className = `time-segment ${seg.type}`;
+                div.style.width = `${(seg.duration / totalTime) * 100}%`;
+                div.title = `${seg.type}: ${seg.duration}ns`;
+                if(seg.duration / totalTime > 0.1) div.textContent = seg.type.charAt(0).toUpperCase();
+                container.appendChild(div);
+            }
+            return totalTime;
+        }
+
+        new SingleAccessStepper();
+        new BurstAccessStepper();
+
+    </script>
+</body>
+</html>

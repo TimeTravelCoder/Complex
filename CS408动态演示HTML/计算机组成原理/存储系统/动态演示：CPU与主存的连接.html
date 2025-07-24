@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>动态演示：CPU与主存的连接</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; align-items: center; background-color: #f4f7f9; color: #333; }
+        h1 { color: #2c3e50; }
+        .main-container { display: flex; justify-content: space-around; align-items: center; width: 90%; max-width: 1000px; margin-top: 20px; }
+        .component { background-color: #fff; border: 2px solid #bdc3c7; border-radius: 10px; padding: 20px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .cpu { width: 150px; }
+        .memory { width: 150px; }
+        .component h3 { margin-top: 0; color: #34495e; }
+        .bus-container { flex-grow: 1; padding: 0 30px; }
+        .bus { position: relative; height: 30px; background-color: #ecf0f1; border-radius: 5px; margin: 30px 0; border: 1px solid #dcdcdc; }
+        .bus-label { position: absolute; left: 50%; top: -25px; transform: translateX(-50%); font-weight: bold; background-color: #f4f7f9; padding: 0 10px; }
+        .bus-arrow { position: absolute; top: 50%; transform: translateY(-50%); font-size: 24px; color: #7f8c8d; }
+        .arrow-right { left: 100%; margin-left: -5px; }
+        .arrow-left { right: 100%; margin-right: -5px; }
+        .arrow-both:before { content: '▶'; position: absolute; left: 100%; margin-left: -5px; }
+        .arrow-both:after { content: '◀'; position: absolute; right: 100%; margin-right: -5px; }
+        .packet { position: absolute; top: 50%; left: 0; transform: translateY(-50%); padding: 5px 15px; background-color: #3498db; color: white; border-radius: 5px; font-family: 'Courier New', Courier, monospace; font-weight: bold; opacity: 0; transition: all 0.5s ease-in-out; }
+        .control-signal { position: absolute; top: 50%; left: 0; width: 100%; height: 100%; background-color: #e67e22; opacity: 0; transition: all 0.3s ease; }
+        #controls { margin-top: 30px; }
+        button { padding: 12px 25px; font-size: 16px; color: #fff; background-color: #27ae60; border: none; border-radius: 5px; cursor: pointer; transition: background-color 0.3s; }
+        button:hover { background-color: #229954; }
+        button:disabled { background-color: #95a5a6; cursor: not-allowed; }
+        #log-panel { margin-top: 20px; width: 90%; max-width: 1000px; background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e0e6ed; }
+        #log-panel h3 { margin-top: 0; }
+        .log-list { list-style-type: none; padding: 0; margin: 0; height: 150px; overflow-y: auto; }
+        .log-list li { padding: 8px; border-bottom: 1px solid #f0f2f5; opacity: 0; animation: fadeIn 0.5s forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+    <h1>CPU 与主存通信：内存读取操作</h1>
+    <div class="main-container">
+        <div class="component cpu">
+            <h3>CPU</h3>
+            <p id="cpu-data">Data: ?</p>
+        </div>
+        <div class="bus-container">
+            <div class="bus">
+                <div class="bus-label">地址总线</div>
+                <div id="address-packet" class="packet"></div>
+                <div class="bus-arrow arrow-right">▶</div>
+            </div>
+            <div class="bus">
+                <div class="bus-label">数据总线</div>
+                 <div id="data-packet" class="packet"></div>
+                <div class="bus-arrow arrow-both"></div>
+            </div>
+            <div class="bus">
+                <div class="bus-label">控制总线</div>
+                <div id="control-signal" class="control-signal"></div>
+                <div class="bus-arrow arrow-right">▶</div>
+            </div>
+        </div>
+        <div class="component memory">
+            <h3>主存</h3>
+            <p>0x1A2B: <strong>0x99</strong></p>
+        </div>
+    </div>
+    <div id="controls">
+        <button id="start-btn">开始读取内存(地址0x1A2B)</button>
+    </div>
+    <div id="log-panel">
+        <h3>操作日志</h3>
+        <ul class="log-list" id="log-list"></ul>
+    </div>
+
+    <script>
+        const startBtn = document.getElementById('start-btn');
+        const addressPacket = document.getElementById('address-packet');
+        const dataPacket = document.getElementById('data-packet');
+        const controlSignal = document.getElementById('control-signal');
+        const cpuData = document.getElementById('cpu-data');
+        const logList = document.getElementById('log-list');
+
+        function addLog(message, delay = 0) {
+            return new Promise(resolve => {
+                setTimeout(() => {
+                    const li = document.createElement('li');
+                    li.textContent = message;
+                    logList.prepend(li);
+                    resolve();
+                }, delay);
+            });
+        }
+
+        async function startAnimation() {
+            // Reset
+            startBtn.disabled = true;
+            logList.innerHTML = '';
+            addressPacket.style.opacity = '0';
+            addressPacket.style.left = '0%';
+            dataPacket.style.opacity = '0';
+            dataPacket.style.left = '100%';
+            controlSignal.style.opacity = '0';
+            cpuData.innerHTML = 'Data: ?';
+
+            // Step 1: CPU places address on Address Bus
+            await addLog('1. CPU 准备要读取的地址 0x1A2B。');
+            addressPacket.textContent = 'Addr: 0x1A2B';
+            addressPacket.style.opacity = '1';
+            await new Promise(r => setTimeout(r, 100));
+
+            // Move address to memory
+            await addLog('2. CPU 将地址通过地址总线发送给主存。', 500);
+            addressPacket.style.left = '100%';
+            await new Promise(r => setTimeout(r, 1000));
+            addressPacket.style.opacity = '0';
+            
+            // Step 2: CPU asserts Read Signal on Control Bus
+            await addLog('3. CPU 通过控制总线发出“内存读取”命令。', 100);
+            controlSignal.style.opacity = '1';
+            await new Promise(r => setTimeout(r, 500));
+            controlSignal.style.opacity = '0';
+            
+            // Step 3: Memory retrieves data
+            await addLog('4. 主存解码地址，并从 0x1A2B 单元中获取数据 0x99。', 500);
+            await new Promise(r => setTimeout(r, 1000)); // Memory latency
+            
+            // Step 4: Memory places data on Data Bus
+            await addLog('5. 主存将数据 0x99 放置在数据总线上。', 100);
+            dataPacket.textContent = 'Data: 0x99';
+            dataPacket.style.opacity = '1';
+            await new Promise(r => setTimeout(r, 100));
+            
+            // Move data to CPU
+            await addLog('6. 数据通过数据总线传送回CPU。', 500);
+            dataPacket.style.left = '0%';
+            await new Promise(r => setTimeout(r, 1000));
+            dataPacket.style.opacity = '0';
+
+            // Step 5: CPU receives data
+            await addLog('7. CPU 成功接收数据，读取操作完成！', 100);
+            cpuData.innerHTML = 'Data: <strong>0x99</strong>';
+            
+            startBtn.disabled = false;
+        }
+
+        startBtn.addEventListener('click', startAnimation);
+    </script>
+</body>
+</html>
