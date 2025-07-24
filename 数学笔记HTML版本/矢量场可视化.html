@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式矢量场可视化工具 (双模式版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'Helvetica Neue', 'Arial', 'sans-serif';
+            overscroll-behavior: none;
+        }
+        .info-panel {
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        canvas {
+            cursor: crosshair;
+            touch-action: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200 flex flex-col md:flex-row h-screen overflow-hidden">
+
+    <!-- 控制面板 -->
+    <div class="w-full md:w-80 p-4 bg-gray-800/80 info-panel space-y-4 overflow-y-auto">
+        <h1 class="text-2xl font-bold text-white">矢量场可视化</h1>
+        <p class="text-sm text-gray-400">选择显示模式来观察矢量场。在画布上点击可绘制彩色场线。</p>
+        
+        <!-- 显示模式 -->
+        <div>
+            <label for="display-mode-select" class="block text-sm font-medium text-gray-300 mb-1">显示模式</label>
+            <select id="display-mode-select" class="w-full bg-gray-700 border border-gray-600 text-white rounded-md p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                <option value="flow">动态流场</option>
+                <option value="glyphs">图形符号网格</option>
+            </select>
+        </div>
+
+        <!-- 矢量场选择 -->
+        <div>
+            <label for="field-select" class="block text-sm font-medium text-gray-300 mb-1">选择矢量场 F(x, y) = (P, Q)</label>
+            <select id="field-select" class="w-full bg-gray-700 border border-gray-600 text-white rounded-md p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                <option value="rotation">旋转场: (-y, x)</option>
+                <option value="source">源场: (x, y)</option>
+                <option value="sink">汇场: (-x, -y)</option>
+                <option value="shear">剪切场: (y, 0)</option>
+                <option value="saddle">鞍场: (x, -y)</option>
+                <option value="vortex">涡旋场: (sin(y), sin(x))</option>
+            </select>
+        </div>
+
+        <!-- 可视化内容 (仅用于Glyph模式) -->
+        <div id="glyph-options">
+            <label for="glyph-mode-select" class="block text-sm font-medium text-gray-300 mb-1">符号显示内容</label>
+            <select id="glyph-mode-select" class="w-full bg-gray-700 border border-gray-600 text-white rounded-md p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                <option value="curl">旋度 (旋转)</option>
+                <option value="divergence">散度 (缩放)</option>
+            </select>
+        </div>
+
+        <!-- 粒子/场线设置 -->
+        <div class="space-y-4 pt-2">
+            <div>
+                <label for="particle-life" class="block text-sm font-medium text-gray-300 mb-1">场线寿命: <span id="particle-life-value">300</span></label>
+                <input type="range" id="particle-life" min="50" max="800" value="300" class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer">
+            </div>
+            <div id="speed-control">
+                <label for="particle-speed" class="block text-sm font-medium text-gray-300 mb-1">流速: <span id="particle-speed-value">1.0</span></label>
+                <input type="range" id="particle-speed" min="0.1" max="3" step="0.1" value="1.0" class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer">
+            </div>
+        </div>
+
+        <!-- 控制按钮 -->
+        <div class="flex space-x-2">
+            <button id="clear-button" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md transition-colors">
+                清空场线
+            </button>
+            <button id="reset-button" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition-colors">
+                重置视图
+            </button>
+        </div>
+    </div>
+
+    <!-- 画布区域 -->
+    <div class="flex-1 relative bg-gray-900">
+        <canvas id="vector-canvas" class="absolute top-0 left-0 w-full h-full"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('vector-canvas');
+        const ctx = canvas.getContext('2d');
+        // --- 控制面板元素 ---
+        const displayModeSelect = document.getElementById('display-mode-select');
+        const fieldSelect = document.getElementById('field-select');
+        const glyphModeSelect = document.getElementById('glyph-mode-select');
+        const glyphOptions = document.getElementById('glyph-options');
+        const speedControl = document.getElementById('speed-control');
+        const clearButton = document.getElementById('clear-button');
+        const resetButton = document.getElementById('reset-button');
+        const particleLifeSlider = document.getElementById('particle-life');
+        const particleLifeValue = document.getElementById('particle-life-value');
+        const particleSpeedSlider = document.getElementById('particle-speed');
+        const particleSpeedValue = document.getElementById('particle-speed-value');
+
+        // --- 模拟参数 ---
+        let tracerParticles = []; // 用户点击生成的粒子
+        let flowParticles = []; // 背景流场粒子
+        const NUM_FLOW_PARTICLES = 2000;
+        let tracerMaxLife = 300;
+        let flowSpeed = 1.0;
+        const worldScale = 100;
+        let animationTime = 0;
+        const gridSpacing = 40;
+
+        // --- 矢量场定义 ---
+        const vectorFields = {
+            rotation: { func: (x, y) => ({ x: -y, y: x }), divergence: () => 0, curl: () => 2 },
+            source: { func: (x, y) => ({ x: x, y: y }), divergence: () => 2, curl: () => 0 },
+            sink: { func: (x, y) => ({ x: -x, y: -y }), divergence: () => -2, curl: () => 0 },
+            shear: { func: (x, y) => ({ x: y, y: 0 }), divergence: () => 0, curl: () => -1 },
+            saddle: { func: (x, y) => ({ x: x, y: -y }), divergence: () => 0, curl: () => 0 },
+            vortex: { 
+                func: (x, y) => ({ x: Math.sin(y * Math.PI), y: Math.sin(x * Math.PI) }), 
+                divergence: () => 0, 
+                curl: (x, y) => Math.cos(x * Math.PI) * Math.PI - Math.cos(y * Math.PI) * Math.PI 
+            }
+        };
+
+        let currentDisplayMode = displayModeSelect.value;
+        let currentGlyphMode = glyphModeSelect.value;
+        let currentField = vectorFields[fieldSelect.value];
+
+        // --- 坐标转换 ---
+        function toWorld(screenX, screenY) {
+            const { width, height } = canvas.getBoundingClientRect();
+            return {
+                x: (screenX - width / 2) / worldScale,
+                y: (height / 2 - screenY) / worldScale
+            };
+        }
+
+        // --- 粒子系统 ---
+        function resetFlowParticle(p) {
+            const { width, height } = canvas.getBoundingClientRect();
+            p.x = Math.random() * width;
+            p.y = Math.random() * height;
+        }
+
+        function initFlowParticles() {
+            flowParticles = [];
+            for (let i = 0; i < NUM_FLOW_PARTICLES; i++) {
+                const p = {};
+                resetFlowParticle(p);
+                flowParticles.push(p);
+            }
+        }
+
+        // --- 渲染 ---
+        function resizeCanvas() {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+            if (currentDisplayMode === 'flow') {
+                initFlowParticles();
+            }
+        }
+
+        // --- 动态流场模式渲染 ---
+        function drawFlowMode() {
+            const { width, height } = canvas.getBoundingClientRect();
+            ctx.fillStyle = 'rgba(25, 26, 36, 0.15)';
+            ctx.fillRect(0, 0, width, height);
+
+            flowParticles.forEach(p => {
+                const worldPos = toWorld(p.x, p.y);
+                const vec = currentField.func(worldPos.x, worldPos.y);
+                
+                p.x += vec.x * flowSpeed;
+                p.y -= vec.y * flowSpeed;
+
+                const magnitude = Math.sqrt(vec.x * vec.x + vec.y * vec.y);
+                const hue = 200 + Math.min(magnitude * 40, 160);
+                
+                ctx.beginPath();
+                ctx.moveTo(p.x - vec.x * flowSpeed * 0.5, p.y + vec.y * flowSpeed * 0.5);
+                ctx.lineTo(p.x, p.y);
+                ctx.strokeStyle = `hsla(${hue}, 80%, 70%, 0.5)`;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                if (p.x < 0 || p.x > width || p.y < 0 || p.y > height) {
+                    resetFlowParticle(p);
+                }
+            });
+        }
+        
+        // --- 图形符号模式渲染 ---
+        function drawGlyphMode() {
+            const { width, height } = canvas.getBoundingClientRect();
+            ctx.clearRect(0, 0, width, height);
+            
+            for (let i = 0; i < width; i += gridSpacing) {
+                for (let j = 0; j < height; j += gridSpacing) {
+                    const worldPos = toWorld(i, j);
+                    if (currentGlyphMode === 'divergence') {
+                        drawDivergenceGlyph(i, j, worldPos.x, worldPos.y);
+                    } else { // curl
+                        drawCurlGlyph(i, j, worldPos.x, worldPos.y);
+                    }
+                }
+            }
+        }
+
+        function drawDivergenceGlyph(sx, sy, wx, wy) {
+            const div = currentField.divergence(wx, wy);
+            const baseRadius = 5;
+            // 使用 sin 函数创建平滑的脉动效果
+            const pulse = Math.sin(animationTime * 2 + sx * 0.1 + sy * 0.1);
+            const radius = baseRadius + div * pulse * 2;
+            
+            ctx.beginPath();
+            ctx.arc(sx, sy, Math.abs(radius), 0, Math.PI * 2);
+            
+            const t = Math.max(-1, Math.min(1, div / 2.5));
+            const color = t > 0 ? `rgba(239, 68, 68, ${0.4 + t * 0.4})` : `rgba(59, 130, 246, ${0.4 - t * 0.4})`;
+            
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
+
+        function drawCurlGlyph(sx, sy, wx, wy) {
+            const curl = currentField.curl(wx, wy);
+            const angle = animationTime * curl;
+            const length = 10;
+            
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.rotate(angle);
+            
+            ctx.beginPath();
+            ctx.moveTo(-length, 0);
+            ctx.lineTo(length, 0);
+            
+            const t = Math.max(-1, Math.min(1, curl / 2.5));
+            const color = t > 0 ? `rgba(239, 68, 68, ${0.5 + t * 0.5})` : `rgba(59, 130, 246, ${0.5 - t * 0.5})`;
+            
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            ctx.restore();
+        }
+
+
+        // --- 通用渲染 ---
+        function drawTracerParticles() {
+            tracerParticles.forEach((p, index) => {
+                const worldPos = toWorld(p.x, p.y);
+                const vec = currentField.func(worldPos.x, worldPos.y);
+                
+                p.x += vec.x * flowSpeed;
+                p.y -= vec.y * flowSpeed;
+                p.life++;
+                
+                p.path.push({ x: p.x, y: p.y });
+
+                ctx.beginPath();
+                ctx.moveTo(p.path[0].x, p.path[0].y);
+                for (let i = 1; i < p.path.length; i++) {
+                    ctx.lineTo(p.path[i].x, p.path[i].y);
+                }
+                ctx.strokeStyle = p.color;
+                ctx.lineWidth = 2.5;
+                ctx.globalAlpha = 0.8;
+                ctx.stroke();
+                ctx.globalAlpha = 1.0;
+                
+                const { width, height } = canvas.getBoundingClientRect();
+                if (p.life > tracerMaxLife || p.x < 0 || p.x > width || p.y < 0 || p.y > height) {
+                    tracerParticles.splice(index, 1);
+                }
+            });
+        }
+
+        function animate(timestamp) {
+            animationTime = timestamp * 0.001; // 秒
+
+            if (currentDisplayMode === 'flow') {
+                drawFlowMode();
+            } else {
+                drawGlyphMode();
+            }
+            drawTracerParticles();
+            
+            requestAnimationFrame(animate);
+        }
+
+        // --- 事件监听 ---
+        function setupEventListeners() {
+            window.addEventListener('resize', resizeCanvas);
+
+            canvas.addEventListener('pointerdown', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                tracerParticles.push({
+                    x: x, y: y, life: 0,
+                    path: [{ x: x, y: y }],
+                    color: `hsl(${Math.random() * 360}, 90%, 65%)`
+                });
+            });
+            
+            function toggleOptions() {
+                currentDisplayMode = displayModeSelect.value;
+                glyphOptions.style.display = currentDisplayMode === 'glyphs' ? 'block' : 'none';
+                speedControl.style.display = currentDisplayMode === 'flow' ? 'block' : 'none';
+                if (currentDisplayMode === 'flow') initFlowParticles();
+                tracerParticles = [];
+            }
+            
+            displayModeSelect.addEventListener('change', toggleOptions);
+            glyphModeSelect.addEventListener('change', (e) => { currentGlyphMode = e.target.value; });
+            fieldSelect.addEventListener('change', (e) => {
+                currentField = vectorFields[e.target.value];
+                if (currentDisplayMode === 'flow') initFlowParticles();
+                tracerParticles = [];
+            });
+
+            clearButton.addEventListener('click', () => { tracerParticles = []; });
+            resetButton.addEventListener('click', () => {
+                tracerParticles = [];
+                resizeCanvas();
+            });
+
+            particleLifeSlider.addEventListener('input', (e) => {
+                tracerMaxLife = parseInt(e.target.value);
+                particleLifeValue.textContent = tracerMaxLife;
+            });
+            particleSpeedSlider.addEventListener('input', (e) => {
+                flowSpeed = parseFloat(e.target.value);
+                particleSpeedValue.textContent = flowSpeed.toFixed(1);
+            });
+            
+            // 初始化UI
+            toggleOptions();
+        }
+
+        // --- 初始化 ---
+        resizeCanvas();
+        setupEventListeners();
+        requestAnimationFrame(animate);
+    </script>
+</body>
+</html>
