@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>动态演示：DRAM 位平面</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f4f7f9;
+            color: #333;
+            padding: 20px;
+        }
+        h1, h2 {
+            color: #005a9c;
+            text-align: center;
+        }
+        #controls {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        button {
+            padding: 10px 18px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background-color: #0078d4;
+            color: white;
+            font-size: 16px;
+            transition: background-color 0.3s, transform 0.1s;
+        }
+        button:hover {
+            background-color: #005a9c;
+        }
+        button:active {
+            transform: scale(0.98);
+        }
+        #main-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 1400px;
+        }
+        .component {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin: 10px;
+            width: 95%;
+            transition: all 0.5s ease-in-out;
+        }
+        #cpu_data_bus { text-align: center; }
+        #memory_rank { text-align: center; }
+        .data-word {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 2px;
+            margin-top: 15px;
+        }
+        .bit {
+            width: 16px;
+            height: 20px;
+            line-height: 20px;
+            text-align: center;
+            font-size: 10px;
+            font-weight: bold;
+            color: white;
+            background-color: #ccc;
+            border-radius: 2px;
+            transition: all 0.5s ease;
+        }
+        .dram-chips-container {
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            margin-top: 20px;
+            gap: 15px;
+        }
+        .dram-chip {
+            border: 2px solid #aaa;
+            border-radius: 6px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            width: 120px;
+            transition: all 0.5s ease-in-out;
+        }
+        .chip-title {
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .bit-planes {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .plane {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background-color: #e9e9e9;
+            border-radius: 3px;
+            padding: 2px 5px;
+            font-size: 12px;
+        }
+        .plane .bit {
+            width: 14px;
+            height: 14px;
+            line-height: 14px;
+            font-size: 8px;
+        }
+        #log-panel {
+            width: 95%;
+            margin-top: 20px;
+            text-align: center;
+        }
+        #log-message {
+            font-size: 1.2em;
+            font-weight: 500;
+            color: #d9534f;
+            padding: 10px;
+            background-color: #fdf7f7;
+            border: 1px solid #d9534f;
+            border-radius: 5px;
+            min-height: 25px;
+            transition: opacity 0.5s;
+        }
+        /* Animation Classes */
+        .highlight-chip {
+            border-color: #d9534f;
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(217, 83, 79, 0.5);
+        }
+        .highlight-bit {
+            transform: scale(1.5);
+            box-shadow: 0 0 8px 2px gold;
+        }
+    </style>
+</head>
+<body>
+    <h1>动态演示：DRAM 位平面与数据读取</h1>
+    <div id="controls">
+        <button id="start-btn">开始数据读取演示</button>
+    </div>
+
+    <div id="main-container">
+        <div id="cpu_data_bus" class="component">
+            <h2>CPU/内存控制器 <-> 64位数据总线</h2>
+            <div id="bus_data_word" class="data-word"></div>
+        </div>
+
+        <div id="log-panel">
+            <div id="log-message">点击按钮开始</div>
+        </div>
+
+        <div id="memory_rank" class="component">
+            <h2>内存 Rank (由 8 个 x8 DRAM 芯片构成)</h2>
+            <div id="dram_chips" class="dram-chips-container"></div>
+        </div>
+    </div>
+
+    <script>
+        const startBtn = document.getElementById('start-btn');
+        const busDataWordDiv = document.getElementById('bus_data_word');
+        const dramChipsDiv = document.getElementById('dram_chips');
+        const logMessageDiv = document.getElementById('log-message');
+
+        const NUM_BITS = 64;
+        const CHIP_WIDTH = 8;
+        const NUM_CHIPS = NUM_BITS / CHIP_WIDTH;
+        const COLORS = ['#0078d4', '#c239b3', '#009e49', '#e0a000', '#7719aa', '#bf1b1b', '#038387', '#b33e00'];
+
+        let bits = [];
+        let chips = [];
+
+        function createScene() {
+            busDataWordDiv.innerHTML = '';
+            dramChipsDiv.innerHTML = '';
+            bits = [];
+            chips = [];
+
+            // 1. Create 64 bits for the data bus
+            for (let i = 0; i < NUM_BITS; i++) {
+                const bitDiv = document.createElement('div');
+                bitDiv.classList.add('bit');
+                bitDiv.id = `bus_bit_${i}`;
+                busDataWordDiv.appendChild(bitDiv);
+                bits.push(bitDiv);
+            }
+
+            // 2. Create DRAM chips and their bit planes
+            for (let i = 0; i < NUM_CHIPS; i++) {
+                const chipDiv = document.createElement('div');
+                chipDiv.classList.add('dram-chip');
+                chipDiv.id = `chip_${i}`;
+                
+                const title = document.createElement('div');
+                title.classList.add('chip-title');
+                title.textContent = `芯片 ${i} (x8)`;
+                chipDiv.appendChild(title);
+
+                const planesDiv = document.createElement('div');
+                planesDiv.classList.add('bit-planes');
+                
+                for (let j = 0; j < CHIP_WIDTH; j++) {
+                    const planeDiv = document.createElement('div');
+                    planeDiv.classList.add('plane');
+                    const bitIndex = i * CHIP_WIDTH + j;
+
+                    const planeLabel = document.createElement('span');
+                    planeLabel.textContent = `位平面 ${j}`;
+                    planeDiv.appendChild(planeLabel);
+
+                    const bitInPlane = document.createElement('div');
+                    bitInPlane.classList.add('bit');
+                    bitInPlane.id = `plane_bit_${bitIndex}`;
+                    bitInPlane.style.backgroundColor = COLORS[i];
+                    planeDiv.appendChild(bitInPlane);
+                    
+                    planesDiv.appendChild(planeDiv);
+                }
+                chipDiv.appendChild(planesDiv);
+                dramChipsDiv.appendChild(chipDiv);
+                chips.push(chipDiv);
+            }
+        }
+        
+        function setLogMessage(message) {
+            logMessageDiv.style.opacity = 0;
+            setTimeout(() => {
+                logMessageDiv.textContent = message;
+                logMessageDiv.style.opacity = 1;
+            }, 300);
+        }
+
+        async function runAnimation() {
+            startBtn.disabled = true;
+            createScene(); // Reset scene
+
+            // Step 0: Initial state
+            setLogMessage('CPU 发出读取 64 位数据的请求...');
+            await new Promise(r => setTimeout(r, 1500));
+
+            // Step 1: Controller issues command to all chips
+            setLogMessage('内存控制器向 Rank 内的所有 8 个芯片发出相同的地址和读命令。');
+            chips.forEach(chip => chip.classList.add('highlight-chip'));
+            await new Promise(r => setTimeout(r, 2000));
+            
+            // Step 2: Each chip retrieves its bits from its planes
+            setLogMessage('每个 x8 芯片从其 8 个位平面中各取 1 bit，组合成 8-bit 数据。');
+            for (let i = 0; i < NUM_CHIPS; i++) {
+                for (let j = 0; j < CHIP_WIDTH; j++) {
+                    const bitIndex = i * CHIP_WIDTH + j;
+                    const planeBit = document.getElementById(`plane_bit_${bitIndex}`);
+                    planeBit.classList.add('highlight-bit');
+                }
+            }
+            await new Promise(r => setTimeout(r, 2000));
+            
+            // Step 3: Data travels from chips to the bus
+            setLogMessage('8 组 8-bit 数据同时通过数据线传送到内存总线。');
+            const allPromises = [];
+            for (let i = 0; i < NUM_CHIPS; i++) {
+                const chip = chips[i];
+                chip.classList.remove('highlight-chip');
+                for (let j = 0; j < CHIP_WIDTH; j++) {
+                    const bitIndex = i * CHIP_WIDTH + j;
+                    const planeBit = document.getElementById(`plane_bit_${bitIndex}`);
+                    const busBit = document.getElementById(`bus_bit_${bitIndex}`);
+                    
+                    planeBit.classList.remove('highlight-bit');
+                    busBit.style.backgroundColor = COLORS[i];
+                    busBit.innerText = Math.round(Math.random()); // Assign a random 0 or 1
+                }
+            }
+            await new Promise(r => setTimeout(r, 1500));
+
+            // Step 4: Final assembly
+            setLogMessage('数据在总线上组合成完整的 64-bit 数据，传送给 CPU。读取完成！');
+            busDataWordDiv.style.border = '3px solid #5cb85c';
+            busDataWordDiv.style.padding = '5px';
+            busDataWordDiv.style.borderRadius = '5px';
+            await new Promise(r => setTimeout(r, 2000));
+
+            startBtn.disabled = false;
+        }
+
+        startBtn.addEventListener('click', runAnimation);
+        window.addEventListener('load', createScene);
+    </script>
+</body>
+</html>
