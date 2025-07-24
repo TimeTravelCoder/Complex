@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>动态演示：DRAM 刷新周期</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f2f5;
+            color: #333;
+        }
+        h1 {
+            color: #0056b3;
+        }
+        #main-container {
+            display: flex;
+            gap: 30px;
+            width: 95%;
+            max-width: 1200px;
+            margin-top: 20px;
+        }
+        #visualization-container {
+            flex-grow: 1;
+            border: 1px solid #ccc;
+            padding: 15px;
+            background-color: #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-radius: 8px;
+        }
+        #controls-log-container {
+            width: 350px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        #controls, #log-panel {
+            border: 1px solid #ccc;
+            padding: 15px;
+            background-color: #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-radius: 8px;
+        }
+        #controls h3, #log-panel h3 {
+            margin-top: 0;
+            text-align: center;
+            color: #0056b3;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        button {
+            padding: 8px 15px;
+            margin-right: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #aaa;
+            cursor: not-allowed;
+        }
+        #user-request-btn {
+            background-color: #28a745;
+        }
+        #user-request-btn:hover {
+            background-color: #1e7e34;
+        }
+        #speed-control {
+            width: 100%;
+        }
+        #log-list {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+            height: 300px;
+            overflow-y: auto;
+            border-top: 1px solid #eee;
+            margin-top: 10px;
+        }
+        #log-list li {
+            padding: 6px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 14px;
+            animation: fadeIn 0.5s;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        #timeline-container {
+            width: 100%;
+            height: 100px;
+            position: relative;
+            margin-top: 20px;
+            background: #e9ecef;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        #timeline-bar {
+            width: 0;
+            height: 100%;
+            background: linear-gradient(90deg, #6ea8fe, #a6caff);
+            position: absolute;
+        }
+        #command-display {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            padding: 10px;
+            background-color: rgba(0,0,0,0.3);
+            border-radius: 5px;
+        }
+        #dram-state {
+            text-align: center;
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        .state-idle { color: #28a745; }
+        .state-busy { color: #dc3545; }
+        .state-queued { color: #ffc107; }
+        #dram-array {
+            display: grid;
+            grid-template-columns: repeat(16, 1fr);
+            gap: 4px;
+            margin-top: 10px;
+        }
+        .dram-row {
+            height: 10px;
+            background-color: #d0d0d0;
+            border-radius: 2px;
+            transition: background-color 0.3s;
+        }
+        .refreshing { background-color: #ffc107; }
+        .reading { background-color: #17a2b8; }
+        .highlight {
+             box-shadow: 0 0 8px 2px #17a2b8;
+             transform: scale(1.1);
+        }
+    </style>
+</head>
+<body>
+    <h1>动态演示：DRAM 刷新周期</h1>
+
+    <div id="main-container">
+        <div id="visualization-container">
+            <h3>DRAM 状态与操作演示</h3>
+            <div id="dram-state" class="state-idle">状态: 空闲</div>
+            <p>下方时间轴模拟了两次刷新命令 ($t_{REFI}$) 之间的间隔。当刷新发生时，DRAM 将在 $t_{RFC}$ 期间锁定。</p>
+            <div id="timeline-container">
+                <div id="timeline-bar"></div>
+                <div id="command-display">空闲</div>
+            </div>
+            <p style="margin-top: 20px;">DRAM 存储单元 (共64行，刷新计数器将循环刷新)</p>
+            <div id="dram-array"></div>
+        </div>
+
+        <div id="controls-log-container">
+            <div id="controls">
+                <h3>控制面板</h3>
+                <div class="control-group">
+                    <button id="start-btn">开始</button>
+                    <button id="pause-btn" disabled>暂停</button>
+                    <button id="reset-btn">重置</button>
+                </div>
+                <div class="control-group">
+                    <button id="user-request-btn" disabled>发送读/写请求</button>
+                </div>
+                <div class="control-group">
+                    <label for="speed-control">模拟速度: <span id="speed-value">1</span>x</label>
+                    <input type="range" id="speed-control" min="0.5" max="5" value="1" step="0.1">
+                </div>
+            </div>
+            <div id="log-panel">
+                <h3>状态日志</h3>
+                <ul id="log-list"></ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const startBtn = document.getElementById('start-btn');
+        const pauseBtn = document.getElementById('pause-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const userRequestBtn = document.getElementById('user-request-btn');
+        const speedControl = document.getElementById('speed-control');
+        const speedValueSpan = document.getElementById('speed-value');
+        const logList = document.getElementById('log-list');
+        const dramStateDiv = document.getElementById('dram-state');
+        const timelineBar = document.getElementById('timeline-bar');
+        const commandDisplay = document.getElementById('command-display');
+        const dramArrayDiv = document.getElementById('dram-array');
+
+        // Simulation Parameters
+        const T_REFI = 7800; // tREFI in simulation time units (ms)
+        const T_RFC = 1200;  // tRFC in simulation time units (ms)
+        const T_READ = 500;  // User Read command duration
+        const NUM_ROWS = 64;
+
+        // State
+        let simulationTime = 0;
+        let lastRefreshTime = 0;
+        let isRunning = false;
+        let isPaused = false;
+        let animationFrameId;
+        let baseSpeed = 10; // Base milliseconds per simulation time unit
+        let speedMultiplier = 1;
+        let userRequestQueue = [];
+        let dramStatus = 'IDLE'; // IDLE, REFRESHING, BUSY_USER
+        let currentOperationEndTime = 0;
+        let refreshCounter = 0;
+        let dramRows = [];
+
+        function initDramArray() {
+            dramArrayDiv.innerHTML = '';
+            dramRows = [];
+            for (let i = 0; i < NUM_ROWS; i++) {
+                const row = document.createElement('div');
+                row.classList.add('dram-row');
+                row.dataset.id = i;
+                dramArrayDiv.appendChild(row);
+                dramRows.push(row);
+            }
+        }
+
+        function log(message) {
+            const li = document.createElement('li');
+            li.textContent = `[T=${Math.round(simulationTime)}] ${message}`;
+            logList.prepend(li);
+            if (logList.children.length > 50) {
+                logList.removeChild(logList.lastChild);
+            }
+        }
+
+        function updateDramState(state, commandText) {
+            dramStatus = state;
+            dramStateDiv.textContent = `状态: ${state}`;
+            commandDisplay.textContent = commandText;
+            dramStateDiv.className = ''; // Clear classes
+            switch(state) {
+                case '空闲':
+                    dramStateDiv.classList.add('state-idle');
+                    break;
+                case '刷新中':
+                    dramStateDiv.classList.add('state-busy');
+                    break;
+                case '处理用户请求':
+                    dramStateDiv.classList.add('state-busy');
+                    break;
+                case '请求已入队':
+                     dramStateDiv.classList.add('state-queued');
+                     break;
+            }
+        }
+        
+        function updateTimeline() {
+            let progress = 0;
+            if (dramStatus === 'IDLE') {
+                progress = ((simulationTime - lastRefreshTime) / T_REFI) * 100;
+            } else {
+                let duration = (dramStatus === 'REFRESHING') ? T_RFC : T_READ;
+                progress = ((simulationTime - (currentOperationEndTime - duration)) / duration) * 100;
+            }
+            timelineBar.style.width = `${Math.min(progress, 100)}%`;
+
+            if (dramStatus === 'REFRESHING') {
+                timelineBar.style.background = 'linear-gradient(90deg, #fdc049, #ffecb3)';
+            } else if (dramStatus === 'BUSY_USER') {
+                timelineBar.style.background = 'linear-gradient(90deg, #58c2d1, #a9e8f0)';
+            } else {
+                timelineBar.style.background = 'linear-gradient(90deg, #6ea8fe, #a6caff)';
+            }
+        }
+
+        function highlightRow(index, type) {
+            // Clear previous highlights
+            dramRows.forEach(r => r.classList.remove('refreshing', 'reading', 'highlight'));
+
+            if (index !== -1) {
+                const rowElement = dramRows[index];
+                rowElement.classList.add(type, 'highlight');
+                setTimeout(() => {
+                    if (rowElement) rowElement.classList.remove('highlight');
+                }, 500 / speedMultiplier);
+            }
+        }
+
+        function simulationLoop(timestamp) {
+            if (isPaused || !isRunning) return;
+
+            simulationTime += baseSpeed * speedMultiplier;
+
+            // Main Logic
+            if (dramStatus === 'IDLE') {
+                // Check if a refresh is due
+                if (simulationTime - lastRefreshTime >= T_REFI) {
+                    dramStatus = 'REFRESHING';
+                    currentOperationEndTime = simulationTime + T_RFC;
+                    lastRefreshTime = simulationTime;
+                    log(`tREFI (${T_REFI}ms) 到达，发出 REFRESH 命令。`);
+                    log(`DRAM 进入刷新锁定状态，持续 ${T_RFC}ms。`);
+                    updateDramState('刷新中', `REFRESH (行 ${refreshCounter})`);
+                    highlightRow(refreshCounter, 'refreshing');
+                    refreshCounter = (refreshCounter + 1) % NUM_ROWS;
+                } 
+                // Check if there is a user request in queue
+                else if (userRequestQueue.length > 0) {
+                    const request = userRequestQueue.shift();
+                    dramStatus = 'BUSY_USER';
+                    currentOperationEndTime = simulationTime + T_READ;
+                    log(`处理队列中的用户请求 (Row ${request.row})。`);
+                    updateDramState('处理用户请求', `READ (行 ${request.row})`);
+                     highlightRow(request.row, 'reading');
+                }
+            } else { // DRAM is BUSY (Refreshing or User Read)
+                if (simulationTime >= currentOperationEndTime) {
+                    const previousStatus = dramStatus;
+                    log(`${previousStatus === 'REFRESHING' ? '刷新' : '用户请求'} 操作完成。`);
+                    
+                    // Reset to idle and immediately check for next operation
+                    updateDramState('空闲', '空闲');
+                    dramStatus = 'IDLE';
+                    highlightRow(-1, '');
+                    
+                    // After refresh, check queue
+                    if(previousStatus === 'REFRESHING' && userRequestQueue.length > 0) {
+                        const request = userRequestQueue.shift();
+                        dramStatus = 'BUSY_USER';
+                        currentOperationEndTime = simulationTime + T_READ;
+                        log(`刷新结束，立即处理队列中的请求 (Row ${request.row})。`);
+                        updateDramState('处理用户请求', `READ (行 ${request.row})`);
+                        highlightRow(request.row, 'reading');
+                    }
+                }
+            }
+
+            updateTimeline();
+            animationFrameId = requestAnimationFrame(simulationLoop);
+        }
+
+        // Event Listeners
+        startBtn.addEventListener('click', () => {
+            if (isRunning) return;
+            isRunning = true;
+            isPaused = false;
+            startBtn.disabled = true;
+            pauseBtn.disabled = false;
+            userRequestBtn.disabled = false;
+            log('模拟开始。内存控制器开始计时。');
+            if (simulationTime === 0) {
+                lastRefreshTime = 0;
+            }
+            requestAnimationFrame(simulationLoop);
+        });
+
+        pauseBtn.addEventListener('click', () => {
+            isPaused = !isPaused;
+            if (isPaused) {
+                pauseBtn.textContent = '继续';
+                log('模拟已暂停。');
+            } else {
+                pauseBtn.textContent = '暂停';
+                log('模拟已恢复。');
+                requestAnimationFrame(simulationLoop);
+            }
+        });
+
+        resetBtn.addEventListener('click', () => {
+            isRunning = false;
+            isPaused = false;
+            cancelAnimationFrame(animationFrameId);
+            simulationTime = 0;
+            lastRefreshTime = 0;
+            userRequestQueue = [];
+            dramStatus = 'IDLE';
+            refreshCounter = 0;
+            
+            logList.innerHTML = '';
+            startBtn.disabled = false;
+            pauseBtn.disabled = true;
+            pauseBtn.textContent = '暂停';
+            userRequestBtn.disabled = true;
+            
+            updateDramState('空闲', '空闲');
+            updateTimeline();
+            highlightRow(-1, '');
+            log('模拟已重置。');
+        });
+
+        userRequestBtn.addEventListener('click', () => {
+            const randomRow = Math.floor(Math.random() * NUM_ROWS);
+            const request = { type: 'READ', row: randomRow };
+
+            if (dramStatus === 'IDLE' && userRequestQueue.length === 0) {
+                 dramStatus = 'BUSY_USER';
+                 currentOperationEndTime = simulationTime + T_READ;
+                 log(`收到用户请求，DRAM 空闲，立即处理 (Row ${randomRow})。`);
+                 updateDramState('处理用户请求', `READ (行 ${randomRow})`);
+                 highlightRow(randomRow, 'reading');
+            } else {
+                userRequestQueue.push(request);
+                log(`收到用户请求 (Row ${randomRow})，但 DRAM 忙碌，请求已入队。`);
+                 updateDramState('请求已入队', commandDisplay.textContent);
+            }
+        });
+        
+        speedControl.addEventListener('input', (e) => {
+            speedMultiplier = parseFloat(e.target.value);
+            speedValueSpan.textContent = `${speedMultiplier.toFixed(1)}`;
+        });
+
+        // Initial setup
+        initDramArray();
+        log('页面加载完成。点击“开始”以启动模拟。');
+
+    </script>
+</body>
+</html>
