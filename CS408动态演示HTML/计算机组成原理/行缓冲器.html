@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>动态演示：DRAM 行缓冲器（优化步进版）</title>
+    <style>
+        body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; display: flex; flex-direction: column; align-items: center; background-color: #f0f2f5; color: #2c3e50; }
+        h1, h3 { color: #005a9c; text-align: center; }
+        .main-container { display: grid; grid-template-columns: 300px 1fr 300px; gap: 20px; width: 98%; max-width: 1400px; margin-top: 1rem; }
+        .panel { background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); padding: 20px; }
+        
+        /* 左侧控制区 */
+        #controls-panel h3 { margin-top: 0; }
+        .controls-group button { width: 100%; padding: 12px; margin-bottom: 10px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: 500; transition: all 0.2s ease; }
+        .controls-group button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }
+        .prepare-btn { background: #007bff; color: white; }
+        #next-step-btn { background: #28a745; color: white; margin-top: 10px; }
+        button:disabled { background-color: #adb5bd; cursor: not-allowed; transform: none; box-shadow: none; }
+        
+        /* 中间演示区 */
+        #dram-array-panel h3, #row-buffer-panel h3 { font-size: 1.1em; }
+        #dram-array-panel .subtitle, #row-buffer-panel .subtitle { font-size: 0.8em; color: #6c757d; text-align: center; margin-top: -10px; margin-bottom: 15px; }
+        #dram-array { display: grid; grid-template-columns: repeat(16, 1fr); gap: 5px; background: #e9ecef; padding: 10px; border-radius: 5px; }
+        .cell { width: 100%; aspect-ratio: 1; background: #ced4da; border-radius: 3px; transition: all 0.2s; }
+        .cell.active-row-path { background-color: #ffecb3; }
+        .cell.target-cell { outline: 3px solid #e67e22; z-index: 10; }
+        
+        #row-buffer-panel { margin-top: 20px; }
+        #row-buffer-cells { display: grid; grid-template-columns: repeat(16, 1fr); gap: 5px; }
+        .buffer-cell { width: 100%; aspect-ratio: 1; background: #dee2e6; transition: all 0.2s; }
+        .buffer-cell.filled { background: #17a2b8; }
+        .buffer-cell.target-cell { background: #28a745; transform: scale(1.2); }
+
+        /* 右侧状态区 */
+        #status-panel h3 { margin-top: 0; }
+        .status-item { margin-bottom: 15px; font-size: 16px; border-bottom: 1px solid #f0f2f5; padding-bottom: 10px; }
+        .status-item span { font-weight: bold; font-family: monospace; padding: 3px 8px; border-radius: 4px; color: white; float: right; }
+        #op-val { background-color: #6f42c1; }
+        #active-row-val { background-color: #17a2b8; }
+        #latency-val { background-color: #ffc107; color: #333; }
+        
+        #log-panel h3 { margin-top: 0; }
+        .log-list { list-style-type: none; padding: 10px; margin: 0; height: 300px; overflow-y: auto; background-color: #212529; color: #e9ecef; border-radius: 5px; font-family: monospace; font-size: 14px; }
+        .log-list li { padding: 5px 8px; border-bottom: 1px dotted #495057; }
+        .log-list li.active { background-color: #007bff; color: white; }
+    </style>
+</head>
+<body>
+    <h1>DRAM 行缓冲器工作原理（优化步进版）</h1>
+    <div class="main-container">
+        <div id="left-panel">
+            <div id="controls-panel" class="panel">
+                <h3>1. 选择访问场景</h3>
+                <div class="controls-group">
+                    <button id="btn-miss" class="prepare-btn">准备场景: 行缺失</button>
+                    <button id="btn-hit" class="prepare-btn">准备场景: 行命中</button>
+                    <button id="btn-conflict" class="prepare-btn">准备场景: 行冲突</button>
+                </div>
+                <hr>
+                <button id="next-step-btn">下一步</button>
+            </div>
+        </div>
+        <div id="center-panel">
+            <div id="dram-array-panel" class="panel">
+                <h3>DRAM 存储阵列</h3>
+                <p class="subtitle">慢速DRAM电容阵列 (8 行 × 16 列)</p>
+                <div id="dram-array"></div>
+            </div>
+            <div id="row-buffer-panel" class="panel">
+                <h3>行缓冲器</h3>
+                <p class="subtitle">高速SRAM行缓冲器 (缓存一整行数据)</p>
+                <div id="row-buffer-cells"></div>
+            </div>
+        </div>
+        <div id="right-panel">
+            <div id="status-panel" class="panel">
+                <h3>2. 状态监控</h3>
+                <div class="status-item">当前操作: <span id="op-val">空闲</span></div>
+                <div class="status-item">缓冲器状态: <span id="active-row-val">空闲</span></div>
+                <div class="status-item">累计延迟: <span id="latency-val">0 ns</span></div>
+            </div>
+             <div id="log-panel" class="panel">
+                <h3>3. 操作日志</h3>
+                <ul id="log-list" class="log-list"></ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ROWS = 8;
+        const COLS = 16;
+        const LATENCY = { PRECHARGE: 40, ACTIVATE: 100, CAS: 20 };
+        
+        const dom = {
+            dramArray: document.getElementById('dram-array'),
+            rowBufferCells: document.getElementById('row-buffer-cells'),
+            opVal: document.getElementById('op-val'),
+            activeRowVal: document.getElementById('active-row-val'),
+            latencyVal: document.getElementById('latency-val'),
+            logList: document.getElementById('log-list'),
+            prepareBtns: document.querySelectorAll('.prepare-btn'),
+            nextBtn: document.getElementById('next-step-btn')
+        };
+        
+        const sim = {
+            step: 0,
+            scenario: null,
+            targetRow: -1,
+            targetCol: -1,
+            activeRow: -1,
+            totalLatency: 0,
+            logCounter: 1
+        };
+
+        function initGrids() {
+            dom.dramArray.innerHTML = '';
+            dom.rowBufferCells.innerHTML = '';
+            for (let i = 0; i < ROWS * COLS; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                cell.id = `cell-${Math.floor(i / COLS)}-${i % COLS}`;
+                dom.dramArray.appendChild(cell);
+            }
+            for (let i = 0; i < COLS; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'buffer-cell';
+                cell.id = `buffer-cell-${i}`;
+                dom.rowBufferCells.appendChild(cell);
+            }
+        }
+
+        function resetVisuals() {
+            document.querySelectorAll('.cell, .buffer-cell').forEach(el => {
+                el.className = el.className.includes('buffer-cell') ? 'buffer-cell' : 'cell';
+                el.style.outline = 'none';
+            });
+            dom.opVal.textContent = '空闲';
+            dom.activeRowVal.textContent = '空闲';
+            dom.latencyVal.textContent = '0 ns';
+            dom.logList.innerHTML = '';
+        }
+        
+        function prepareScenario(scenario, targetRow, targetCol, initialActiveRow) {
+            resetVisuals();
+            sim.scenario = scenario;
+            sim.targetRow = targetRow;
+            sim.targetCol = targetCol;
+            sim.activeRow = initialActiveRow;
+            sim.totalLatency = 0;
+            sim.step = 0;
+            sim.logCounter = 1;
+
+            if(sim.activeRow !== -1) {
+                dom.activeRowVal.textContent = `行 ${sim.activeRow}`;
+                for(let i=0; i<COLS; i++) document.getElementById(`buffer-cell-${i}`).classList.add('filled');
+            }
+            
+            document.getElementById(`cell-${targetRow}-${targetCol}`).style.outline = '3px solid #e67e22';
+
+            log(`场景准备就绪: <strong>${scenario}</strong>. 请求访问 (行 ${targetRow}, 列 ${targetCol})`);
+            dom.prepareBtns.forEach(btn => btn.disabled = true);
+            dom.nextBtn.disabled = false;
+        }
+
+        function log(message) {
+            dom.logList.querySelectorAll('li').forEach(li => li.classList.remove('active'));
+            const li = document.createElement('li');
+            li.innerHTML = `[${sim.logCounter++}] ${message}`;
+            li.classList.add('active');
+            dom.logList.prepend(li);
+        }
+
+        function updateStatus(op, latency, activeRowText) {
+            if(op) dom.opVal.textContent = op;
+            if(latency) {
+                sim.totalLatency += latency;
+                dom.latencyVal.textContent = `${sim.totalLatency} ns`;
+            }
+            if(activeRowText) dom.activeRowVal.textContent = activeRowText;
+        }
+
+        function finishSimulation() {
+            log('<strong>访问完成!</strong>');
+            dom.nextBtn.disabled = true;
+            dom.prepareBtns.forEach(btn => btn.disabled = false);
+        }
+
+        function executeNextStep() {
+            sim.step++;
+            const { scenario, step, activeRow, targetRow, targetCol } = sim;
+
+            if (scenario === 'hit') {
+                switch(step) {
+                    case 1:
+                        log(`行命中! 欲访问的行 ${targetRow} 已在缓冲器中`);
+                        updateStatus('CAS READ', LATENCY.CAS);
+                        document.getElementById(`buffer-cell-${targetCol}`).classList.add('target-cell');
+                        break;
+                    case 2: finishSimulation(); break;
+                }
+            } else if (scenario === 'miss') {
+                 switch(step) {
+                    case 1:
+                        log(`行缺失! 缓冲器空闲，需激活行 ${targetRow}`);
+                        updateStatus('ACTIVATE', LATENCY.ACTIVATE);
+                        for(let i=0; i<COLS; i++) document.getElementById(`cell-${targetRow}-${i}`).classList.add('active-row-path');
+                        break;
+                    case 2:
+                        log(`行 ${targetRow} 数据已复制到行缓冲器`);
+                        updateStatus(null, 0, `行 ${targetRow}`);
+                        for(let i=0; i<COLS; i++) document.getElementById(`buffer-cell-${i}`).classList.add('filled');
+                        break;
+                    case 3:
+                        log(`从缓冲器中读取列 ${targetCol}`);
+                        updateStatus('CAS READ', LATENCY.CAS);
+                        document.getElementById(`buffer-cell-${targetCol}`).classList.add('target-cell');
+                        break;
+                    case 4: finishSimulation(); break;
+                 }
+            } else if (scenario === 'conflict') {
+                 switch(step) {
+                    case 1:
+                        log(`行冲突! 需访问行 ${targetRow}, 但行 ${activeRow} 正在缓冲`);
+                        updateStatus('PRECHARGE', LATENCY.PRECHARGE, '关闭中...');
+                        document.querySelectorAll('.buffer-cell.filled').forEach(c => c.classList.remove('filled'));
+                        break;
+                    case 2:
+                        log(`行 ${activeRow} 已关闭，缓冲器空闲`);
+                        sim.activeRow = -1;
+                        updateStatus('空闲', 0, '空闲');
+                        break;
+                    case 3:
+                        log(`激活新行 ${targetRow}`);
+                        updateStatus('ACTIVATE', LATENCY.ACTIVATE);
+                        for(let i=0; i<COLS; i++) document.getElementById(`cell-${targetRow}-${i}`).classList.add('active-row-path');
+                        break;
+                    case 4:
+                        log(`行 ${targetRow} 数据已复制到行缓冲器`);
+                        sim.activeRow = targetRow;
+                        updateStatus(null, 0, `行 ${targetRow}`);
+                        for(let i=0; i<COLS; i++) document.getElementById(`buffer-cell-${i}`).classList.add('filled');
+                        break;
+                    case 5:
+                        log(`从缓冲器中读取列 ${targetCol}`);
+                        updateStatus('CAS READ', LATENCY.CAS);
+                        document.getElementById(`buffer-cell-${targetCol}`).classList.add('target-cell');
+                        break;
+                    case 6: finishSimulation(); break;
+                 }
+            }
+        }
+
+        // Event Listeners
+        document.getElementById('btn-miss').addEventListener('click', () => prepareScenario('miss', 5, 3, -1));
+        document.getElementById('btn-hit').addEventListener('click', () => prepareScenario('hit', 5, 10, 5));
+        document.getElementById('btn-conflict').addEventListener('click', () => prepareScenario('conflict', 2, 8, 5));
+        dom.nextBtn.addEventListener('click', executeNextStep);
+
+        // Initial setup
+        initGrids();
+        dom.nextBtn.disabled = true;
+
+    </script>
+</body>
+</html>
