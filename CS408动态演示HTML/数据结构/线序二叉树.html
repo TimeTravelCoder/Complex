@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式线索二叉树 (优化版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chosen Palette: Calm Harmony -->
+    <!-- Application Structure Plan: The SPA is designed as a guided, interactive journey. It starts with a static introduction (Why & What), then moves to the main interactive visualization where users control the process. The structure is task-oriented: 1. Understand the problem. 2. See the solution's structure. 3. Interactively build the solution (threading). 4. Interactively use the solution (traversal). This is more engaging than a simple text-based explanation and helps solidify understanding by doing. -->
+    <!-- Visualization & Content Choices: 
+        - Report Info: The concept of NULL pointers, threads, ltag/rtag, and the entire threading/traversal process.
+        - Goal: Make these abstract concepts tangible and easy to follow.
+        - Viz/Presentation Method: A dynamic diagram built with HTML divs and CSS. No Canvas or SVG needed, keeping it lightweight. Nodes, pointers (solid lines), and threads (dashed lines) are all DOM elements. An accompanying control panel and status box provide context.
+        - Interaction: Users control the flow with "Next Step" buttons for both the threading and traversal processes. The visualization updates at each step, highlighting the current node, the `pre` pointer, and the newly formed threads.
+        - Justification: This step-by-step, user-controlled animation is the most effective way to teach an algorithmic process. It directly maps the code's logic to a visual representation, clarifying complex pointer manipulations.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            background-color: #f8f9fa;
+            color: #212529;
+            font-family: 'Inter', 'Helvetica Neue', 'Helvetica', 'Arial', 'sans-serif';
+        }
+        .card {
+            background-color: #ffffff;
+            border: 1px solid #dee2e6;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.05), 0 4px 6px -4px rgb(0 0 0 / 0.05);
+        }
+        .code-block {
+            background-color: #282c34;
+            color: #abb2bf;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            font-family: 'Fira Code', 'Courier New', monospace;
+            font-size: 0.875rem;
+        }
+        #tree-container {
+            position: relative;
+            width: 100%;
+            height: 450px;
+            border: 2px dashed #ced4da;
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+        .tree-node {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            border: 2px solid #0284c7;
+            background-color: #e0f2fe;
+            color: #0369a1;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.25rem;
+            z-index: 10;
+            transition: all 0.3s ease-in-out;
+        }
+        .tree-node.active {
+            background-color: #fecaca;
+            border-color: #dc2626;
+            transform: scale(1.1);
+        }
+        .tree-node.pre {
+            box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.4);
+            border-color: #16a34a;
+        }
+        .line {
+            position: absolute;
+            background-color: #6c757d;
+            height: 2px;
+            transform-origin: 0 0;
+            z-index: 1;
+        }
+        .thread {
+            position: absolute;
+            border-top: 2px dashed #fd7e14;
+            transform-origin: 0 0;
+            z-index: 5;
+            transition: opacity 0.5s;
+            opacity: 0;
+        }
+        .btn-primary {
+            background-color: #0d6efd;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #0b5ed7;
+        }
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background-color: #5c636a;
+        }
+        .btn-disabled {
+            background-color: #adb5bd;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <header class="bg-white/80 backdrop-blur-lg sticky top-0 z-50 border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+            <h1 class="text-3xl font-bold text-sky-700">线索二叉树交互式指南</h1>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+
+        <section id="intro" class="mb-12">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">1. 为什么需要线索二叉树？</h2>
+            <div class="grid md:grid-cols-2 gap-8 text-gray-700">
+                <div class="card p-6 rounded-lg">
+                    <h3 class="text-xl font-semibold mb-3 text-sky-700">空间浪费</h3>
+                    <p>在一个有 n 个结点的二叉树中，存在 n+1 个空指针域。这些空指针除了表示“没有孩子”外，不承载任何信息，造成了存储空间的浪费。</p>
+                </div>
+                <div class="card p-6 rounded-lg">
+                    <h3 class="text-xl font-semibold mb-3 text-sky-700">遍历复杂</h3>
+                    <p>在普通二叉树中，要找到一个结点的中序前驱或后继，必须执行一次遍历，通常需要借助栈或递归，效率不高。线索二叉树的核心目的就是解决这两个问题。</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="interactive-demo" class="card p-6 md:p-8 rounded-lg">
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">2. 交互式线索化与遍历</h2>
+            <p class="text-gray-600 mb-6">下方是一个预设的二叉树。请通过控制面板的按钮，一步步观察它被中序线索化以及后续中序遍历的全过程。留意“状态说明”面板的变化，它会解释每一步的操作。</p>
+            
+            <div class="grid lg:grid-cols-3 gap-8">
+                <div class="lg:col-span-2">
+                    <div id="tree-container"></div>
+                </div>
+                <div class="flex flex-col justify-between bg-gray-50 p-4 rounded-lg border">
+                    <div>
+                        <h3 class="text-lg font-semibold mb-2">控制面板</h3>
+                        <div class="space-y-3 mb-4">
+                            <button id="thread-btn" class="w-full py-2 px-4 rounded-md font-semibold btn-primary transition-colors">开始/下一步 (线索化)</button>
+                            <button id="traverse-btn" class="w-full py-2 px-4 rounded-md font-semibold btn-secondary transition-colors btn-disabled">开始/下一步 (遍历)</button>
+                            <button id="reset-btn" class="w-full py-2 px-4 rounded-md font-semibold bg-gray-200 hover:bg-gray-300 transition-colors">重置</button>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold mb-2">状态说明</h3>
+                        <div id="status-box" class="w-full h-48 bg-white p-3 rounded border border-gray-200 text-sm font-mono overflow-y-auto">
+                            点击“开始”以进行线索化。
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <section id="structure" class="mt-12">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">3. 结构与实现</h2>
+            <p class="text-gray-600 mb-6">为了实现线索化，我们需要在结点结构中增加两个标志位 `ltag` 和 `rtag` 来区分指针和线索。</p>
+            <div class="grid md:grid-cols-2 gap-8">
+                <div class="card p-6 rounded-lg">
+                    <h3 class="text-xl font-semibold mb-3 text-sky-700">结点定义 (C++)</h3>
+                    <div class="code-block">
+<pre><code>typedef struct ThreadNode {
+    char data;
+    struct ThreadNode *l, *r;
+    int ltag, rtag; // 0:指针, 1:线索
+} ThreadNode;</code></pre>
+                    </div>
+                    <ul class="mt-4 space-y-2 text-sm">
+                        <li>`ltag=1`: `l` 指向中序前驱</li>
+                        <li>`rtag=1`: `r` 指向中序后继</li>
+                    </ul>
+                </div>
+                 <div class="card p-6 rounded-lg">
+                    <h3 class="text-xl font-semibold mb-3 text-sky-700">中序遍历 (C++)</h3>
+                    <div class="code-block">
+<pre><code>void Inorder(ThreadNode *T) {
+    ThreadNode *p = FirstNode(T);
+    while (p != NULL) {
+        visit(p);
+        p = NextNode(p);
+    }
+}</code></pre>
+                    </div>
+                     <p class="mt-4 text-sm">利用 `NextNode` 函数，可以不借助栈或递归，像遍历链表一样遍历整棵树，效率极高。</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="bg-white border-t border-gray-200 mt-12">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 text-center text-gray-500">
+            <p>基于数据结构理论构建的交互式学习工具</p>
+        </div>
+    </footer>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const treeContainer = document.getElementById('tree-container');
+        const statusBox = document.getElementById('status-box');
+        const threadBtn = document.getElementById('thread-btn');
+        const traverseBtn = document.getElementById('traverse-btn');
+        const resetBtn = document.getElementById('reset-btn');
+
+        let nodeMap = new Map();
+        let inorderSequence = [];
+        let threadingGenerator, traversalGenerator;
+
+        function createNodeData() {
+            return {
+                id: 'A', data: 'A', ltag: 0, rtag: 0,
+                children: [
+                    { id: 'B', data: 'B', ltag: 0, rtag: 0,
+                        children: [
+                            { id: 'D', data: 'D', ltag: 0, rtag: 0, children: [] },
+                            { id: 'E', data: 'E', ltag: 0, rtag: 0, children: [] }
+                        ]
+                    },
+                    { id: 'C', data: 'C', ltag: 0, rtag: 0,
+                        children: [
+                            { id: 'F', data: 'F', ltag: 0, rtag: 0, children: [] },
+                            { id: 'G', data: 'G', ltag: 0, rtag: 0, children: [] }
+                        ]
+                    }
+                ]
+            };
+        }
+
+        function buildNodeMap(node) {
+            if (!node) return;
+            nodeMap.set(node.id, node);
+            node.l = node.children[0] || null;
+            node.r = node.children[1] || null;
+            if (node.children) {
+                node.children.forEach(child => buildNodeMap(child));
+            }
+        }
+        
+        function getInorderSequence(node) {
+            if (!node) return;
+            getInorderSequence(node.l);
+            inorderSequence.push(node);
+            getInorderSequence(node.r);
+        }
+
+        function calculatePositions(node, x, y, xOffset) {
+            if (!node) return;
+            node.x = x;
+            node.y = y;
+            node.dom = document.createElement('div');
+            node.dom.className = 'tree-node';
+            node.dom.textContent = node.data;
+            node.dom.style.left = `${x}px`;
+            node.dom.style.top = `${y}px`;
+            treeContainer.appendChild(node.dom);
+
+            if (node.l) calculatePositions(node.l, x - xOffset, y + 80, xOffset / 2);
+            if (node.r) calculatePositions(node.r, x + xOffset, y + 80, xOffset / 2);
+        }
+
+        function drawLine(fromNode, toNode) {
+            if (!fromNode || !toNode) return;
+            const x1 = fromNode.x + 25;
+            const y1 = fromNode.y + 25;
+            const x2 = toNode.x + 25;
+            const y2 = toNode.y + 25;
+
+            const length = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+            const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+
+            const line = document.createElement('div');
+            line.className = 'line';
+            line.style.width = `${length}px`;
+            line.style.left = `${x1}px`;
+            line.style.top = `${y1}px`;
+            line.style.transform = `rotate(${angle}deg)`;
+            treeContainer.appendChild(line);
+        }
+        
+        function drawThread(fromNode, toNode, isLeft) {
+            if (!fromNode || !toNode) return; // FIX: Prevent drawing to/from null
+            const x1 = fromNode.x + (isLeft ? 5 : 45);
+            const y1 = fromNode.y + 45;
+            const x2 = toNode.x + 25;
+            const y2 = toNode.y + 5;
+
+            const length = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+            const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+
+            const thread = document.createElement('div');
+            thread.className = 'thread';
+            thread.style.width = `${length}px`;
+            thread.style.left = `${x1}px`;
+            thread.style.top = `${y1}px`;
+            thread.style.transform = `rotate(${angle}deg)`;
+            treeContainer.appendChild(thread);
+            setTimeout(() => thread.style.opacity = '1', 50); // Animate fade-in
+        }
+        
+        function updateStatus(text) {
+            statusBox.innerHTML = text;
+            statusBox.scrollTop = statusBox.scrollHeight;
+        }
+        
+        function highlightNodes(p, pre) {
+             nodeMap.forEach(n => n.dom.classList.remove('active', 'pre'));
+             if (p) p.dom.classList.add('active');
+             if (pre) pre.dom.classList.add('pre');
+        }
+
+        function* threadGenerator() {
+            let pre = null;
+            updateStatus('开始中序线索化...<br><strong>pre</strong> 指针 (绿色) 初始化为 null。');
+            yield;
+
+            for (let i = 0; i < inorderSequence.length; i++) {
+                const p = inorderSequence[i];
+                highlightNodes(p, pre);
+                
+                let status = `处理中序序列第 ${i+1} 个结点: <strong class="text-red-600">${p.data}</strong><br>`;
+                status += `(前驱 pre 是: ${pre ? '<strong class="text-green-600">' + pre.data + '</strong>' : 'null'})<br><br>`;
+                
+                // 建立前驱线索
+                if (!p.l) {
+                    p.l = pre;
+                    p.ltag = 1;
+                    drawThread(p, pre, true);
+                    status += `<span class="text-orange-500">↳ ${p.data} 的左指针为空, 建立前驱线索指向 ${pre ? pre.data : 'null'}。</span><br>`;
+                } else {
+                    status += `↳ ${p.data} 有左孩子, ltag 保持为 0。<br>`;
+                }
+
+                // 建立后继线索
+                if (pre && !pre.r) {
+                    pre.r = p;
+                    pre.rtag = 1;
+                    drawThread(pre, p, false);
+                    status += `<span class="text-blue-500">↳ pre 结点 ${pre.data} 的右指针为空, 建立后继线索指向 ${p.data}。</span><br>`;
+                } else if(pre) {
+                     status += `↳ pre 结点 ${pre.data} 有右孩子, rtag 保持为 0。<br>`;
+                }
+                
+                pre = p;
+                status += `<br>处理完毕, 更新 <strong>pre</strong> 指针为 ${p.data}。`;
+                updateStatus(status);
+                yield;
+            }
+            
+            // 处理最后一个结点
+            highlightNodes(null, pre);
+            if (pre && !pre.r) {
+                pre.rtag = 1; // 后继为null
+                pre.r = null;
+                updateStatus(`处理最后一个结点 ${pre.data}。<br>其右指针为空, 建立后继线索指向 null。<br><br><strong>线索化完成！</strong>`);
+            } else {
+                 updateStatus('<strong>线索化完成！</strong>');
+            }
+            
+            threadBtn.classList.add('btn-disabled');
+            traverseBtn.classList.remove('btn-disabled');
+        }
+        
+        function* traverseTreeGenerator() {
+            updateStatus('开始中序遍历...<br>首先找到最左边的结点。');
+            yield;
+
+            let p = inorderSequence[0]; // FirstNode
+            
+            while(p) {
+                highlightNodes(p, null);
+                updateStatus(`访问结点: <strong class="text-2xl text-red-600">${p.data}</strong>`);
+                yield;
+
+                // NextNode logic
+                let nextNode = null;
+                let status = `寻找 ${p.data} 的后继...<br>`;
+                if (p.rtag === 1) {
+                    nextNode = p.r;
+                    status += `rtag=1, 右指针是线索.<br>直接跳转到后继: <strong class="text-blue-600">${nextNode ? nextNode.data : '结束'}</strong>`;
+                } else {
+                    status += `rtag=0, 右指针是孩子.<br>需寻找右子树 (${p.r.data}) 的最左结点...<br>`;
+                    let temp = p.r;
+                    status += `路径: ${temp.data}`;
+                    while(temp && temp.ltag === 0) {
+                        temp = temp.l;
+                        status += ` -> ${temp.data}`;
+                    }
+                    nextNode = temp;
+                    status += `<br>找到后继: <strong class="text-blue-600">${nextNode ? nextNode.data : '结束'}</strong>`;
+                }
+                updateStatus(status);
+                p = nextNode;
+                yield;
+            }
+            
+            highlightNodes(null, null);
+            updateStatus('遍历完成！');
+            traverseBtn.classList.add('btn-disabled');
+        }
+
+        function init() {
+            treeContainer.innerHTML = '';
+            nodeMap.clear();
+            inorderSequence = [];
+            
+            let treeData = createNodeData();
+            buildNodeMap(treeData);
+            getInorderSequence(treeData);
+            
+            const containerWidth = treeContainer.clientWidth;
+            calculatePositions(treeData, containerWidth / 2 - 25, 30, containerWidth / 4);
+
+            nodeMap.forEach(node => {
+                if (node.l) drawLine(node, node.l);
+                if (node.r) drawLine(node, node.r);
+            });
+            
+            threadingGenerator = threadGenerator();
+            traversalGenerator = traverseTreeGenerator();
+            
+            updateStatus('点击“开始/下一步 (线索化)”');
+            threadBtn.classList.remove('btn-disabled');
+            traverseBtn.classList.add('btn-disabled');
+        }
+
+        threadBtn.addEventListener('click', () => {
+            if (threadBtn.classList.contains('btn-disabled')) return;
+            const result = threadingGenerator.next();
+            if (result.done) {
+                threadBtn.classList.add('btn-disabled');
+            }
+        });
+
+        traverseBtn.addEventListener('click', () => {
+            if (traverseBtn.classList.contains('btn-disabled')) return;
+            const result = traversalGenerator.next();
+             if (result.done) {
+                traverseBtn.classList.add('btn-disabled');
+            }
+        });
+
+        resetBtn.addEventListener('click', init);
+
+        init();
+    });
+    </script>
+</body>
+</html>
