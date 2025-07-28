@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>深度演示：队列、循环队列与双向队列</title>
+    <style>
+        body {
+            font-family: 'SF Pro Text', 'Segoe UI', 'Helvetica Neue', sans-serif;
+            background-color: #f0f2f5; color: #333;
+            display: flex; flex-direction: column; align-items: center;
+            padding: 20px; margin: 0;
+        }
+        h1, h2, h3 { color: #0a2540; }
+        #main-container {
+            display: flex; gap: 30px; width: 100%;
+            max-width: 1400px; align-items: flex-start;
+        }
+        #controls-panel {
+            flex: 0 0 380px; background-color: #ffffff;
+            padding: 25px; border-radius: 10px; box-shadow: 0 6px 12px rgba(0,0,0,0.08);
+        }
+        #simulation-panel { flex-grow: 1; }
+        .control-group { margin-bottom: 25px; border-bottom: 1px solid #e5e7eb; padding-bottom: 20px; }
+        .control-group:last-child { border-bottom: none; padding-bottom: 0; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; color: #374151; }
+        input[type="text"], button {
+            width: 100%; padding: 12px; border-radius: 6px;
+            border: 1px solid #d1d5db; box-sizing: border-box; font-size: 1em;
+        }
+        input[type="text"] { margin-bottom: 10px; }
+        button {
+            background: linear-gradient(180deg, #4c6ef5, #3b5bdb); color: white;
+            border: none; cursor: pointer; font-weight: 600;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
+        button:disabled { background: #adb5bd; cursor: not-allowed; transform: none; box-shadow: none; }
+        #visualization-container {
+            position: relative; display: flex; height: 90px;
+            margin-top: 50px; background: #e9ecef; border-radius: 8px; padding: 10px;
+        }
+        .queue-cell {
+            width: 65px; height: 65px; border: 2px solid #ced4da;
+            background-color: #f8f9fa; margin: 5px; display: flex;
+            justify-content: center; align-items: center;
+            font-size: 1.6em; font-weight: bold; color: #1c3a70;
+            transition: all 0.5s ease; position: relative; border-radius: 6px;
+        }
+        .queue-cell.occupied { background-color: #4dabf7; border-color: #1971c2; color: white; }
+        .pointer {
+            position: absolute; width: 65px; text-align: center;
+            font-weight: bold; transition: left 0.5s ease-in-out;
+            font-size: 1em; padding: 4px 0; border-radius: 4px; color: white;
+        }
+        #front-pointer { top: -35px; background-color: #20c997; }
+        #rear-pointer { bottom: -35px; background-color: #fa5252; }
+        
+        #state-panel {
+            background: #fff; padding: 20px; border-radius: 8px;
+            margin-top: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        #state-panel h3 { margin-top: 0; }
+        .state-item { display: flex; justify-content: space-between; font-family: 'Menlo', 'Courier New', monospace; padding: 5px 0; font-size: 1.1em; }
+        .state-item span:first-child { color: #555; }
+        .state-item span:last-child { font-weight: bold; }
+        .true { color: #28a745; }
+        .false { color: #dc3545; }
+
+        #log-panel {
+            margin-top: 20px; width: 100%; height: 180px;
+            background-color: #212529; color: #e9ecef;
+            border-radius: 8px; padding: 15px; overflow-y: auto;
+            font-family: 'Menlo', 'Courier New', monospace; font-size: 0.95em;
+            box-sizing: border-box; border: 1px solid #495057;
+        }
+        .log-entry { margin-bottom: 5px; white-space: pre-wrap; }
+        .log-entry.error { color: #ff8787; }
+        .log-entry.success { color: #69db7c; }
+        .log-entry.info { color: #74c0fc; }
+    </style>
+</head>
+<body>
+    <div id="main-container">
+        <div id="controls-panel">
+            <h2>交互控制器</h2>
+            <div class="control-group">
+                <label>1. 选择队列模型</label>
+                <input type="radio" id="type-standard" name="queueType" value="standard" checked> <label for="type-standard">普通队列</label><br>
+                <input type="radio" id="type-circular" name="queueType" value="circular"> <label for="type-circular">循环队列</label><br>
+                <input type="radio" id="type-deque" name="queueType" value="deque"> <label for="type-deque">双向队列</label>
+            </div>
+            <div class="control-group">
+                <label for="value-input">2. 输入值</label>
+                <input type="text" id="value-input" placeholder="例如: 42, X, ...">
+            </div>
+            <div class="control-group">
+                <label>3. 执行操作</label>
+                <button id="btn-enqueue">队尾入队 (Enqueue)</button>
+                <button id="btn-dequeue">队首出队 (Dequeue)</button>
+                <button id="btn-add-front" disabled>队首入队 (Add Front)</button>
+                <button id="btn-remove-rear" disabled>队尾出队 (Remove Rear)</button>
+            </div>
+            <div class="control-group">
+                <button id="btn-reset">重置模拟</button>
+            </div>
+        </div>
+        <div id="simulation-panel">
+            <h1>深度动态演示：队列实现</h1>
+            <div id="visualization-container"></div>
+            <div id="state-panel">
+                <h3>核心状态与公式</h3>
+                <div class="state-item"><span>front:</span> <span id="state-front">0</span></div>
+                <div class="state-item"><span>rear:</span> <span id="state-rear">0</span></div>
+                <div class="state-item"><span>size:</span> <span id="state-size">0</span></div>
+                <div class="state-item"><span>isEmpty():</span> <span id="state-empty">true</span></div>
+                <div class="state-item"><span>isFull() (公式):</span> <span id="state-full-formula"></span></div>
+                <div class="state-item"><span>isFull() (结果):</span> <span id="state-full">false</span></div>
+            </div>
+            <div id="log-panel"></div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const CAPACITY = 10;
+            let queueType = 'standard';
+            let array = new Array(CAPACITY).fill(null);
+            let front = 0, rear = 0, size = 0;
+
+            const getEl = (id) => document.getElementById(id);
+            const visualizationContainer = getEl('visualization-container');
+            const logPanel = getEl('log-panel');
+            const valueInput = getEl('value-input');
+            const btnAddFront = getEl('btn-add-front');
+            const btnRemoveRear = getEl('btn-remove-rear');
+
+            function init() {
+                queueType = document.querySelector('input[name="queueType"]:checked').value;
+                array.fill(null);
+                front = 0; rear = 0; size = 0;
+                
+                visualizationContainer.innerHTML = '';
+                for (let i = 0; i < CAPACITY; i++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'queue-cell';
+                    cell.id = `cell-${i}`;
+                    const indexLabel = document.createElement('span');
+                    indexLabel.style.cssText = 'position:absolute; top:-22px; font-size:0.75em; color:#6c757d;';
+                    indexLabel.textContent = `[${i}]`;
+                    cell.appendChild(indexLabel);
+                    visualizationContainer.appendChild(cell);
+                }
+
+                ['front-pointer', 'rear-pointer'].forEach(id => {
+                    const p = document.createElement('div');
+                    p.id = id; p.className = 'pointer';
+                    p.textContent = id.split('-')[0];
+                    visualizationContainer.appendChild(p);
+                });
+
+                logPanel.innerHTML = '';
+                logMessage(`模拟重置。容量=${CAPACITY}`, 'info');
+                logMessage(`当前模型: ${queueType} Queue`, 'info');
+
+                btnAddFront.disabled = queueType !== 'deque';
+                btnRemoveRear.disabled = queueType !== 'deque';
+                render();
+            }
+
+            function updateStatePanel() {
+                getEl('state-front').textContent = front;
+                getEl('state-rear').textContent = rear;
+                getEl('state-size').textContent = size;
+
+                const isEmpty = size === 0;
+                let isFull, fullFormula;
+
+                switch (queueType) {
+                    case 'standard':
+                        isFull = rear === CAPACITY;
+                        fullFormula = `rear === ${CAPACITY}`;
+                        break;
+                    case 'circular':
+                    case 'deque':
+                        isFull = size === CAPACITY;
+                        fullFormula = `size === ${CAPACITY}`;
+                        break;
+                }
+                
+                getEl('state-empty').textContent = isEmpty;
+                getEl('state-empty').className = isEmpty ? 'true' : 'false';
+                getEl('state-full-formula').textContent = fullFormula;
+                getEl('state-full').textContent = isFull;
+                getEl('state-full').className = isFull ? 'true' : 'false';
+            }
+
+            function render() {
+                for (let i = 0; i < CAPACITY; i++) {
+                    const cell = getEl(`cell-${i}`);
+                    cell.classList.remove('occupied');
+                    
+                    let isOccupied = false;
+                    if (size > 0) {
+                        if (queueType === 'standard') {
+                            isOccupied = i >= front && i < rear;
+                        } else {
+                            if (front < rear) {
+                                isOccupied = i >= front && i < rear;
+                            } else { // Wraparound case
+                                isOccupied = i >= front || i < rear;
+                            }
+                        }
+                    }
+
+                    if (isOccupied) {
+                        cell.classList.add('occupied');
+                        cell.childNodes[0].nodeValue = array[i];
+                    } else {
+                        cell.childNodes[0].nodeValue = '';
+                    }
+                }
+                const cellWidth = 65 + 10; // cell width + margin
+                getEl('front-pointer').style.left = `${front * cellWidth + 10}px`;
+                getEl('rear-pointer').style.left = `${rear * cellWidth + 10}px`;
+                updateStatePanel();
+            }
+
+            function logMessage(message, type = 'info') {
+                logPanel.innerHTML = `<div class="log-entry ${type}">[${new Date().toLocaleTimeString()}] ${message}</div>` + logPanel.innerHTML;
+            }
+
+            function enqueue() {
+                const value = valueInput.value.trim();
+                if (!value) { logMessage('错误: 输入值不能为空!', 'error'); return; }
+
+                if ((queueType === 'standard' && rear === CAPACITY) || (queueType !== 'standard' && size === CAPACITY)) {
+                    logMessage('错误: 队列已满, 无法入队。', 'error'); return;
+                }
+                
+                logMessage(`执行: 队尾入队 (Enqueue) 值'${value}'`, 'success');
+                array[rear] = value;
+                const oldRear = rear;
+                if (queueType === 'standard') rear++;
+                else rear = (rear + 1) % CAPACITY;
+                size++;
+                
+                logMessage(`公式: rear = (${oldRear} + 1) % ${CAPACITY} = ${rear}`);
+                logMessage(`状态: front=${front}, rear=${rear}, size=${size}`);
+                valueInput.value = '';
+                render();
+            }
+
+            function dequeue() {
+                if (size === 0) { logMessage('错误: 队列为空, 无法出队。', 'error'); return; }
+
+                const value = array[front];
+                logMessage(`执行: 队首出队 (Dequeue) 值'${value}'`, 'success');
+                
+                if (queueType !== 'standard') array[front] = null;
+                const oldFront = front;
+                if (queueType === 'standard') front++;
+                else front = (front + 1) % CAPACITY;
+                size--;
+
+                logMessage(`公式: front = (${oldFront} + 1) % ${CAPACITY} = ${front}`);
+                logMessage(`状态: front=${front}, rear=${rear}, size=${size}`);
+                render();
+            }
+
+            function addFront() { // Deque only
+                const value = valueInput.value.trim();
+                if (!value) { logMessage('错误: 输入值不能为空!', 'error'); return; }
+                if (size === CAPACITY) { logMessage('错误: 双向队列已满。', 'error'); return; }
+                
+                logMessage(`执行: 队首入队 (Add Front) 值'${value}'`, 'success');
+                const oldFront = front;
+                front = (front - 1 + CAPACITY) % CAPACITY;
+                size++;
+                array[front] = value;
+                
+                logMessage(`公式: front = (${oldFront} - 1 + ${CAPACITY}) % ${CAPACITY} = ${front}`);
+                logMessage(`状态: front=${front}, rear=${rear}, size=${size}`);
+                valueInput.value = '';
+                render();
+            }
+
+            function removeRear() { // Deque only
+                if (size === 0) { logMessage('错误: 队列为空。', 'error'); return; }
+                
+                const oldRear = rear;
+                rear = (rear - 1 + CAPACITY) % CAPACITY;
+                size--;
+                const value = array[rear];
+                array[rear] = null;
+
+                logMessage(`执行: 队尾出队 (Remove Rear) 值'${value}'`, 'success');
+                logMessage(`公式: rear = (${oldRear} - 1 + ${CAPACITY}) % ${CAPACITY} = ${rear}`);
+                logMessage(`状态: front=${front}, rear=${rear}, size=${size}`);
+                render();
+            }
+
+            getEl('btn-enqueue').addEventListener('click', enqueue);
+            getEl('btn-dequeue').addEventListener('click', dequeue);
+            getEl('btn-add-front').addEventListener('click', addFront);
+            getEl('btn-remove-rear').addEventListener('click', removeRear);
+            getEl('btn-reset').addEventListener('click', init);
+            document.querySelectorAll('input[name="queueType"]').forEach(radio => radio.addEventListener('change', init));
+
+            init();
+        });
+    </script>
+</body>
+</html>

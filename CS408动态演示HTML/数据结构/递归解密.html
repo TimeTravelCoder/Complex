@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第五章：交互式递归学习</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chosen Palette: Warm Neutrals -->
+    <!-- Application Structure Plan: The application is structured as a thematic, single-page explorable document. It starts with fundamental concepts, moves to interactive examples, explains the underlying stack mechanism, and finally discusses conversion to non-recursive forms. This non-linear, thematic structure allows users to either follow a logical learning path or jump directly to interactive sections to play with concepts. The key interaction is centered around the "经典案例互动" section, where users can manipulate inputs (like number of disks for Hanoi) and see immediate visual feedback (animations, stack changes, complexity charts), which is more effective for learning abstract concepts than static text. -->
+    <!-- Visualization & Content Choices: 
+        - Report Info: Hanoi Tower complexity (O(2^n)). Goal: Show exponential growth. Viz: Line Chart (Chart.js). Interaction: A slider controls the number of disks, and the chart highlights the corresponding complexity point. Justification: Visually demonstrates the rapid increase in operations, making the abstract complexity tangible.
+        - Report Info: Factorial/Fibonacci call process. Goal: Explain the call stack mechanism. Viz: Dynamically generated HTML divs representing stack frames. Interaction: User input triggers an animation of divs being pushed and popped from a container. Justification: Makes the abstract concept of the call stack visible and easy to follow.
+        - Report Info: Hanoi Tower problem. Goal: Illustrate a recursive solution. Viz: Canvas-based animation. Interaction: User selects disk count and starts the animation, which visually executes the recursive steps. Justification: Provides a "wow" factor and a clear, step-by-step visualization of a complex recursive algorithm.
+        - Report Info: Recursive Model Diagram. Goal: Explain the structure of recursion. Viz: Styled HTML/CSS divs with flexbox. Interaction: Static visual aid. Justification: A clean, code-based diagram that avoids external images or SVG.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            background-color: #fdfcf9;
+            color: #44403c;
+            font-family: 'Inter', 'Helvetica Neue', 'Helvetica', 'Arial', 'sans-serif';
+        }
+        .nav-link {
+            transition: color 0.3s, border-color 0.3s;
+        }
+        .nav-link:hover, .nav-link.active {
+            color: #0ea5e9;
+            border-color: #0ea5e9;
+        }
+        .card {
+            background-color: #ffffff;
+            border: 1px solid #f5f5f4;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.05), 0 4px 6px -4px rgb(0 0 0 / 0.05);
+        }
+        .code-block {
+            background-color: #282c34;
+            color: #abb2bf;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            font-family: 'Fira Code', 'Courier New', monospace;
+            font-size: 0.875rem;
+        }
+        .tab.active {
+            border-color: #0ea5e9;
+            color: #0ea5e9;
+            background-color: #f0f9ff;
+        }
+        .hanoi-tower {
+            display: flex;
+            flex-direction: column-reverse;
+            align-items: center;
+            width: 30%;
+            min-height: 250px;
+            border-bottom: 5px solid #a8a29e;
+            margin: 0 5px;
+        }
+        .hanoi-disk {
+            height: 25px;
+            border-radius: 0.25rem;
+            margin-bottom: 2px;
+            transition: background-color 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 400px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 350px;
+            }
+        }
+        .stack-frame {
+            transition: all 0.5s ease-in-out;
+            transform-origin: center;
+        }
+        .fib-tree ul {
+            position: relative;
+            padding-top: 20px;
+            transition: all 0.5s;
+        }
+        .fib-tree li {
+            float: left;
+            text-align: center;
+            list-style-type: none;
+            position: relative;
+            padding: 20px 5px 0 5px;
+            transition: all 0.5s;
+        }
+        .fib-tree li::before, .fib-tree li::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 50%;
+            border-top: 1px solid #a8a29e;
+            width: 50%;
+            height: 20px;
+        }
+        .fib-tree li::after {
+            right: auto;
+            left: 50%;
+            border-left: 1px solid #a8a29e;
+        }
+        .fib-tree li:only-child::after, .fib-tree li:only-child::before {
+            display: none;
+        }
+        .fib-tree li:only-child {
+            padding-top: 0;
+        }
+        .fib-tree li:first-child::before, .fib-tree li:last-child::after {
+            border: 0 none;
+        }
+        .fib-tree li:last-child::before {
+            border-right: 1px solid #a8a29e;
+            border-radius: 0 5px 0 0;
+        }
+        .fib-tree li:first-child::after {
+            border-radius: 5px 0 0 0;
+        }
+        .fib-tree ul ul::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            border-left: 1px solid #a8a29e;
+            width: 0;
+            height: 20px;
+        }
+        .fib-tree li span {
+            border: 1px solid #a8a29e;
+            padding: 5px 10px;
+            text-decoration: none;
+            color: #44403c;
+            font-size: 12px;
+            display: inline-block;
+            border-radius: 5px;
+            transition: all 0.5s;
+            background-color: #fff;
+        }
+        .fib-tree li span.duplicate {
+            background-color: #fecaca;
+            border-color: #ef4444;
+        }
+    </style>
+</head>
+<body class="bg-stone-50 text-stone-700">
+
+    <header class="bg-white/80 backdrop-blur-lg sticky top-0 z-50 border-b border-stone-200">
+        <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center">
+                    <span class="text-2xl font-bold text-sky-600">递归探秘</span>
+                </div>
+                <div class="hidden md:block">
+                    <div class="ml-10 flex items-baseline space-x-4">
+                        <a href="#section-definition" class="nav-link px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent">核心概念</a>
+                        <a href="#section-model" class="nav-link px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent">递归模型</a>
+                        <a href="#section-interactive" class="nav-link px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent">经典案例</a>
+                        <a href="#section-stack" class="nav-link px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent">递归与栈</a>
+                        <a href="#section-conversion" class="nav-link px-3 py-2 rounded-md text-sm font-medium border-b-2 border-transparent">非递归转换</a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+        
+        <section id="section-definition" class="mb-16 scroll-mt-16">
+            <h2 class="text-3xl font-bold text-stone-800 mb-2">5.1 什么是递归？</h2>
+            <p class="text-lg text-stone-600 mb-8">本节将介绍递归的基本定义、使用条件以及优缺点。递归是一种强大的编程范式，它将一个大问题分解为与原问题相似但规模更小的子问题来解决。</p>
+            
+            <div class="grid md:grid-cols-2 gap-8">
+                <div class="card p-6 rounded-lg">
+                    <h3 class="text-xl font-semibold mb-3 text-sky-700">递归的定义</h3>
+                    <p class="mb-4">在定义一个过程或函数时出现调用本过程或本函数的成分称为递归 (recursion)。它分为：</p>
+                    <ul class="list-disc list-inside space-y-2">
+                        <li>直接递归: 函数直接调用自身。</li>
+                        <li>间接递归: 函数 A 调用函数 B，而函数 B 又调用函数 A。</li>
+                        <li>尾递归: 递归调用是函数中最后执行的操作。这是一种特殊的递归，可以被高效地优化。</li>
+                    </ul>
+                </div>
+                <div class="card p-6 rounded-lg">
+                    <h3 class="text-xl font-semibold mb-3 text-sky-700">使用递归的三个条件</h3>
+                    <p class="mb-4">一个问题如果能用递归解决，通常满足以下三个条件，这确保了递归能够正确执行并最终结束。</p>
+                    <ol class="list-decimal list-inside space-y-2">
+                        <li>问题转化: 大问题可以分解为规模更小的相同子问题。</li>
+                        <li>终止条件: 必须有一个明确的“基本情况”（或称递归出口），当达到此条件时递归不再继续。</li>
+                        <li>有限调用: 每次递归调用都必须向终止条件迈进一步，保证递归过程能在有限步骤内结束。</li>
+                    </ol>
+                </div>
+            </div>
+        </section>
+
+        <section id="section-model" class="mb-16 scroll-mt-16">
+            <h2 class="text-3xl font-bold text-stone-800 mb-2">5.1.3 递归模型</h2>
+            <p class="text-lg text-stone-600 mb-8">所有递归算法都可以抽象为一个统一的模型，该模型由两部分组成：递归出口和递归体。理解这个模型是设计递归算法的关键。</p>
+            <div class="card p-6 rounded-lg">
+                <div class="flex flex-col md:flex-row gap-8 items-center">
+                    <div class="flex-1">
+                        <h3 class="text-xl font-semibold mb-3 text-sky-700">递归模型的构成</h3>
+                        <p class="mb-2"><strong class="font-semibold">1. 递归出口 (Base Case):</strong></p>
+                        <p class="mb-4 pl-4">确定递归何时结束的条件。这是一个可以直接求解的、最简单的问题情景。没有递归出口，递归将无限进行下去，导致“栈溢出”。</p>
+                        <p class="mb-2"><strong class="font-semibold">2. 递归体 (Recursive Step):</strong></p>
+                        <p class="mb-4 pl-4">确定大问题与小问题之间的递推关系。它描述了如何将当前问题分解，并通过调用自身来解决一个或多个规模更小的子问题，然后组合子问题的解来得到当前问题的解。</p>
+                    </div>
+                    <div class="flex-1 w-full">
+                        <div class="border-2 border-dashed border-stone-300 rounded-lg p-4 text-center">
+                            <div class="font-mono text-lg font-bold">f(n)</div>
+                            <div class="text-stone-500 text-sm">大问题</div>
+                            <div class="flex justify-center my-2">
+                                <span class="text-2xl text-sky-500">&darr;</span>
+                            </div>
+                            <div class="bg-stone-100 p-4 rounded-lg">
+                                <p class="font-semibold">IF (n is Base Case)</p>
+                                <p class="text-sm text-green-600 font-bold">&rarr; 直接返回值 (递归出口)</p>
+                                <hr class="my-2 border-stone-300">
+                                <p class="font-semibold">ELSE</p>
+                                <p class="text-sm text-blue-600 font-bold">&rarr; 返回 g( f(n-1), ... ) (递归体)</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="section-interactive" class="mb-16 scroll-mt-16">
+            <h2 class="text-3xl font-bold text-stone-800 mb-2">经典案例互动</h2>
+            <p class="text-lg text-stone-600 mb-8">理论需要实践来巩固。在这里，您可以通过交互式示例来探索几个最经典的递归问题：阶乘、斐波那契数列和汉诺塔。亲自尝试，观察递归的每一步。</p>
+            
+            <div class="bg-white rounded-lg border border-stone-200 p-2">
+                <div class="flex border-b border-stone-200">
+                    <button data-tab="factorial" class="tab flex-1 p-3 text-center font-semibold border-b-2 active">阶乘 n!</button>
+                    <button data-tab="fibonacci" class="tab flex-1 p-3 text-center font-semibold border-b-2 border-transparent">斐波那契数列</button>
+                    <button data-tab="hanoi" class="tab flex-1 p-3 text-center font-semibold border-b-2 border-transparent">汉诺塔</button>
+                </div>
+
+                <div id="factorial-content" class="tab-content p-6">
+                    <h3 class="text-2xl font-semibold mb-4">阶乘计算与调用栈可视化</h3>
+                    <p class="mb-6">阶乘 `n!` 是一个经典的递归入门示例。其定义为 `n * (n-1)!`，基本情况为 `1! = 1`。输入一个数字，观察函数调用栈如何一步步构建（压栈）和求解（出栈）。</p>
+                    <div class="flex items-center space-x-4 mb-6">
+                        <label for="factorial-input" class="font-medium">计算 n! 当 n =</label>
+                        <input type="number" id="factorial-input" value="5" min="1" max="10" class="w-24 p-2 border border-stone-300 rounded-md">
+                        <button id="factorial-btn" class="px-6 py-2 bg-sky-600 text-white rounded-md hover:bg-sky-700 transition">计算</button>
+                    </div>
+                    <div class="grid md:grid-cols-2 gap-8">
+                        <div>
+                            <h4 class="font-semibold mb-2 text-lg">递归调用过程</h4>
+                            <div id="factorial-stack" class="relative border-2 border-stone-300 rounded-lg h-96 p-2 flex flex-col-reverse items-center overflow-hidden">
+                                <p class="text-stone-400 m-auto">点击“计算”开始</p>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold mb-2 text-lg">结果</h4>
+                            <div id="factorial-result" class="text-4xl font-bold text-sky-600 h-24 flex items-center">...</div>
+                            <h4 class="font-semibold mb-2 text-lg">C语言实现 (尾递归)</h4>
+                            <div class="code-block">
+<pre><code>int fun(int n) {
+    if (n == 1)
+        return 1;
+    else
+        return fun(n - 1) * n;
+}</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="fibonacci-content" class="tab-content p-6 hidden">
+                    <h3 class="text-2xl font-semibold mb-4">斐波那契数列与递归树</h3>
+                    <p class="mb-6">斐波那契数列 `Fib(n) = Fib(n-1) + Fib(n-2)` 是一个著名的非尾递归示例。它的递归实现非常直观，但效率低下，因为存在大量重复计算。下面的递归树将清晰地展示这一点。</p>
+                     <div class="flex items-center space-x-4 mb-6">
+                        <label for="fib-input" class="font-medium">计算 Fib(n) 当 n =</label>
+                        <input type="number" id="fib-input" value="6" min="1" max="10" class="w-24 p-2 border border-stone-300 rounded-md">
+                        <button id="fib-btn" class="px-6 py-2 bg-sky-600 text-white rounded-md hover:bg-sky-700 transition">生成树</button>
+                    </div>
+                    <div class="grid md:grid-cols-2 gap-8">
+                        <div>
+                            <h4 class="font-semibold mb-2 text-lg">递归树 (红色表示重复计算)</h4>
+                            <div id="fib-tree-container" class="fib-tree w-full overflow-x-auto p-4 border rounded-lg bg-stone-50 min-h-[300px]">
+                                <p class="text-stone-400">点击“生成树”开始</p>
+                            </div>
+                        </div>
+                         <div>
+                            <h4 class="font-semibold mb-2 text-lg">结果</h4>
+                            <div id="fib-result" class="text-4xl font-bold text-sky-600 h-12 flex items-center">...</div>
+                             <h4 class="font-semibold mb-2 text-lg">递归实现</h4>
+                             <div class="code-block">
+<pre><code>int Fib1(int n) {
+    if (n <= 2) return 1;
+    return Fib1(n-1) + Fib1(n-2);
+}</code></pre>
+                             </div>
+                             <h4 class="font-semibold mt-4 mb-2 text-lg">高效的迭代实现</h4>
+                             <div class="code-block">
+<pre><code>int Fib2(int n) {
+    int a=1, b=1, s;
+    if (n <= 2) return 1;
+    for (int i=3; i<=n; i++) {
+        s = a + b; a = b; b = s;
+    }
+    return s;
+}</code></pre>
+                             </div>
+                         </div>
+                    </div>
+                </div>
+
+                <div id="hanoi-content" class="tab-content p-6 hidden">
+                    <h3 class="text-2xl font-semibold mb-4">汉诺塔问题动画演示</h3>
+                    <p class="mb-6">汉诺塔问题是递归思想的绝佳体现。目标是将所有盘片从源（X）移动到目标（Z），借助辅助塔（Y），且大盘不能在小盘之上。调整盘片数量，观察递归如何优雅地解决这个复杂问题，并感受其指数级增长的复杂度。</p>
+                    <div class="grid md:grid-cols-2 gap-8">
+                        <div>
+                            <div class="flex items-center space-x-4 mb-4">
+                                <label for="hanoi-disks" class="font-medium">盘片数量:</label>
+                                <input type="range" id="hanoi-disks" min="2" max="8" value="4" class="w-full">
+                                <span id="hanoi-disk-count" class="font-bold text-sky-600 w-4 text-center">4</span>
+                                <button id="hanoi-start-btn" class="px-6 py-2 bg-sky-600 text-white rounded-md hover:bg-sky-700 transition whitespace-nowrap">开始移动</button>
+                            </div>
+                            <div class="flex justify-between bg-stone-100 p-4 rounded-lg">
+                                <div id="tower-x" class="hanoi-tower"></div>
+                                <div id="tower-y" class="hanoi-tower"></div>
+                                <div id="tower-z" class="hanoi-tower"></div>
+                            </div>
+                             <div class="mt-4">
+                                <h4 class="font-semibold text-lg mb-2">移动步骤:</h4>
+                                <div id="hanoi-steps" class="h-48 bg-stone-100 rounded-lg p-2 overflow-y-auto text-sm font-mono"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-lg mb-2">时间复杂度: O(2ⁿ)</h4>
+                            <p class="mb-4 text-sm">移动 <strong id="hanoi-complexity-n" class="text-sky-600">4</strong> 个盘片需要 <strong id="hanoi-complexity-moves" class="text-red-500">15</strong> 步。随着盘片数增加，步数呈指数增长。</p>
+                            <div class="chart-container">
+                                <canvas id="hanoi-chart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="section-stack" class="mb-16 scroll-mt-16">
+            <h2 class="text-3xl font-bold text-stone-800 mb-2">5.2 递归与栈</h2>
+            <p class="text-lg text-stone-600 mb-8">递归并非魔法，它的实现严重依赖于一种叫做“函数调用栈”的数据结构。每次函数调用（包括递归调用），系统都会创建一个“栈帧”来保存局部变量、参数和返回地址，并将其压入栈顶。</p>
+            <div class="card p-6 rounded-lg">
+                <h3 class="text-xl font-semibold mb-3 text-sky-700">函数调用栈 (Stack Frame)</h3>
+                <p>当一个函数 `A` 调用另一个函数 `B` 时，`A` 的执行状态被打包成一个栈帧并入栈，然后 `B` 开始执行。如果 `B` 再调用 `C`，`B` 的栈帧也入栈。当 `C` 执行完毕返回时，它的栈帧出栈，控制权交还给 `B`。递归调用只是函数调用自身，其原理完全相同。</p>
+                <div class="mt-6 p-4 border-2 border-dashed border-stone-300 rounded-lg">
+                    <p class="text-center font-semibold mb-4">以 `fun(3)` 为例的调用过程</p>
+                    <div class="flex justify-around items-end text-center font-mono">
+                        <div class="w-1/4">
+                            <p class="font-bold">1. 调用 fun(3)</p>
+                            <div class="mt-2 border-2 h-24 flex flex-col-reverse p-1 bg-stone-100 rounded">
+                                <div class="bg-blue-200 p-1 rounded-sm text-sm">Frame: fun(3)</div>
+                            </div>
+                        </div>
+                        <div class="text-2xl font-bold text-stone-400">&rarr;</div>
+                        <div class="w-1/4">
+                            <p class="font-bold">2. 调用 fun(2)</p>
+                             <div class="mt-2 border-2 h-24 flex flex-col-reverse p-1 bg-stone-100 rounded">
+                                <div class="bg-blue-200 p-1 rounded-sm text-sm">Frame: fun(3)</div>
+                                <div class="bg-green-200 p-1 rounded-sm text-sm mt-1">Frame: fun(2)</div>
+                            </div>
+                        </div>
+                        <div class="text-2xl font-bold text-stone-400">&rarr;</div>
+                        <div class="w-1/4">
+                            <p class="font-bold">3. 调用 fun(1)</p>
+                             <div class="mt-2 border-2 h-24 flex flex-col-reverse p-1 bg-stone-100 rounded">
+                                <div class="bg-blue-200 p-1 rounded-sm text-sm">Frame: fun(3)</div>
+                                <div class="bg-green-200 p-1 rounded-sm text-sm mt-1">Frame: fun(2)</div>
+                                <div class="bg-yellow-200 p-1 rounded-sm text-sm mt-1">Frame: fun(1)</div>
+                            </div>
+                        </div>
+                         <div class="text-2xl font-bold text-stone-400">&rarr;</div>
+                        <div class="w-1/4">
+                            <p class="font-bold">4. fun(1)返回</p>
+                             <div class="mt-2 border-2 h-24 flex flex-col-reverse p-1 bg-stone-100 rounded">
+                                <div class="bg-blue-200 p-1 rounded-sm text-sm">Frame: fun(3)</div>
+                                <div class="bg-green-200 p-1 rounded-sm text-sm mt-1">Frame: fun(2)</div>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="text-center text-sm text-stone-500 mt-4">函数执行完毕后，其对应的栈帧出栈，程序返回到上一层调用的位置继续执行。</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="section-conversion" class="scroll-mt-16">
+            <h2 class="text-3xl font-bold text-stone-800 mb-2">5.2.3 递归到非递归的转换</h2>
+            <p class="text-lg text-stone-600 mb-8">虽然递归代码简洁优雅，但可能因调用栈过深导致性能问题或栈溢出。因此，了解如何将递归算法转换为非递归形式非常重要。转换通常有两种方式：对于尾递归，可以直接用循环代替；对于更复杂的递归，则需要我们手动模拟调用栈。</p>
+            <div class="card p-6 rounded-lg">
+                <h3 class="text-xl font-semibold mb-3 text-sky-700">转换方法与示例</h3>
+                <div class="grid md:grid-cols-2 gap-8">
+                    <div>
+                        <h4 class="font-semibold mb-2">方法一: 循环 (针对尾递归)</h4>
+                        <p class="text-sm mb-4">尾递归的特点是递归调用是最后一步，没有后续操作。这意味着不需要保存当前状态，可以直接用一个循环来迭代，从而避免了栈的开销。斐波那契数列的迭代实现就是一个典型例子。</p>
+                        <h4 class="font-semibold mb-2">方法二: 使用栈 (针对一般递归)</h4>
+                        <p class="text-sm mb-4">对于非尾递归，我们需要一个显式的数据结构（通常是栈）来模拟函数调用栈的行为，保存中间状态。汉诺塔的非递归实现就是通过一个栈来存储待处理的移动任务。</p>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold mb-2">Hanoi 非递归实现 (思路)</h4>
+                         <div class="code-block">
+<pre><code>void Hanoi2(int n, char x, char y, char z) {
+    Stack st; // 定义一个栈
+    // 初始任务(n, x, y, z)入栈
+    while (!st.isEmpty()) {
+        Task t = st.pop(); // 出栈一个任务
+        if (t.isMoveOperation) {
+            // 执行移动
+        } else {
+            // 分解为3个子任务
+            // 按相反顺序入栈:
+            // 1. Hanoi(n-1, y, x, z)
+            // 2. move(n, x, z)
+            // 3. Hanoi(n-1, x, z, y)
+        }
+    }
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+    
+    <footer class="bg-white border-t border-stone-200 mt-16">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 text-center text-stone-500">
+            <p>交互式递归学习应用</p>
+            <p class="text-sm mt-1">基于《数据结构》第五章内容构建</p>
+        </div>
+    </footer>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+
+        const tabs = document.querySelectorAll('.tab');
+        const tabContents = document.querySelectorAll('.tab-content');
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const targetId = tab.dataset.tab + '-content';
+
+                tabs.forEach(t => {
+                    t.classList.remove('active');
+                });
+                tab.classList.add('active');
+
+                tabContents.forEach(content => {
+                    if (content.id === targetId) {
+                        content.classList.remove('hidden');
+                    } else {
+                        content.classList.add('hidden');
+                    }
+                });
+            });
+        });
+        
+        const navLinks = document.querySelectorAll('.nav-link');
+        const sections = document.querySelectorAll('section');
+
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop;
+                if (pageYOffset >= sectionTop - 80) {
+                    current = section.getAttribute('id');
+                }
+            });
+
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === `#${current}`) {
+                    link.classList.add('active');
+                }
+            });
+        });
+
+        const factorialInput = document.getElementById('factorial-input');
+        const factorialBtn = document.getElementById('factorial-btn');
+        const factorialStackDiv = document.getElementById('factorial-stack');
+        const factorialResultDiv = document.getElementById('factorial-result');
+
+        factorialBtn.addEventListener('click', async () => {
+            const n = parseInt(factorialInput.value);
+            if (isNaN(n) || n < 1 || n > 10) {
+                alert('请输入 1 到 10 之间的整数');
+                return;
+            }
+
+            factorialStackDiv.innerHTML = '';
+            factorialResultDiv.textContent = '计算中...';
+            factorialBtn.disabled = true;
+
+            const stack = [];
+            
+            for (let i = n; i >= 1; i--) {
+                const frame = document.createElement('div');
+                frame.textContent = `fun(${i})`;
+                frame.className = 'stack-frame bg-blue-200 p-2 rounded-md mb-1 w-3/4 text-center';
+                frame.style.opacity = '0';
+                frame.style.transform = 'translateY(20px)';
+                factorialStackDiv.appendChild(frame);
+                await new Promise(res => setTimeout(res, 50));
+                frame.style.opacity = '1';
+                frame.style.transform = 'translateY(0)';
+                stack.push(frame);
+                await new Promise(res => setTimeout(res, 300));
+            }
+            
+            let result = 1;
+            
+            for (let i = 1; i <= n; i++) {
+                const frame = stack.pop();
+                frame.classList.remove('bg-blue-200');
+                frame.classList.add('bg-green-300');
+                result *= i;
+                frame.textContent = `fun(${i}) 返回 ${result}`;
+                await new Promise(res => setTimeout(res, 400));
+                frame.style.opacity = '0';
+                frame.style.transform = 'scale(0.8)';
+            }
+            
+            factorialResultDiv.textContent = result;
+            factorialBtn.disabled = false;
+        });
+
+        const fibInput = document.getElementById('fib-input');
+        const fibBtn = document.getElementById('fib-btn');
+        const fibTreeContainer = document.getElementById('fib-tree-container');
+        const fibResultDiv = document.getElementById('fib-result');
+        const fibCache = {};
+
+        function generateFibTree(n) {
+            if (n <= 0) return null;
+            if (n <= 2) return { value: n, children: [] };
+            
+            return {
+                value: n,
+                children: [generateFibTree(n - 1), generateFibTree(n - 2)]
+            }
+        }
+        
+        function countFibOccurrences(node, counts) {
+            if (!node) return;
+            counts[node.value] = (counts[node.value] || 0) + 1;
+            if(node.children) {
+                node.children.forEach(child => countFibOccurrences(child, counts));
+            }
+        }
+
+        function renderFibTree(node, isDuplicate) {
+            if (!node) return '';
+            let html = '<li>';
+            const duplicateClass = isDuplicate(node.value) ? 'duplicate' : '';
+            html += `<span class="${duplicateClass}">Fib(${node.value})</span>`;
+
+            if (node.children && node.children.length > 0) {
+                html += '<ul>';
+                node.children.forEach(child => {
+                    html += renderFibTree(child, isDuplicate);
+                });
+                html += '</ul>';
+            }
+            html += '</li>';
+            return html;
+        }
+        
+        function fib(n) {
+            if (n <= 2) return 1;
+            return fib(n-1) + fib(n-2);
+        }
+
+        fibBtn.addEventListener('click', () => {
+            const n = parseInt(fibInput.value);
+            if (isNaN(n) || n < 1 || n > 10) {
+                alert('请输入 1 到 10 之间的整数');
+                return;
+            }
+            const treeData = generateFibTree(n);
+            const counts = {};
+            countFibOccurrences(treeData, counts);
+            
+            const isDuplicate = (val) => counts[val] > 1;
+
+            fibTreeContainer.innerHTML = '<ul>' + renderFibTree(treeData, isDuplicate) + '</ul>';
+            fibResultDiv.textContent = fib(n);
+        });
+
+        const hanoiDisksSlider = document.getElementById('hanoi-disks');
+        const hanoiDiskCountSpan = document.getElementById('hanoi-disk-count');
+        const hanoiStartBtn = document.getElementById('hanoi-start-btn');
+        const towers = {
+            x: document.getElementById('tower-x'),
+            y: document.getElementById('tower-y'),
+            z: document.getElementById('tower-z')
+        };
+        const hanoiStepsDiv = document.getElementById('hanoi-steps');
+        const hanoiComplexityN = document.getElementById('hanoi-complexity-n');
+        const hanoiComplexityMoves = document.getElementById('hanoi-complexity-moves');
+        let hanoiChart;
+        let isHanoiAnimating = false;
+        
+        const diskColors = [
+            '#ef4444', '#f97316', '#eab308', '#84cc16', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6', '#8b5cf6', '#d946ef'
+        ];
+
+        function createDisks(n) {
+            Object.values(towers).forEach(t => t.innerHTML = '');
+            for (let i = n; i > 0; i--) {
+                const disk = document.createElement('div');
+                disk.className = 'hanoi-disk';
+                disk.id = `disk-${i}`;
+                disk.dataset.size = i;
+                disk.style.width = `${25 + (i * 8)}%`;
+                disk.style.backgroundColor = diskColors[i-1];
+                disk.textContent = i;
+                towers.x.appendChild(disk);
+            }
+        }
+
+        function updateHanoiComplexity(n) {
+            const moves = Math.pow(2, n) - 1;
+            hanoiDiskCountSpan.textContent = n;
+            hanoiComplexityN.textContent = n;
+            hanoiComplexityMoves.textContent = moves;
+            if (hanoiChart) {
+                hanoiChart.data.datasets[0].pointBackgroundColor = hanoiChart.data.labels.map((label, index) => index === n - 2 ? '#ef4444' : 'rgba(0,0,0,0.1)');
+                hanoiChart.data.datasets[0].pointRadius = hanoiChart.data.labels.map((label, index) => index === n - 2 ? 8 : 4);
+                hanoiChart.update();
+            }
+        }
+
+        hanoiDisksSlider.addEventListener('input', (e) => {
+            if (isHanoiAnimating) {
+                e.target.value = document.querySelectorAll('#tower-x .hanoi-disk').length;
+                return;
+            }
+            const n = parseInt(e.target.value);
+            updateHanoiComplexity(n);
+            createDisks(n);
+        });
+
+        async function moveDisk(from, to) {
+            const fromTower = towers[from];
+            const toTower = towers[to];
+            const disk = fromTower.lastElementChild;
+            if (disk) {
+                toTower.appendChild(disk);
+                await new Promise(res => setTimeout(res, 250));
+            }
+        }
+
+        async function hanoi(n, source, target, auxiliary) {
+            if (isHanoiAnimating === false) return;
+            if (n > 0) {
+                await hanoi(n - 1, source, auxiliary, target);
+                
+                if (isHanoiAnimating === false) return;
+                const stepText = `将盘片 ${n} 从 ${source.toUpperCase()} 移动到 ${target.toUpperCase()}`;
+                const p = document.createElement('p');
+                p.textContent = stepText;
+                hanoiStepsDiv.appendChild(p);
+                hanoiStepsDiv.scrollTop = hanoiStepsDiv.scrollHeight;
+                await moveDisk(source, target);
+                
+                await hanoi(n - 1, auxiliary, target, source);
+            }
+        }
+
+        hanoiStartBtn.addEventListener('click', async () => {
+            if (isHanoiAnimating) {
+                isHanoiAnimating = false;
+                hanoiStartBtn.textContent = '开始移动';
+                hanoiStartBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
+                hanoiStartBtn.classList.add('bg-sky-600', 'hover:bg-sky-700');
+                hanoiDisksSlider.disabled = false;
+                return;
+            }
+            
+            isHanoiAnimating = true;
+            hanoiStartBtn.textContent = '停止';
+            hanoiStartBtn.classList.remove('bg-sky-600', 'hover:bg-sky-700');
+            hanoiStartBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+            hanoiDisksSlider.disabled = true;
+            hanoiStepsDiv.innerHTML = '';
+            
+            const n = parseInt(hanoiDisksSlider.value);
+            createDisks(n);
+
+            await hanoi(n, 'x', 'z', 'y');
+            
+            isHanoiAnimating = false;
+            hanoiStartBtn.textContent = '开始移动';
+            hanoiStartBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
+            hanoiStartBtn.classList.add('bg-sky-600', 'hover:bg-sky-700');
+            hanoiDisksSlider.disabled = false;
+        });
+        
+        function initHanoiChart() {
+            const ctx = document.getElementById('hanoi-chart').getContext('2d');
+            const labels = Array.from({ length: 7 }, (_, i) => i + 2);
+            const data = labels.map(n => Math.pow(2, n) - 1);
+            
+            hanoiChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '移动步数',
+                        data: data,
+                        borderColor: '#0ea5e9',
+                        backgroundColor: 'rgba(14, 165, 233, 0.1)',
+                        fill: true,
+                        tension: 0.1,
+                        pointBackgroundColor: 'rgba(0,0,0,0.1)',
+                        pointRadius: 4,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: '步数' }
+                        },
+                        x: {
+                            title: { display: true, text: '盘片数量' }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return ` ${context.parsed.y} 步`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        initHanoiChart();
+        updateHanoiComplexity(parseInt(hanoiDisksSlider.value));
+        createDisks(parseInt(hanoiDisksSlider.value));
+    });
+    </script>
+</body>
+</html>

@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>高级动态演示：哈希表 (V3 最终修正版)</title>
+    <style>
+        :root {
+            --primary-color: #007bff;
+            --secondary-color: #6c757d;
+            --success-color: #28a745;
+            --danger-color: #dc3545;
+            --warning-color: #ffc107;
+            --info-color: #17a2b8;
+            --light-bg: #f8f9fa;
+            --dark-bg: #343a40;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--light-bg);
+            color: #212529;
+            padding: 20px;
+        }
+        .main-container {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            max-width: 1400px;
+            margin: auto;
+        }
+        .panel {
+            background-color: #fff;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            display: flex;
+            flex-direction: column;
+        }
+        h1, h2 {
+            color: var(--primary-color);
+            border-bottom: 2px solid #e9ecef;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+        #controls-panel, #stats-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        #controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        #controls input[type="text"] { padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; flex-grow: 1; min-width: 150px;}
+        .btn { padding: 10px 15px; font-size: 16px; color: #fff; border: none; border-radius: 4px; cursor: pointer; transition: all 0.2s; margin-top: 5px;}
+        .btn:hover:not(:disabled) { opacity: 0.85; }
+        .btn:disabled { background-color: #ccc; cursor: not-allowed; }
+        .btn-insert { background-color: var(--primary-color); }
+        .btn-search { background-color: var(--success-color); }
+        .btn-delete { background-color: var(--danger-color); }
+        .btn-reset { background-color: var(--secondary-color); }
+        .btn-rehash { background-color: var(--warning-color); color: #212529; display: none; }
+        
+        #mode-selector label { margin-right: 15px; font-weight: 500; cursor: pointer; }
+        
+        #stats-display { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; }
+        .stat-item { background-color: #e9ecef; padding: 10px; border-radius: 4px; }
+        .stat-item .label { font-size: 14px; color: var(--secondary-color); }
+        .stat-item .value { font-size: 20px; font-weight: bold; color: var(--primary-color); }
+        
+        #hash-calc-display { font-family: 'Courier New', monospace; background: #f3f3f3; padding: 10px; border-radius: 4px; white-space: pre-wrap; word-break: break-all; min-height: 40px; }
+
+        #visualization-container { display: flex; flex-direction: column; gap: 5px; padding-top: 10px; flex-grow: 1; }
+        .bucket-row { display: flex; align-items: stretch; min-height: 50px; }
+        .bucket {
+            width: 60px;
+            flex-shrink: 0;
+            border: 2px solid var(--primary-color);
+            background-color: #e7f3ff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            color: #0056b3;
+            border-radius: 4px;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+        .bucket.highlight { background-color: var(--warning-color); border-color: #e0a800; transform: scale(1.1); }
+        .bucket.occupied { background-color: var(--info-color); color: white; border-color: #0f788a; }
+        .bucket.tombstone { background-color: var(--secondary-color); color: white; border-color: #495057; text-decoration: line-through; }
+        
+        .chain-container { display: flex; align-items: center; padding-left: 10px; flex-grow: 1; flex-wrap: wrap; }
+        .node {
+            padding: 8px 12px;
+            background-color: var(--success-color);
+            color: white;
+            border-radius: 4px;
+            margin: 2px 5px;
+            opacity: 0;
+            transform: scale(0.5);
+            transition: all 0.5s ease;
+        }
+        .node.visible { opacity: 1; transform: scale(1); }
+        .node.highlight-found { background-color: var(--warning-color); color: black; }
+        
+        .arrow { width: 20px; text-align: center; font-size: 20px; color: var(--secondary-color); transition: opacity 0.5s ease; opacity: 0;}
+        .arrow.visible { opacity: 1; }
+        
+        #log-panel {
+            min-height: 150px;
+            max-height: 300px;
+            overflow-y: auto;
+            background-color: var(--dark-bg);
+            color: #f0f0f0;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', Courier, monospace;
+            line-height: 1.6;
+        }
+        #log-panel p { margin: 0 0 5px 0; padding-bottom: 5px; border-bottom: 1px solid #555; }
+        #log-panel p:last-child { border-bottom: none; }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="panel">
+            <h2>可视化区域</h2>
+            <div id="visualization-container"></div>
+        </div>
+        <div class="panel">
+            <div id="controls-panel">
+                <h2>控制面板</h2>
+                <div id="mode-selector">
+                    <input type="radio" id="mode-chaining" name="mode" value="chaining" checked>
+                    <label for="mode-chaining">拉链法</label>
+                    <input type="radio" id="mode-probing" name="mode" value="probing">
+                    <label for="mode-probing">开放寻址法 (线性探测)</label>
+                </div>
+                <div id="controls">
+                    <input type="text" id="key-input" placeholder="输入键值">
+                    <button id="insert-btn" class="btn btn-insert">插入</button>
+                    <button id="search-btn" class="btn btn-search">查找</button>
+                    <button id="delete-btn" class="btn btn-delete">删除</button>
+                    <button id="rehash-btn" class="btn btn-rehash">扩容并再哈希</button>
+                    <button id="reset-btn" class="btn btn-reset">重置</button>
+                </div>
+            </div>
+            
+            <div id="stats-panel">
+                <h2>状态监控</h2>
+                <div id="stats-display">
+                    <div class="stat-item">
+                        <div class="label">元素数量</div>
+                        <div class="value" id="elements-count">0</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="label">表大小</div>
+                        <div class.value" id="table-size">10</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="label">负载因子</div>
+                        <div class="value" id="load-factor">0.00</div>
+                    </div>
+                </div>
+                 <h2>哈希计算过程</h2>
+                <div id="hash-calc-display">等待输入...</div>
+            </div>
+
+            <div id="log-panel-container" style="flex-grow: 1; display: flex; flex-direction: column;">
+                <h2>状态日志</h2>
+                <div id="log-panel" style="flex-grow: 1;"></div>
+            </div>
+        </div>
+    </div>
+
+<script>
+class HashTable {
+    constructor(size = 10) {
+        this.size = size;
+        this.TOMBSTONE = Symbol('tombstone');
+        this.mode = 'chaining';
+        this.table = [];
+        this.elementCount = 0;
+        this.initTable();
+    }
+    initTable() {
+        this.elementCount = 0;
+        this.table = this.mode === 'chaining'
+            ? new Array(this.size).fill(0).map(() => [])
+            : new Array(this.size).fill(null);
+    }
+    getLoadFactor() { return this.elementCount / this.size; }
+    setMode(newMode) { if (this.mode !== newMode) { this.mode = newMode; this.reset(this.size); } }
+    hash(key) { return key.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0) % this.size; }
+    getHashCalculation(key) {
+        if (!key) return "等待输入...";
+        const sum = key.split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+        return `'${key}' -> Σ(charCodes) = ${sum}\n${sum} % ${this.size} = ${this.hash(key)}`;
+    }
+    rehash(newSize) {
+        const oldElements = this.mode === 'chaining' ? this.table.flat() : this.table.filter(k => k !== null && k !== this.TOMBSTONE);
+        this.size = newSize;
+        this.initTable();
+        oldElements.forEach(key => this.insert(key, true));
+    }
+    insert(key, isRehashing = false) { return this.mode === 'chaining' ? this.insert_chaining(key) : this.insert_probing(key, isRehashing); }
+    search(key) { return this.mode === 'chaining' ? this.search_chaining(key) : this.search_probing(key); }
+    delete(key) { return this.mode === 'chaining' ? this.delete_chaining(key) : this.delete_probing(key); }
+    reset(size = this.size) { this.size = size; this.initTable(); }
+    insert_chaining(key) {
+        const index = this.hash(key);
+        if (this.table[index].includes(key)) return { index, success: false };
+        this.table[index].push(key);
+        this.elementCount++;
+        return { index, collision: this.table[index].length > 1, success: true };
+    }
+    search_chaining(key) {
+        const index = this.hash(key);
+        const chain = this.table[index];
+        const keyIndex = chain.indexOf(key);
+        return { index, found: keyIndex !== -1, path: chain.slice(0, keyIndex + 1) };
+    }
+    delete_chaining(key) {
+        const index = this.hash(key);
+        const keyIndex = this.table[index].indexOf(key);
+        if (keyIndex !== -1) {
+            this.table[index].splice(keyIndex, 1);
+            this.elementCount--;
+            return { index, keyIndex, success: true };
+        }
+        return { index, success: false };
+    }
+    insert_probing(key, isRehashing) {
+        if (!isRehashing && this.getLoadFactor() >= 0.7) return { success: false, full: true };
+        const index = this.hash(key);
+        let path = [];
+        for (let i = 0; i < this.size; i++) {
+            const probeIndex = (index + i) % this.size;
+            path.push(probeIndex);
+            if (this.table[probeIndex] === key) return { success: false, exists: true, path };
+            if (this.table[probeIndex] === null || this.table[probeIndex] === this.TOMBSTONE) {
+                this.table[probeIndex] = key;
+                this.elementCount++;
+                return { index: probeIndex, path, collision: i > 0, success: true };
+            }
+        }
+        return { success: false, full: true };
+    }
+    search_probing(key) {
+        const index = this.hash(key);
+        let path = [];
+        for (let i = 0; i < this.size; i++) {
+            const probeIndex = (index + i) % this.size;
+            path.push(probeIndex);
+            if (this.table[probeIndex] === key) return { index: probeIndex, found: true, path };
+            if (this.table[probeIndex] === null) return { index, found: false, path };
+        }
+        return { index, found: false, path };
+    }
+    delete_probing(key) {
+        const res = this.search_probing(key);
+        if (res.found) {
+            this.table[res.index] = this.TOMBSTONE;
+            this.elementCount--;
+            return { index: res.index, success: true, path: res.path };
+        }
+        return { success: false, path: res.path };
+    }
+}
+
+const UI = {
+    ht: new HashTable(),
+    isAnimating: false,
+
+    init() {
+        this.cacheDOMElements();
+        this.addEventListeners();
+        this.handleReset();
+    },
+    cacheDOMElements() {
+        this.elements = {
+            keyInput: document.getElementById('key-input'),
+            logPanel: document.getElementById('log-panel'),
+            vizContainer: document.getElementById('visualization-container'),
+            calcDisplay: document.getElementById('hash-calc-display'),
+            rehashBtn: document.getElementById('rehash-btn'),
+            elementsCountEl: document.getElementById('elements-count'),
+            tableSizeEl: document.getElementById('table-size'),
+            loadFactorEl: document.getElementById('load-factor'),
+            buttons: document.querySelectorAll('.btn')
+        };
+    },
+    addEventListeners() {
+        document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener('change', e => this.handleModeChange(e.target.value)));
+        document.getElementById('insert-btn').addEventListener('click', () => this.handleInsert());
+        document.getElementById('search-btn').addEventListener('click', () => this.handleSearch());
+        document.getElementById('delete-btn').addEventListener('click', () => this.handleDelete());
+        document.getElementById('reset-btn').addEventListener('click', () => this.handleReset());
+        this.elements.rehashBtn.addEventListener('click', () => this.handleRehash());
+        this.elements.keyInput.addEventListener('input', e => { this.elements.calcDisplay.textContent = this.ht.getHashCalculation(e.target.value.trim()); });
+    },
+    sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); },
+    log(message) {
+        this.elements.logPanel.innerHTML += `<p>${message.replace(/"(.*?)"/g, '<span style="color: var(--warning-color);">"$1"</span>')}</p>`;
+        this.elements.logPanel.scrollTop = this.elements.logPanel.scrollHeight;
+    },
+    setAnimationState(isAnimating) {
+        this.isAnimating = isAnimating;
+        this.elements.buttons.forEach(btn => btn.disabled = isAnimating);
+    },
+    render() {
+        const { vizContainer } = this.elements;
+        vizContainer.innerHTML = '';
+        for (let i = 0; i < this.ht.size; i++) {
+            const row = document.createElement('div');
+            row.className = 'bucket-row';
+            const bucket = document.createElement('div');
+            bucket.className = 'bucket';
+            bucket.textContent = `[${i}]`;
+            bucket.id = `bucket-${i}`;
+            row.appendChild(bucket);
+            if (this.ht.mode === 'chaining') {
+                const chainContainer = document.createElement('div');
+                chainContainer.className = 'chain-container';
+                this.ht.table[i].forEach((key, keyIndex) => {
+                    if (keyIndex > 0) chainContainer.innerHTML += `<span class="arrow">→</span>`;
+                    chainContainer.innerHTML += `<div class="node">${key}</div>`;
+                });
+                row.appendChild(chainContainer);
+            } else {
+                const item = this.ht.table[i];
+                if (item !== null) {
+                    bucket.textContent = item === this.ht.TOMBSTONE ? '묘' : item;
+                    bucket.classList.add(item === this.ht.TOMBSTONE ? 'tombstone' : 'occupied');
+                }
+            }
+            vizContainer.appendChild(row);
+        }
+        this.updateStats();
+    },
+    async animateRender() {
+        this.render();
+        await this.sleep(10);
+        document.querySelectorAll('.node, .arrow').forEach(el => el.classList.add('visible'));
+    },
+    updateStats() {
+        const { elementsCountEl, tableSizeEl, loadFactorEl, rehashBtn } = this.elements;
+        elementsCountEl.textContent = this.ht.elementCount;
+        tableSizeEl.textContent = this.ht.size;
+        const lf = this.ht.getLoadFactor();
+        loadFactorEl.textContent = lf.toFixed(2);
+        loadFactorEl.style.color = lf > 0.7 ? 'var(--danger-color)' : 'var(--primary-color)';
+        rehashBtn.style.display = (this.ht.mode === 'probing' && lf >= 0.5) ? 'block' : 'none';
+    },
+    async highlightPath(path, finalIndex, delay = 400) {
+        for (const i of path) {
+            const bucket = document.getElementById(`bucket-${i}`);
+            if (bucket) {
+                bucket.classList.add('highlight');
+                await this.sleep(delay);
+                if (i !== finalIndex) bucket.classList.remove('highlight');
+            }
+        }
+    },
+    
+    // *** 修正点: 重构了所有事件处理函数以确保渲染逻辑正确 ***
+    async handleInsert() {
+        if (this.isAnimating) return;
+        const key = this.elements.keyInput.value.trim();
+        if (!key) { alert('请输入键！'); return; }
+        
+        this.setAnimationState(true);
+        this.log(`--- 插入键: "${key}" ---`);
+        const result = this.ht.insert(key);
+
+        if (this.ht.mode === 'chaining') {
+            await this.highlightPath([result.index], result.index, 200);
+            if (!result.success) {
+                this.log(`插入失败: 键 "${key}" 已存在。`);
+            } else {
+                // 修正了日志输出中的变量名错误
+                this.log(result.collision ? `发生冲突！在索引 ${result.index} 的链表后追加。` : `索引 ${result.index} 为空，直接插入。`);
+            }
+        } else { // Probing
+            this.log(`初始哈希索引: ${this.ht.hash(key)}`);
+            if (result.full) { this.log(`插入失败: 哈希表已满或负载过高。`); alert('哈希表负载过高或已满！'); } 
+            else if (result.exists) { this.log(`插入失败: 键 "${key}" 已存在。`); } 
+            else {
+                if (result.collision) this.log(`索引 ${this.ht.hash(key)} 被占用，开始线性探测...`);
+                await this.highlightPath(result.path, result.index);
+                this.log(`在索引 ${result.index} 找到空位，插入 "${key}"。`);
+            }
+        }
+        
+        await this.animateRender(); // 统一在末尾调用 animateRender
+        this.updateStats();
+        this.elements.keyInput.value = '';
+        this.setAnimationState(false);
+    },
+    
+    async handleSearch() {
+        if (this.isAnimating) return;
+        const key = this.elements.keyInput.value.trim();
+        if (!key) { alert('请输入键！'); return; }
+
+        this.setAnimationState(true);
+        this.log(`--- 查找键: "${key}" ---`);
+        const result = this.ht.search(key);
+
+        if (this.ht.mode === 'chaining') {
+            await this.highlightPath([result.index], result.found ? result.index : -1);
+            const nodes = document.getElementById(`bucket-${result.index}`).parentElement.querySelectorAll('.node');
+            for (let i = 0; i < result.path.length; i++) {
+                if (nodes[i]) {
+                    nodes[i].classList.add('highlight-found');
+                    await this.sleep(400);
+                    if (result.path[i] === key) break;
+                    nodes[i].classList.remove('highlight-found');
+                }
+            }
+        } else { // Probing
+            this.log(`探测路径: ${result.path.join(' -> ')}`);
+            await this.highlightPath(result.path, result.found ? result.index : -1);
+        }
+        
+        this.log(result.found ? `找到键 "${key}"！` : `未找到键 "${key}"。`);
+        await this.sleep(1000);
+        this.animateRender();
+        this.setAnimationState(false);
+    },
+    
+    async handleDelete() {
+        if(this.isAnimating) return;
+        const key = this.elements.keyInput.value.trim();
+        if (!key) { alert('请输入键！'); return; }
+
+        this.setAnimationState(true);
+        this.log(`--- 删除键: "${key}" ---`);
+        const result = this.ht.delete(key);
+
+        if(!result.success) this.log(`未找到键 "${key}"。`);
+        else {
+            if (this.ht.mode === 'chaining') {
+                this.log(`在索引 ${result.index} 删除 "${key}"。`);
+                await this.highlightPath([result.index], result.index, 200);
+            } else { // Probing
+                this.log(`在索引 ${result.index} 删除 "${key}"，并留下墓碑 "묘"。`);
+                await this.highlightPath(result.path, result.index);
+            }
+        }
+
+        await this.animateRender();
+        this.updateStats();
+        this.setAnimationState(false);
+    },
+
+    handleReset() {
+        this.setAnimationState(true);
+        this.ht.reset(10);
+        this.log('--- 哈希表已重置 ---');
+        this.elements.calcDisplay.textContent = '等待输入...';
+        this.elements.keyInput.value = '';
+        this.animateRender();
+        this.setAnimationState(false);
+    },
+    handleModeChange(newMode) {
+        this.ht.setMode(newMode);
+        this.log(`--- 模式已切换为: ${newMode === 'chaining' ? '拉链法' : '开放寻址法'} ---`);
+        this.handleReset();
+    },
+    async handleRehash() {
+        this.setAnimationState(true);
+        this.log(`--- 开始扩容和再哈希 ---`);
+        const newSize = this.ht.size * 2;
+        this.log(`表格大小从 ${this.ht.size} 扩容至 ${newSize}。`);
+        await this.sleep(1000);
+        
+        const oldElements = this.ht.mode === 'chaining' ? this.ht.table.flat() : this.ht.table.filter(k => k !== null && k !== this.ht.TOMBSTONE);
+        this.ht.rehash(newSize);
+        this.render();
+        this.log(`新表创建完毕。开始重新插入 ${oldElements.length} 个旧元素...`);
+        await this.sleep(1000);
+        
+        for (const key of oldElements) {
+            const result = this.ht.insert(key, true);
+            this.log(`重新哈希: "${key}" -> 索引 ${result.index}`);
+            await this.animateRender();
+            await this.highlightPath(result.path, result.index, 200);
+            await this.sleep(200);
+        }
+        
+        this.log(`--- 再哈希完成 ---`);
+        this.animateRender();
+        this.setAnimationState(false);
+    }
+};
+
+UI.init();
+</script>
+</body>
+</html>
