@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>优化版动态演示：深度优先遍历 (DFS)</title>
+    <style>
+        :root {
+            --color-default-node: #ecf0f1;
+            --color-default-stroke: #34495e;
+            --color-visited-node: #95a5a6;
+            --color-visited-stroke: #7f8c8d;
+            --color-on-stack-node: #f39c12; /* 橙色: 在调用栈中 */
+            --color-on-stack-stroke: #d35400;
+            --color-current-node: #3498db;  /* 蓝色: 当前访问 */
+            --color-current-stroke: #2980b9;
+            --color-active-edge: #2980b9;
+            --color-backtrack-edge: #e74c3c; /* 红色: 回溯 */
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f7f9;
+            gap: 20px;
+        }
+        h1, h2 {
+            text-align: center;
+            color: #333;
+            margin-top: 0;
+        }
+        #main-container {
+            display: flex;
+            flex-direction: column;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        #visualization-container {
+            position: relative;
+            width: 600px;
+            height: 400px;
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            background-color: #fff;
+            margin: 0 auto;
+        }
+        svg {
+            width: 100%;
+            height: 100%;
+        }
+        .node {
+            transition: all 0.4s ease-in-out;
+        }
+        .node circle {
+            stroke: var(--color-default-stroke);
+            stroke-width: 3;
+            fill: var(--color-default-node);
+        }
+        .node text {
+            font-size: 16px; fontWeight: bold; fill: #2c3e50;
+            text-anchor: middle; dominant-baseline: central; pointer-events: none;
+        }
+        .node.visited circle { fill: var(--color-visited-node); stroke: var(--color-visited-stroke); }
+        .node.on-stack circle { fill: var(--color-on-stack-node); stroke: var(--color-on-stack-stroke); }
+        .node.current circle { fill: var(--color-current-node); stroke: var(--color-current-stroke); transform: scale(1.15); }
+        .edge {
+            stroke: #bdc3c7; stroke-width: 2;
+            transition: all 0.4s ease-in-out;
+        }
+        .edge.active { stroke: var(--color-active-edge); stroke-width: 4; }
+        .edge.backtrack { stroke: var(--color-backtrack-edge); stroke-width: 4; }
+
+        #side-panel { display: flex; flex-direction: column; gap: 15px; width: 320px; }
+        #controls-container, #log-container, #stack-container { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        #controls-container div { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        button {
+            padding: 10px 15px; border: none; border-radius: 5px; background-color: #3498db; color: white;
+            font-size: 16px; cursor: pointer; transition: background-color 0.3s; flex-grow: 1; margin: 0 5px;
+        }
+        button:hover { background-color: #2980b9; }
+        button:disabled { background-color: #bdc3c7; cursor: not-allowed; }
+        select, input { padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
+
+        #log-panel { height: 250px; overflow-y: auto; background: #fafafa; }
+        .log-entry { margin: 0 0 8px 0; font-size: 14px; color: #333; padding: 5px; border-radius: 3px; }
+        .log-visit { background-color: #eaf4fc; }
+        .log-discover { background-color: #fef5e7; }
+        .log-backtrack { background-color: #fdedec; }
+        .log-complete { background-color: #e8f6f3; font-weight: bold; }
+        
+        /* NEW: Visual Stack Styles */
+        #stack-visual {
+            min-height: 50px; background: #fafafa; padding: 10px; border-radius: 5px; border: 1px solid #ddd;
+            display: flex; flex-direction: column-reverse; align-items: center; gap: 5px;
+        }
+        .stack-item {
+            background-color: var(--color-on-stack-node); border: 2px solid var(--color-on-stack-stroke);
+            color: white; font-weight: bold; width: 80%; text-align: center; padding: 8px; border-radius: 4px;
+            transition: all 0.3s ease-in-out;
+        }
+    </style>
+</head>
+<body>
+    <div id="main-container">
+        <h1>优化版动态演示：深度优先遍历 (DFS)</h1>
+        <div id="visualization-container">
+            <svg id="svg-canvas"></svg>
+        </div>
+    </div>
+
+    <div id="side-panel">
+        <div id="controls-container">
+            <h2>控制面板</h2>
+            <div>
+                <label for="startNode">起始:</label>
+                <select id="startNode">
+                    <option value="A">A</option><option value="B">B</option><option value="C">C</option>
+                    <option value="D">D</option><option value="E">E</option><option value="F">F</option><option value="G">G</option>
+                </select>
+            </div>
+            <div>
+                <button id="startButton">开始</button>
+                <button id="resetButton">重置</button>
+            </div>
+             <div>
+                <button id="pauseButton" disabled>暂停</button>
+                <button id="nextButton" disabled>下一步</button>
+            </div>
+            <div>
+                <label for="speed">速度:</label>
+                <input type="range" id="speed" min="100" max="1000" value="500" step="50">
+            </div>
+        </div>
+
+        <div id="stack-container">
+            <h2>调用栈</h2>
+            <div id="stack-visual"></div>
+        </div>
+
+        <div id="log-container">
+            <h2>日志</h2>
+            <div id="log-panel"></div>
+        </div>
+    </div>
+
+<script>
+    // --- Data Definition ---
+    const graph = { 'A': ['B', 'C', 'G'], 'B': ['A', 'D', 'E'], 'C': ['A', 'F'], 'D': ['B'], 'E': ['B', 'F'], 'F': ['C', 'E', 'G'], 'G': ['A', 'F'] };
+    const positions = { 'A': { x: 150, y: 100 }, 'B': { x: 300, y: 50 }, 'C': { x: 300, y: 200 }, 'D': { x: 450, y: 50 }, 'E': { x: 450, y: 150 }, 'F': { x: 450, y: 250 }, 'G': { x: 150, y: 300 } };
+
+    // --- DOM Elements ---
+    const svg = document.getElementById('svg-canvas');
+    const startButton = document.getElementById('startButton');
+    const resetButton = document.getElementById('resetButton');
+    const pauseButton = document.getElementById('pauseButton');
+    const nextButton = document.getElementById('nextButton');
+    const speedSlider = document.getElementById('speed');
+    const startNodeSelect = document.getElementById('startNode');
+    const logPanel = document.getElementById('log-panel');
+    const stackVisual = document.getElementById('stack-visual'); // NEW
+
+    // --- State Variables ---
+    let animationSteps = [];
+    let currentStep = 0;
+    let isPaused = false;
+    let isStepping = false;
+    let timeoutId = null;
+
+    // --- Core Logic: Algorithm and Animation are now separated ---
+
+    // MODIFIED: Generates a list of animation steps without touching the DOM
+    function generateDfsSteps(startNode) {
+        const steps = [];
+        const visited = new Set();
+
+        function dfsRecursive(node, parent) {
+            visited.add(node);
+            steps.push({ type: 'visit', node: node, parent: parent });
+            
+            for (const neighbor of graph[node]) {
+                if (!visited.has(neighbor)) {
+                    steps.push({ type: 'discover', from: node, to: neighbor });
+                    dfsRecursive(neighbor, node);
+                }
+            }
+            steps.push({ type: 'finish', node: node, parent: parent });
+        }
+
+        steps.push({ type: 'start', node: startNode });
+        dfsRecursive(startNode, null);
+        steps.push({ type: 'end' });
+        return steps;
+    }
+
+    // MODIFIED: Executes animation steps from the generated list
+    async function executeAnimation() {
+        if (isPaused && !isStepping) return;
+        if (currentStep >= animationSteps.length) {
+            toggleControls(true, true);
+            return;
+        }
+
+        const step = animationSteps[currentStep];
+        const speed = 1100 - speedSlider.value;
+
+        // Reset previous highlights before applying new ones
+        if(currentStep > 0) {
+            const prevStep = animationSteps[currentStep-1];
+            if(prevStep.type === 'visit') {
+                 // The 'current' node from last step is now just 'on-stack'
+                 updateNodeClass(prevStep.node, 'current', false);
+            }
+            if(prevStep.type === 'discover'){
+                 updateEdgeClass(prevStep.from, prevStep.to, 'active', false);
+            }
+        }
+        
+        switch (step.type) {
+            case 'start':
+                log(`🚀 从节点 ${step.node} 开始DFS。`, 'log-complete');
+                pushToVisualStack(step.node);
+                break;
+
+            case 'visit':
+                log(`🔵 正在访问 ${step.node}`, 'log-visit');
+                updateNodeClass(step.node, 'current', true);
+                if (step.parent) {
+                    updateEdgeClass(step.parent, step.node, 'active', true);
+                }
+                break;
+
+            case 'discover':
+                log(`🟠 发现 ${step.from} → ${step.to}，深入探索...`, 'log-discover');
+                updateNodeClass(step.to, 'on-stack', true);
+                pushToVisualStack(step.to);
+                break;
+
+            case 'finish':
+                log(`🔴 从 ${step.node} 回溯...`, 'log-backtrack');
+                updateNodeClass(step.node, 'current', false);
+                updateNodeClass(step.node, 'on-stack', false);
+                updateNodeClass(step.node, 'visited', true);
+                popFromVisualStack();
+                
+                if (step.parent) {
+                    // Flash the backtracking edge
+                    updateEdgeClass(step.parent, step.node, 'active', false);
+                    updateEdgeClass(step.parent, step.node, 'backtrack', true);
+                    await sleep(speed / 2);
+                    updateEdgeClass(step.parent, step.node, 'backtrack', false);
+                    // Re-highlight the parent as current
+                    updateNodeClass(step.parent, 'current', true);
+                }
+                break;
+            
+            case 'end':
+                log('✅ 遍历完成!', 'log-complete');
+                break;
+        }
+
+        currentStep++;
+        isStepping = false;
+
+        if (currentStep < animationSteps.length) {
+            timeoutId = setTimeout(executeAnimation, speed);
+        } else {
+            toggleControls(true, true);
+        }
+    }
+
+    // --- UI Update and Helper Functions ---
+    function log(message, className) {
+        const p = document.createElement('p');
+        p.textContent = message;
+        p.className = `log-entry ${className || ''}`;
+        logPanel.appendChild(p);
+        logPanel.scrollTop = logPanel.scrollHeight;
+    }
+    
+    // NEW: Functions to manage the visual stack
+    function pushToVisualStack(nodeId) {
+        const item = document.createElement('div');
+        item.className = 'stack-item';
+        item.textContent = nodeId;
+        item.id = `stack-${nodeId}`;
+        stackVisual.prepend(item);
+    }
+
+    function popFromVisualStack() {
+        if (stackVisual.firstChild) {
+            stackVisual.removeChild(stackVisual.firstChild);
+        }
+    }
+
+    function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+    function updateNodeClass(nodeId, className, add = true) { document.getElementById(`node-${nodeId}`)?.classList[add ? 'add' : 'remove'](className); }
+    function updateEdgeClass(n1, n2, className, add = true) { (document.getElementById(`edge-${n1}-${n2}`) || document.getElementById(`edge-${n2}-${n1}`))?.classList[add ? 'add' : 'remove'](className); }
+
+    function drawGraph() { /* ... same as before ... */ } // Drawing logic is unchanged
+
+    function reset() {
+        clearTimeout(timeoutId);
+        animationSteps = [];
+        currentStep = 0;
+        isPaused = false;
+        isStepping = false;
+        logPanel.innerHTML = '';
+        stackVisual.innerHTML = '';
+        drawGraph();
+        toggleControls(true, false);
+    }
+
+    function toggleControls(canStart, isFinished) {
+        startButton.disabled = !canStart;
+        resetButton.disabled = false;
+        startNodeSelect.disabled = !canStart;
+        pauseButton.disabled = canStart;
+        nextButton.disabled = !isPaused || isFinished;
+        if(canStart) pauseButton.textContent = '暂停';
+    }
+
+    // --- Event Listeners ---
+    startButton.addEventListener('click', () => {
+        reset();
+        toggleControls(false, false);
+        const startNode = startNodeSelect.value;
+        animationSteps = generateDfsSteps(startNode);
+        executeAnimation();
+    });
+
+    pauseButton.addEventListener('click', () => {
+        isPaused = !isPaused;
+        pauseButton.textContent = isPaused ? '继续' : '暂停';
+        nextButton.disabled = !isPaused;
+        if (!isPaused) {
+            executeAnimation();
+        }
+    });
+
+    nextButton.addEventListener('click', () => {
+        if (isPaused) {
+            isStepping = true;
+            executeAnimation();
+        }
+    });
+
+    resetButton.addEventListener('click', reset);
+    window.onload = reset;
+    
+    // The drawGraph function is unchanged, so it's included here for completeness.
+    function drawGraph() {
+        svg.innerHTML = '';
+        const drawnEdges = new Set();
+        for (const node in graph) {
+            for (const neighbor of graph[node]) {
+                const edgeId1 = `${node}-${neighbor}`, edgeId2 = `${neighbor}-${node}`;
+                if (!drawnEdges.has(edgeId1) && !drawnEdges.has(edgeId2)) {
+                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    const pos1 = positions[node], pos2 = positions[neighbor];
+                    line.setAttribute('x1', pos1.x); line.setAttribute('y1', pos1.y);
+                    line.setAttribute('x2', pos2.x); line.setAttribute('y2', pos2.y);
+                    line.id = `edge-${edgeId1}`;
+                    line.classList.add('edge');
+                    svg.appendChild(line);
+                    drawnEdges.add(edgeId1);
+                }
+            }
+        }
+        for (const node in positions) {
+            const pos = positions[node];
+            const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            g.id = `node-${node}`; g.classList.add('node');
+            g.style.transformOrigin = `${pos.x}px ${pos.y}px`;
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', pos.x); circle.setAttribute('cy', pos.y); circle.setAttribute('r', 20);
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', pos.x); text.setAttribute('y', pos.y);
+            text.textContent = node;
+            g.appendChild(circle); g.appendChild(text);
+            svg.appendChild(g);
+        }
+    }
+</script>
+</body>
+</html>

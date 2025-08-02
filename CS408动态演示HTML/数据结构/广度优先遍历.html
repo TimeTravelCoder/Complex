@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>动态演示：广度优先遍历 (BFS)</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 20px;
+            padding: 20px;
+            background-color: #f4f7f9;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        #main-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            width: 700px;
+        }
+        #graph-container {
+            position: relative;
+            width: 100%;
+            height: 400px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .node {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background-color: #d0e7fd;
+            border: 2px solid #5b9bd5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            cursor: pointer;
+            transition: background-color 0.5s, border-color 0.5s, transform 0.3s;
+        }
+        .node:hover {
+            transform: scale(1.1);
+        }
+        .node.visited {
+            background-color: #a9d18e; /* Green */
+            border-color: #70ad47;
+        }
+        .node.current {
+            background-color: #f8cbad; /* Orange */
+            border-color: #ed7d31;
+            transform: scale(1.2);
+        }
+        #sidebar {
+            width: 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        h1, h2 {
+            text-align: center;
+            color: #333;
+            margin-top: 0;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+        #controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        #controls .input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        #controls label {
+            font-weight: bold;
+        }
+        #controls input {
+            flex-grow: 1;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        #controls .button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        #controls button {
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #start-btn { background-color: #4472c4; }
+        #start-btn:disabled { background-color: #a0a0a0; }
+        #reset-btn { background-color: #c00000; }
+
+        #queue-container {
+            width: 100%;
+        }
+        #queue {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            min-height: 40px;
+            padding: 10px;
+            background-color: #f2f2f2;
+            border-radius: 4px;
+            border: 1px dashed #ccc;
+        }
+        .queue-item {
+            padding: 8px 12px;
+            background-color: #5b9bd5;
+            color: white;
+            border-radius: 4px;
+            font-weight: bold;
+            animation: fadeIn 0.5s;
+        }
+
+        #log-panel {
+            width: 100%;
+            height: 250px;
+        }
+        #log {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            height: 100%;
+            overflow-y: auto;
+            background: #2b2b2b;
+            color: #f1f1f1;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        #log li {
+            padding: 4px 0;
+            border-bottom: 1px solid #444;
+            animation: fadeIn 0.5s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div id="main-container" class="container">
+        <h1>动态演示：广度优先遍历 (BFS)</h1>
+        <div id="graph-container">
+            <svg width="100%" height="100%" style="position:absolute; top:0; left:0; z-index: -1;">
+                <defs>
+                    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto">
+                        <polygon points="0 0, 10 3.5, 0 7" fill="#555" />
+                    </marker>
+                </defs>
+            </svg>
+        </div>
+    </div>
+
+    <div id="sidebar">
+        <div id="controls-container" class="container">
+            <h2>控制面板</h2>
+            <div id="controls">
+                <div class="input-group">
+                    <label for="start-node">起始节点:</label>
+                    <input type="text" id="start-node" value="A" maxlength="1">
+                </div>
+                 <div class="button-group">
+                    <button id="start-btn">开始遍历</button>
+                    <button id="reset-btn">重置</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="queue-container" class="container">
+            <h2>队列 (Queue)</h2>
+            <div id="queue"></div>
+        </div>
+
+        <div id="log-panel" class="container">
+            <h2>状态日志</h2>
+            <ul id="log"></ul>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const graph = {
+                'A': ['B', 'C', 'D'],
+                'B': ['A', 'E'],
+                'C': ['A', 'F'],
+                'D': ['A', 'G'],
+                'E': ['B', 'H'],
+                'F': ['C'],
+                'G': ['D'],
+                'H': ['E']
+            };
+
+            const nodePositions = {
+                'A': { x: 350, y: 50 },
+                'B': { x: 150, y: 150 },
+                'C': { x: 350, y: 150 },
+                'D': { x: 550, y: 150 },
+                'E': { x: 150, y: 250 },
+                'F': { x: 350, y: 250 },
+                'G': { x: 550, y: 250 },
+                'H': { x: 150, y: 350 }
+            };
+
+            const graphContainer = document.getElementById('graph-container');
+            const svg = graphContainer.querySelector('svg');
+            const queueDiv = document.getElementById('queue');
+            const logUl = document.getElementById('log');
+            const startBtn = document.getElementById('start-btn');
+            const resetBtn = document.getElementById('reset-btn');
+            const startNodeInput = document.getElementById('start-node');
+
+            let isRunning = false;
+
+            function drawGraph() {
+                // Clear previous elements
+                graphContainer.querySelectorAll('.node').forEach(n => n.remove());
+                svg.innerHTML = ''; // Clear lines
+
+                // Draw edges
+                const drawnEdges = new Set();
+                for (const node in graph) {
+                    const startPos = nodePositions[node];
+                    for (const neighbor of graph[node]) {
+                        const edgeId1 = `${node}-${neighbor}`;
+                        const edgeId2 = `${neighbor}-${node}`;
+                        if (drawnEdges.has(edgeId1) || drawnEdges.has(edgeId2)) continue;
+
+                        const endPos = nodePositions[neighbor];
+                        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                        line.setAttribute('x1', startPos.x);
+                        line.setAttribute('y1', startPos.y);
+                        line.setAttribute('x2', endPos.x);
+                        line.setAttribute('y2', endPos.y);
+                        line.setAttribute('stroke', '#aaa');
+                        line.setAttribute('stroke-width', '3');
+                        svg.appendChild(line);
+                        drawnEdges.add(edgeId1);
+                    }
+                }
+
+                // Draw nodes
+                for (const node in nodePositions) {
+                    const pos = nodePositions[node];
+                    const nodeEl = document.createElement('div');
+                    nodeEl.classList.add('node');
+                    nodeEl.id = `node-${node}`;
+                    nodeEl.textContent = node;
+                    // Center the node div on its coordinates
+                    nodeEl.style.left = `${pos.x - 27}px`; // (width + border*2)/2 = (50+4)/2 = 27
+                    nodeEl.style.top = `${pos.y - 27}px`;
+                    graphContainer.appendChild(nodeEl);
+                }
+            }
+            
+            function addLog(message) {
+                const li = document.createElement('li');
+                li.textContent = message;
+                logUl.appendChild(li);
+                logUl.scrollTop = logUl.scrollHeight;
+            }
+
+            function updateQueue(queue) {
+                queueDiv.innerHTML = '';
+                queue.forEach(nodeId => {
+                    const item = document.createElement('div');
+                    item.classList.add('queue-item');
+                    item.textContent = nodeId;
+                    queueDiv.appendChild(item);
+                });
+            }
+
+            function setNodeState(nodeId, state) {
+                const nodeEl = document.getElementById(`node-${nodeId}`);
+                if (!nodeEl) return;
+                
+                // Reset classes
+                nodeEl.classList.remove('visited', 'current');
+
+                if (state === 'visited') {
+                    nodeEl.classList.add('visited');
+                } else if (state === 'current') {
+                    nodeEl.classList.add('current');
+                }
+            }
+
+            function sleep(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+            
+            async function startBfs() {
+                if (isRunning) return;
+                
+                const startNode = startNodeInput.value.toUpperCase();
+                if (!graph[startNode]) {
+                    alert('请输入一个有效的起始节点 (A-H)');
+                    return;
+                }
+                
+                isRunning = true;
+                startBtn.disabled = true;
+                reset();
+                
+                addLog(`--- BFS 开始，起始节点: ${startNode} ---`);
+                
+                const queue = [];
+                const visited = new Set();
+                
+                queue.push(startNode);
+                visited.add(startNode);
+                updateQueue(queue);
+                setNodeState(startNode, 'visited');
+                addLog(`1. 将起始节点 '${startNode}' 加入队列和已访问集合.`);
+                await sleep(1000);
+
+                while (queue.length > 0) {
+                    const currentNode = queue.shift();
+                    updateQueue(queue);
+                    addLog(`2. 从队列取出节点 '${currentNode}' 进行处理.`);
+                    setNodeState(currentNode, 'current');
+                    await sleep(1500);
+
+                    const neighbors = graph[currentNode];
+                    addLog(`3. 查找 '${currentNode}' 的邻居: [${neighbors.join(', ')}].`);
+                    await sleep(1000);
+
+                    for (const neighbor of neighbors) {
+                        if (!visited.has(neighbor)) {
+                            visited.add(neighbor);
+                            queue.push(neighbor);
+                            addLog(` -> 邻居 '${neighbor}' 未访问过, 加入队列和已访问集合.`);
+                            setNodeState(neighbor, 'visited');
+                            updateQueue(queue);
+                            await sleep(1500);
+                        } else {
+                            addLog(` -> 邻居 '${neighbor}' 已访问过, 跳过.`);
+                            await sleep(1000);
+                        }
+                    }
+                    setNodeState(currentNode, 'visited');
+                }
+
+                addLog("--- 队列为空, BFS 遍历结束. ---");
+                isRunning = false;
+                startBtn.disabled = false;
+            }
+
+            function reset() {
+                logUl.innerHTML = '';
+                queueDiv.innerHTML = '';
+                document.querySelectorAll('.node').forEach(nodeEl => {
+                    nodeEl.classList.remove('visited', 'current');
+                });
+                 isRunning = false;
+                 startBtn.disabled = false;
+            }
+
+            // Initial setup
+            drawGraph();
+            startBtn.addEventListener('click', startBfs);
+            resetBtn.addEventListener('click', () => {
+                reset();
+                addLog('演示已重置.');
+            });
+            addLog('请点击 "开始遍历" 以启动BFS演示。');
+        });
+    </script>
+</body>
+</html>

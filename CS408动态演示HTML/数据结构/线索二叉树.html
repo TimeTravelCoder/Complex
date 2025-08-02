@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>逻辑修正最终版：线索二叉树演示</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500&display=swap');
+        :root {
+            --primary-color: #4a90e2; --secondary-color: #f5a623; --danger-color: #d0021b;
+            --success-color: #7ed321; --bg-color: #f4f6f8; --font-color: #4a4a4a;
+            --node-bg: #ffffff; --node-border: #dbe2e8; --node-shadow: drop-shadow(0 4px 8px rgba(0,0,0,0.08));
+            --child-link-color: #345d9d; --thread-link-color: #d0021b;
+        }
+        body { font-family: 'Noto Sans SC', sans-serif; display: flex; flex-direction: column; align-items: center; background-color: var(--bg-color); color: var(--font-color); }
+        h1 { color: #333; font-weight: 500; }
+        #main-container { display: flex; gap: 24px; width: 100%; max-width: 1400px; justify-content: center; margin-top: 20px; }
+        #visualization-container { position: relative; width: 850px; height: 600px; background-color: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        #controls-log-panel { display: flex; flex-direction: column; gap: 20px; width: 480px; }
+        .panel { background-color: var(--node-bg); padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .panel h2 { margin-top: 0; font-size: 1.25em; font-weight: 500; color: #333; border-bottom: 1px solid #e0e0e0; padding-bottom: 10px; }
+        #controls button { padding: 10px 18px; font-size: 1em; font-family: 'Noto Sans SC', sans-serif; border: none; border-radius: 8px; cursor: pointer; color: white; transition: all 0.3s ease; margin: 0 8px 8px 0; }
+        #controls button:disabled { background-color: #b0bec5; cursor: not-allowed; transform: scale(1); box-shadow: none; }
+        #controls button:not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .prepare-btn { background-color: var(--primary-color); }
+        #next-step-btn { background-color: var(--success-color); }
+        #autoplay-btn { background-color: #50e3c2; }
+        #pause-btn { background-color: var(--secondary-color); }
+        #reset-btn { background-color: #78909c; }
+        #log-panel { height: 380px; overflow-y: auto; background-color: #fafafa; border: 1px solid #eee; padding: 15px; border-radius: 8px; font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace; font-size: 14px; line-height: 1.7; }
+        .log-entry.phase { background-color: #e0e7ff; border-left: 4px solid #5a67d8; font-weight: bold; }
+        .log-entry.principle { background-color: #eef5ff; border-left: 4px solid var(--primary-color); font-style: italic; color: #2c5a8e; }
+        .log-entry strong { color: var(--danger-color); font-weight: bold; }
+        /* SVG Styles */
+        svg { width: 100%; height: 100%; font-family: 'Noto Sans SC', sans-serif; }
+        .node-group { transition: opacity 0.4s ease, transform 0.4s ease; transform-origin: center; opacity: 0; }
+        .node-group.visible { opacity: 1; }
+        .node-body { stroke: var(--node-border); stroke-width: 1.5px; fill: var(--node-bg); filter: var(--node-shadow); }
+        .node-group.current .node-body { stroke: var(--secondary-color); stroke-width: 2.5px; animation: svg-pulse 1.5s infinite; }
+        .node-group.pre .node-body { fill: #ffebee; }
+        @keyframes svg-pulse { 0% { filter: var(--node-shadow) drop-shadow(0 0 0 rgba(245, 166, 35, 0.7)); } 70% { filter: var(--node-shadow) drop-shadow(0 0 10px rgba(245, 166, 35, 0)); } 100% { filter: var(--node-shadow) drop-shadow(0 0 0 rgba(245, 166, 35, 0)); } }
+        .node-value-circle { fill: var(--primary-color); }
+        .node-value-text { fill: white; font-size: 18px; font-weight: 500; text-anchor: middle; dominant-baseline: central; }
+        .node-tag-text { font-size: 12px; font-weight: bold; text-anchor: middle; dominant-baseline: central; }
+        .node-port-rect { fill: #f0f0f0; stroke: #ccc; }
+        .port-highlight { fill: var(--danger-color); stroke: var(--danger-color); }
+        .node-port-text { fill: #999; font-size: 14px; text-anchor: middle; dominant-baseline: central; }
+        .port-highlight .node-port-text { fill: white; }
+        path { fill: none; stroke-width: 2.5px; transition: stroke 0.4s; stroke: var(--child-link-color); }
+        path.thread { stroke: var(--thread-link-color); stroke-dasharray: 6, 4; }
+        .path-draw { stroke-dasharray: 1000; stroke-dashoffset: 1000; animation: draw 0.8s ease-out forwards; }
+        @keyframes draw { to { stroke-dashoffset: 0; } }
+        path.highlight-child { stroke: var(--success-color); stroke-width: 4px; }
+        path.highlight-thread { stroke: var(--secondary-color); stroke-width: 4px; }
+        .flow-particle { fill: var(--success-color); stroke: white; stroke-width: 1px; }
+    </style>
+</head>
+<body>
+    <h1>逻辑修正最终版：线索二叉树演示</h1>
+    <div id="main-container">
+        <div id="visualization-container"><svg id="svg-canvas"></svg></div>
+        <div id="controls-log-panel">
+            <div id="controls" class="panel">
+                <h2>控制面板</h2>
+                <button id="prepare-build-btn" class="prepare-btn" title="生成建树步骤">1. 构建二叉树</button>
+                <button id="prepare-thread-btn" class="prepare-btn" title="生成线索化步骤" disabled>2. 准备线索化</button>
+                <button id="prepare-traverse-btn" class="prepare-btn" title="生成遍历步骤" disabled>3. 准备遍历</button>
+                <hr>
+                <button id="next-step-btn" title="执行下一步操作" disabled>下一步 &rarr;</button>
+                <button id="autoplay-btn" title="自动连续播放" disabled>自动播放 &raquo;</button>
+                <button id="pause-btn" title="暂停播放" disabled>暂停 II</button>
+                <hr>
+                <button id="reset-btn" title="重置整个演示">重置 &circlearrowleft;</button>
+            </div>
+            <div class="panel"><h2>状态日志</h2><div id="log-panel"></div></div>
+            <div class="panel"><h2>中序序列</h2><div id="inorder-sequence"></div></div>
+        </div>
+    </div>
+
+<script>
+    // --- Data, State, and Elements (Same as before) ---
+    const treeData = { value: 'A', children: [ { value: 'B', children: [{ value: 'D', children: [] }, { value: 'E', children: [] }] }, { value: 'C', children: [{ value: 'F', children: [] }, {value:'G', children:[]}] } ] };
+    let nodes = {}, pre = null, animationQueue = [], autoplayInterval = null, currentPhase = '';
+    const svgCanvas = document.getElementById('svg-canvas');
+    const logPanel = document.getElementById('log-panel'), inorderSeqDiv = document.getElementById('inorder-sequence');
+    const prepareBuildBtn = document.getElementById('prepare-build-btn'), prepareThreadBtn = document.getElementById('prepare-thread-btn'), prepareTraverseBtn = document.getElementById('prepare-traverse-btn'), nextStepBtn = document.getElementById('next-step-btn'), autoplayBtn = document.getElementById('autoplay-btn'), pauseBtn = document.getElementById('pause-btn'), resetBtn = document.getElementById('reset-btn');
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    
+    // --- Node Class & Drawing Logic (Same as before) ---
+    class Node {
+        constructor(value, x, y, parent = null, isLeft = false) { this.value = value; this.lchild = null; this.rchild = null; this.ltag = 0; this.rtag = 0; this.x = x; this.y = y; this.width = 130; this.height = 50; this.dom = {}; }
+        draw() {
+            const group = document.createElementNS(SVG_NS, 'g');
+            group.id = `node-group-${this.value}`;
+            group.classList.add('node-group');
+            group.setAttribute('transform', `translate(${this.x - this.width / 2}, ${this.y - this.height / 2})`);
+            const body = document.createElementNS(SVG_NS, 'rect');
+            body.classList.add('node-body');
+            body.setAttribute('width', this.width); body.setAttribute('height', this.height); body.setAttribute('rx', 10);
+            const valueCircle = document.createElementNS(SVG_NS, 'circle');
+            valueCircle.classList.add('node-value-circle');
+            valueCircle.setAttribute('cx', this.width / 2); valueCircle.setAttribute('cy', this.height / 2); valueCircle.setAttribute('r', 20);
+            const valueText = document.createElementNS(SVG_NS, 'text');
+            valueText.classList.add('node-value-text');
+            valueText.setAttribute('x', this.width / 2); valueText.setAttribute('y', this.height / 2); valueText.textContent = this.value;
+            const lport = this.createPort('l', 12.5, this.height / 2);
+            const rport = this.createPort('r', this.width - 12.5, this.height / 2);
+            const ltag = this.createTag('ltag', 35, this.height / 2);
+            const rtag = this.createTag('rtag', this.width - 35, this.height / 2);
+            group.append(body, valueCircle, valueText, lport.group, rport.group, ltag.text, rtag.text);
+            svgCanvas.appendChild(group);
+            this.dom = { group, body, lportGroup: lport.group, rportGroup: rport.group, lportText: lport.text, rportText: rport.text, ltagText: ltag.text, rtagText: rtag.text };
+            return this;
+        }
+        createPort(type, x, y) { const group = document.createElementNS(SVG_NS, 'g'); const rect = document.createElementNS(SVG_NS, 'rect'); rect.classList.add('node-port-rect'); rect.setAttribute('x', x - 10); rect.setAttribute('y', y - 10); rect.setAttribute('width', 20); rect.setAttribute('height', 20); rect.setAttribute('rx', 4); const text = document.createElementNS(SVG_NS, 'text'); text.classList.add('node-port-text'); text.setAttribute('x', x); text.setAttribute('y', y); text.textContent = '✗'; group.append(rect, text); return { group, text }; }
+        createTag(type, x, y){ const text = document.createElementNS(SVG_NS, 'text'); text.classList.add('node-tag-text'); text.setAttribute('x', x); text.setAttribute('y', y); text.textContent = '0'; return { text }; }
+        show() { this.dom.group.classList.add('visible'); }
+    }
+    function drawPath(fromNode, toNode, isThread = false, isLeft = false) { /* ... Same ... */ const startX = fromNode.x + (isLeft ? -52.5 : 52.5); const startY = fromNode.y; const endX = toNode.x; const endY = toNode.y - toNode.height / 2; const pathId = `path-${fromNode.value}-${toNode.value}` + (isThread ? (isLeft ? '-lthread' : '-rthread') : ''); let path = document.getElementById(pathId); if(!path) { path = document.createElementNS(SVG_NS, 'path'); path.id = pathId; svgCanvas.appendChild(path); } const d = `M ${startX},${startY} C ${startX},${startY + 60} ${endX},${endY - 60} ${endX},${endY}`; path.setAttribute('d', d); if (isThread) path.classList.add('thread'); return path; }
+
+    // --- Core Logic & Phase Management (Same as before) ---
+    function log(message, type = '') { /* ... */ const entry = document.createElementNS('http://www.w3.org/1999/xhtml', 'div'); entry.className = `log-entry ${type}`; entry.innerHTML = message; logPanel.appendChild(entry); logPanel.scrollTop = logPanel.scrollHeight; }
+    function addToQueue(step) { animationQueue.push(step); }
+    function executeNextStep() { /* ... */ if (animationQueue.length === 0) { log(`--- <strong>阶段 ${currentPhase} 完成</strong> ---`, 'phase'); stopAutoplay(); updateButtonStates(false); if (currentPhase === 'BUILD') prepareThreadBtn.disabled = false; else if (currentPhase === 'THREAD') prepareTraverseBtn.disabled = false; return; } const step = animationQueue.shift(); if (step.func) step.func(); setTimeout(() => { document.querySelectorAll('.current, .pre, .port-highlight').forEach(el => el.classList.remove('current', 'pre', 'port-highlight')); document.querySelectorAll('path.highlight-child, path.highlight-thread').forEach(p => p.classList.remove('highlight-child', 'highlight-thread')); if (step.log) log(step.log); if (step.principle) log(step.principle, 'principle'); if (step.highlightNode) nodes[step.highlightNode].dom.group.classList.add('current'); if (step.highlightPre) nodes[step.highlightPre].dom.group.classList.add('pre'); if (step.highlightPort) { const {nodeId, dir} = step.highlightPort; (dir === 'left' ? nodes[nodeId].dom.lportGroup : nodes[nodeId].dom.rportGroup).classList.add('port-highlight'); } if (step.highlightPath) step.highlightPath.classList.add(step.pathClass || 'highlight-child'); if (step.flowAnimation) animateFlow(step.flowAnimation); if (step.updateInorder) inorderSeqDiv.innerHTML += ` <span style="color:${step.color || 'var(--primary-color)'}">${step.updateInorder}</span>`; updateButtonStates(true); }, 10); }
+    function startAutoplay() { /* ... */ if (autoplayInterval) return; updateButtonStates(true, true); executeNextStep(); autoplayInterval = setInterval(executeNextStep, 1500); }
+    function stopAutoplay() { /* ... */ clearInterval(autoplayInterval); autoplayInterval = null; updateButtonStates(animationQueue.length > 0); }
+    function updateButtonStates(inProgress, isPlaying = false) { /* ... */ nextStepBtn.disabled = !inProgress || isPlaying; autoplayBtn.disabled = !inProgress || isPlaying; pauseBtn.disabled = !inProgress || !isPlaying; resetBtn.disabled = isPlaying; if(inProgress) { prepareBuildBtn.disabled = true; prepareThreadBtn.disabled = true; prepareTraverseBtn.disabled = true; } }
+    function animateFlow(pathElement) { /* ... */ if (!pathElement) return; const particle = document.createElementNS(SVG_NS, 'circle'); particle.setAttribute('r', '5'); particle.classList.add('flow-particle'); const animation = document.createElementNS(SVG_NS, 'animateMotion'); animation.setAttribute('dur', '0.8s'); animation.setAttribute('path', pathElement.getAttribute('d')); animation.setAttribute('fill', 'freeze'); particle.appendChild(animation); svgCanvas.appendChild(particle); animation.beginElement(); setTimeout(() => particle.remove(), 800); }
+    function prepareBuildQueue() { /* ... */ currentPhase = 'BUILD'; animationQueue = []; nodes = {}; log("--- <strong>阶段 1: 构建二叉树</strong> ---", "phase"); function build(data, x, y, dx, parent = null, isLeft = false) { if (!data) return null; const node = new Node(data.value, x, y, parent, isLeft); nodes[data.value] = node.draw(); addToQueue({ log: parent ? `连接 <strong>${parent.value}</strong> 到 ${isLeft ? '左' : '右'} 孩子 <strong>${node.value}</strong>` : `创建根节点 <strong>${node.value}</strong>`, func: () => { node.show(); if (parent) { const path = drawPath(parent, node, false, isLeft); if (path) { (isLeft ? parent.dom.lportText : parent.dom.rportText).textContent = ''; path.classList.add('path-draw'); } } } }); if (data.children && data.children[0]) { const newDx = Math.max(dx / 1.9, 80); node.lchild = build(data.children[0], x - newDx, y + 120, newDx, node, true); } if (data.children && data.children[1]) { const newDx = Math.max(dx / 1.9, 80); node.rchild = build(data.children[1], x + newDx, y + 120, newDx, node, false); } return node; } build(treeData, 425, 60, 350); log(`已生成 ${animationQueue.length} 个建树步骤。`); updateButtonStates(true); prepareBuildBtn.disabled = true; }
+    
+    // --- Phase 2: Thread Tree (LOGICALLY CORRECTED VERSION) ---
+    function prepareThreadQueue() {
+        currentPhase = 'THREAD';
+        pre = null;
+        animationQueue = [];
+        log("--- <strong>阶段 2: 中序线索化</strong> ---", "phase");
+        addToQueue({ log: `初始化 'pre' 指针为 NULL。`});
+
+        function thread(node) {
+            if (node) {
+                thread(node.lchild);
+
+                // --- In-order visit action ---
+                addToQueue({ log: `中序遍历到达节点 <strong>${node.value}</strong>`, highlightNode: node.value });
+                
+                // Check for LEFT thread (node's predecessor)
+                if (node.lchild === null) {
+                    addToQueue({ principle: `【检查左指针】节点 <strong>${node.value}</strong> 左端口空闲，可线索化。` });
+                    if (pre) {
+                        // BUG FIX: Capture the current `pre` in a closure
+                        const capturedPre = pre;
+                        addToQueue({
+                            log: `建立左线索: <strong>${node.value}</strong> &rarr; <strong>${capturedPre.value}</strong>`,
+                            highlightPort: { nodeId: node.value, dir: 'left' },
+                            highlightPre: capturedPre.value,
+                            func: () => {
+                                node.lchild = capturedPre;
+                                node.ltag = 1;
+                                const path = drawPath(node, capturedPre, true, true);
+                                if(path) path.classList.add('path-draw');
+                                node.dom.ltagText.textContent = '1';
+                                node.dom.ltagText.classList.add('tag-change');
+                                node.dom.lportText.textContent = '↰';
+                            }
+                        });
+                    }
+                }
+
+                // Check for RIGHT thread (pre's successor)
+                if (pre && pre.rchild === null) {
+                     addToQueue({ principle: `【检查前驱右指针】前驱 <strong>${pre.value}</strong> 右端口空闲，可线索化。` });
+                     // BUG FIX: Capture both `pre` and `node` in a closure
+                     const capturedPre = pre;
+                     const capturedNode = node;
+                     addToQueue({
+                        log: `建立右线索: <strong>${capturedPre.value}</strong> &rarr; <strong>${capturedNode.value}</strong>`,
+                        highlightNode: capturedNode.value,
+                        highlightPort: { nodeId: capturedPre.value, dir: 'right' },
+                        func: () => {
+                            capturedPre.rchild = capturedNode;
+                            capturedPre.rtag = 1;
+                            const path = drawPath(capturedPre, capturedNode, true, false);
+                            if(path) path.classList.add('path-draw');
+                            capturedPre.dom.rtagText.textContent = '1';
+                            capturedPre.dom.rtagText.classList.add('tag-change');
+                            capturedPre.dom.rportText.textContent = '↱';
+                        }
+                    });
+                }
+
+                // Update pre for the next iteration
+                addToQueue({ log: `操作完毕，更新 'pre' 指针为 <strong>${node.value}</strong>。`, highlightPre: node.value });
+                pre = node;
+
+                thread(node.rchild);
+            }
+        }
+        thread(nodes['A']);
+        log(`已生成 ${animationQueue.length} 个线索化步骤。`);
+        updateButtonStates(true);
+        prepareThreadBtn.disabled = true;
+    }
+
+    // --- Phase 3 & Event Listeners (Same as before) ---
+    function prepareTraversalQueue() { /* ... */ currentPhase = 'TRAVERSE'; animationQueue = []; inorderSeqDiv.innerHTML = '遍历序列:'; log("--- <strong>阶段 3: 线索化遍历</strong> ---", "phase"); let current = nodes['A']; if (!current) return; addToQueue({ log: `从根节点 <strong>${current.value}</strong> 开始寻找第一个节点。`}); while(current.ltag === 0) { const next = current.lchild; const path = document.getElementById(`path-${current.value}-${next.value}`); addToQueue({ log: `<strong>${current.value}</strong> LTag=0, 沿左孩子指针移动`, highlightNode: next.value, highlightPath: path, pathClass: 'highlight-child', highlightPort: {nodeId: current.value, dir: 'left'}, flowAnimation: path }); current = next; } addToQueue({ log: `找到第一个节点: <strong>${current.value}</strong>`, highlightNode: current.value, updateInorder: current.value, color: 'var(--success-color)' }); while (current) { const visitedNode = current; if (visitedNode.rtag === 1) { const next = visitedNode.rchild; const pathId = next ? `path-${visitedNode.value}-${next.value}-rthread` : null; addToQueue({ principle: `【线索移动】<strong>${visitedNode.value}</strong> RTag=1, 右指针是线索。` }); if (next) { const path = document.getElementById(pathId); addToQueue({ log: `沿线索直接跳转到后继 <strong>${next.value}</strong>`, highlightNode: next.value, highlightPath: path, pathClass: 'highlight-thread', highlightPort: {nodeId: visitedNode.value, dir: 'right'}, flowAnimation: path, updateInorder: next.value, color: 'var(--thread-link-color)' }); } else { addToQueue({ log: `后继线索为 NULL, 遍历结束。` }); } current = next; } else { const next = visitedNode.rchild; const pathId = next ? `path-${visitedNode.value}-${next.value}`: null; addToQueue({ principle: `【子树移动】<strong>${visitedNode.value}</strong> RTag=0, 右指针是孩子。` }); if(next) { const path = document.getElementById(pathId); addToQueue({ log: `进入右子树, 根为 <strong>${next.value}</strong>`, highlightNode: next.value, highlightPath: path, pathClass: 'highlight-child', highlightPort: {nodeId: visitedNode.value, dir: 'right'}, flowAnimation: path }); current = next; while(current.ltag === 0) { const subNext = current.lchild; const subPath = document.getElementById(`path-${current.value}-${subNext.value}`); addToQueue({ log: `在子树中继续寻找最左节点...`, highlightNode: subNext.value, highlightPath: subPath, pathClass: 'highlight-child', highlightPort: {nodeId: current.value, dir: 'left'}, flowAnimation: subPath }); current = subNext; } addToQueue({ log: `找到后继节点: <strong>${current.value}</strong>`, highlightNode: current.value, updateInorder: current.value, color: 'var(--success-color)' }); } else { current = next; } } } log(`已生成 ${animationQueue.length} 个遍历步骤。`); updateButtonStates(true); prepareTraverseBtn.disabled = true; }
+    prepareBuildBtn.addEventListener('click', prepareBuildQueue);
+    prepareThreadBtn.addEventListener('click', prepareThreadQueue);
+    prepareTraverseBtn.addEventListener('click', prepareTraversalQueue);
+    nextStepBtn.addEventListener('click', executeNextStep);
+    autoplayBtn.addEventListener('click', startAutoplay);
+    pauseBtn.addEventListener('click', stopAutoplay);
+    resetBtn.addEventListener('click', () => { stopAutoplay(); svgCanvas.innerHTML = ''; logPanel.innerHTML = ''; inorderSeqDiv.innerHTML = ''; animationQueue = []; pre = null; nodes = {}; currentPhase = ''; prepareBuildBtn.disabled = false; prepareThreadBtn.disabled = true; prepareTraverseBtn.disabled = true; updateButtonStates(false); log("演示已重置。请点击“构建二叉树”开始。"); });
+    
+    resetBtn.click();
+</script>
+</body>
+</html>

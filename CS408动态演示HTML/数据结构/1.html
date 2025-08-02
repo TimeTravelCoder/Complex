@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>动态演示：中序线索二叉树</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 20px;
+            background-color: #f4f7f9;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+        #visualization-container {
+            position: relative;
+            width: 600px;
+            height: 400px;
+            border: 2px solid #ccc;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .node {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background-color: #4a90e2;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            border: 2px solid #357ABD;
+            transition: background-color 0.3s, transform 0.3s;
+            z-index: 10;
+        }
+        .node.current {
+            background-color: #d9534f; /* 红色 */
+            transform: scale(1.1);
+        }
+        .node.pre {
+            background-color: #f0ad4e; /* 黄色 */
+        }
+        svg {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 5;
+        }
+        line {
+            stroke-width: 2px;
+            transition: stroke 0.3s, stroke-dasharray 0.3s;
+        }
+        .link { stroke: #333; }
+        .thread { 
+            stroke: #28a745; 
+            stroke-dasharray: 5, 5; 
+        }
+        .thread.left {
+            stroke: #007bff;
+        }
+        .controls-log-panel {
+            display: flex;
+            flex-direction: column;
+            width: 350px;
+        }
+        #controls {
+            padding: 20px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        #controls h2 {
+            margin-top: 0;
+            font-size: 1.2em;
+            text-align: center;
+        }
+        .button-group {
+            display: flex;
+            justify-content: space-around;
+        }
+        button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            background-color: #4a90e2;
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.2s;
+        }
+        button:disabled {
+            background-color: #aaa;
+            cursor: not-allowed;
+        }
+        button:hover:not(:disabled) {
+            background-color: #357ABD;
+        }
+        #log-panel {
+            padding: 15px;
+            background: #fff;
+            border-radius: 8px;
+            height: 300px;
+            overflow-y: auto;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            border: 1px solid #eee;
+        }
+        #log-panel h3 { margin-top: 0; }
+        #log-panel p {
+            margin: 5px 0;
+            padding: 8px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        #log-panel p:last-child {
+            border-bottom: none;
+        }
+        .log-highlight {
+            background-color: #e9f5ff;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="visualization-container">
+            <svg id="svg-canvas"></svg>
+        </div>
+        <div class="controls-log-panel">
+            <div id="controls">
+                <h2>动态演示：线索二叉树</h2>
+                <div class="button-group">
+                    <button id="startBtn">开始线索化</button>
+                    <button id="nextBtn" disabled>下一步</button>
+                    <button id="resetBtn">重置</button>
+                </div>
+            </div>
+            <div id="log-panel">
+                <h3>执行日志</h3>
+                <div id="log-content">
+                    <p>点击“开始线索化”启动。演示将通过中序遍历过程，建立线索。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DATA STRUCTURE ---
+        const treeData = {
+            value: 'A',
+            children: [
+                {
+                    value: 'B',
+                    children: [
+                        { value: 'D', children: [] },
+                        { value: 'E', children: [] }
+                    ]
+                },
+                {
+                    value: 'C',
+                    children: [
+                        { value: 'F', children: [] },
+                        { value: 'G', children: [] }
+                    ]
+                }
+            ]
+        };
+
+        class TreeNode {
+            constructor(value, x, y) {
+                this.value = value;
+                this.left = null;
+                this.right = null;
+                this.ltag = 0; // 0 for link, 1 for thread
+                this.rtag = 0; // 0 for link, 1 for thread
+                this.x = x;
+                this.y = y;
+                this.id = `node-${value}`;
+                this.lineIdLeft = `line-${value}-L`;
+                this.lineIdRight = `line-${value}-R`;
+            }
+        }
+
+        // --- GLOBAL VARIABLES ---
+        let root = null;
+        let pre = null; // Predecessor node
+        let steps = [];
+        let currentStep = -1;
+        const domNodes = new Map();
+        const domLines = new Map();
+
+        const startBtn = document.getElementById('startBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const visContainer = document.getElementById('visualization-container');
+        const svgCanvas = document.getElementById('svg-canvas');
+        const logContent = document.getElementById('log-content');
+
+        // --- CORE LOGIC ---
+        function buildTree(data, x, y, level = 0) {
+            if (!data) return null;
+            const node = new TreeNode(data.value, x, y);
+            const xOffset = 200 / (level + 1.5);
+            if (data.children && data.children[0]) {
+                node.left = buildTree(data.children[0], x - xOffset, y + 80, level + 1);
+            }
+            if (data.children && data.children[1]) {
+                node.right = buildTree(data.children[1], x + xOffset, y + 80, level + 1);
+            }
+            return node;
+        }
+
+        function generateThreadingSteps(node) {
+            if (!node) return;
+            
+            generateThreadingSteps(node.left);
+
+            // Process current node
+            let logMsg = `处理节点 ${node.value}。`;
+            let preNodeValue = pre ? pre.value : 'null';
+            logMsg += ` (前驱 pre = ${preNodeValue})`
+            steps.push({ type: 'highlight', node: node, pre: pre, log: logMsg });
+
+            if (!node.left) {
+                node.ltag = 1;
+                steps.push({ type: 'thread', from: node, to: pre, direction: 'left', log: `节点 ${node.value} 的左孩子为空，左指针设为线索，指向前驱 ${pre ? pre.value : 'null'}。` });
+            }
+            if (pre && !pre.right) {
+                pre.rtag = 1;
+                steps.push({ type: 'thread', from: pre, to: node, direction: 'right', log: `前驱节点 ${pre.value} 的右孩子为空，右指针设为线索，指向后继 ${node.value}。` });
+            }
+            
+            steps.push({ type: 'update_pre', node: node, log: `更新前驱 pre 为 ${node.value}。` });
+            pre = node;
+
+            generateThreadingSteps(node.right);
+        }
+
+        // --- VISUALIZATION ---
+        function drawTree(node) {
+            if (!node) return;
+
+            // Draw node
+            const nodeEl = document.createElement('div');
+            nodeEl.className = 'node';
+            nodeEl.id = node.id;
+            nodeEl.style.left = `${node.x - 20}px`;
+            nodeEl.style.top = `${node.y - 20}px`;
+            nodeEl.textContent = node.value;
+            visContainer.appendChild(nodeEl);
+            domNodes.set(node.id, nodeEl);
+
+            // Draw lines to children
+            if (node.left) {
+                drawLine(node, node.left, 'left', 'link');
+                drawTree(node.left);
+            }
+            if (node.right) {
+                drawLine(node, node.right, 'right', 'link');
+                drawTree(node.right);
+            }
+        }
+        
+        function drawLine(fromNode, toNode, direction, type) {
+            const lineId = direction === 'left' ? fromNode.lineIdLeft : fromNode.lineIdRight;
+            let line = document.getElementById(lineId);
+            if (!line) {
+                line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.id = lineId;
+                svgCanvas.appendChild(line);
+                domLines.set(lineId, line);
+            }
+
+            line.setAttribute('x1', fromNode.x);
+            line.setAttribute('y1', fromNode.y);
+
+            if (toNode) {
+                line.setAttribute('x2', toNode.x);
+                line.setAttribute('y2', toNode.y);
+            } else { // Draw a short stub for null pointers
+                const angle = direction === 'left' ? -Math.PI / 4 : Math.PI / 4;
+                line.setAttribute('x2', fromNode.x + Math.cos(angle) * 30);
+                line.setAttribute('y2', fromNode.y + Math.sin(angle) * 30);
+            }
+
+            line.className.baseVal = type;
+            if (type === 'thread') {
+                line.classList.add(direction);
+            }
+        }
+
+        function clearHighlights() {
+            domNodes.forEach(el => el.classList.remove('current', 'pre'));
+        }
+
+        function log(message) {
+            const p = document.createElement('p');
+            p.textContent = message;
+            logContent.insertBefore(p, logContent.firstChild);
+            p.classList.add('log-highlight');
+            setTimeout(() => p.classList.remove('log-highlight'), 1000);
+        }
+
+        // --- CONTROL LOGIC ---
+        function executeStep(stepIndex) {
+            if (stepIndex < 0 || stepIndex >= steps.length) return;
+            const step = steps[stepIndex];
+            
+            clearHighlights();
+            log(step.log);
+
+            switch(step.type) {
+                case 'highlight':
+                    domNodes.get(step.node.id).classList.add('current');
+                    if(step.pre) {
+                        domNodes.get(step.pre.id).classList.add('pre');
+                    }
+                    break;
+                case 'thread':
+                    drawLine(step.from, step.to, step.direction, 'thread');
+                    break;
+                case 'update_pre':
+                    domNodes.get(step.node.id).classList.add('pre');
+                    break;
+            }
+        }
+
+        function handleStart() {
+            reset();
+            steps = [];
+            pre = null;
+            logContent.innerHTML = '';
+            
+            // Start in-order traversal to generate steps
+            steps.push({ type: 'start', log: '开始中序遍历以建立线索...' });
+            generateThreadingSteps(root);
+            steps.push({ type: 'end', log: '线索化完成！' });
+
+            currentStep = 0;
+            executeStep(currentStep);
+
+            startBtn.disabled = true;
+            nextBtn.disabled = false;
+        }
+
+        function handleNext() {
+            currentStep++;
+            if (currentStep < steps.length) {
+                executeStep(currentStep);
+            }
+            if (currentStep >= steps.length - 1) {
+                nextBtn.disabled = true;
+                 clearHighlights();
+            }
+        }
+
+        function reset() {
+            currentStep = -1;
+            steps = [];
+            pre = null;
+            
+            visContainer.innerHTML = '<svg id="svg-canvas"></svg>'; // Clear nodes
+            logContent.innerHTML = '<p>点击“开始线索化”启动。演示将通过中序遍历过程，建立线索。</p>';
+            
+            root = buildTree(treeData, 300, 50);
+            drawTree(root);
+
+            startBtn.disabled = false;
+            nextBtn.disabled = true;
+        }
+
+        // --- EVENT LISTENERS ---
+        startBtn.addEventListener('click', handleStart);
+        nextBtn.addEventListener('click', handleNext);
+        resetBtn.addEventListener('click', reset);
+
+        // --- INITIALIZATION ---
+        window.onload = reset;
+    </script>
+</body>
+</html>
